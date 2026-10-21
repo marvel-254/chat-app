@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pulse Chat - Download</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+      color: #e8e8e8;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 4rem 1.5rem;
+    }
+    .container { max-width: 480px; width: 100%; text-align: center; }
+    .logo { width: 96px; height: 96px; border-radius: 24px; margin-bottom: 1.5rem; box-shadow: 0 8px 32px rgba(0, 122, 255, 0.3); }
+    h1 { font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; background: linear-gradient(135deg, #fff 0%, #007aff 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .subtitle { color: #8e8e93; margin-bottom: 2.5rem; font-size: 1.1rem; }
+    .download-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 1rem 2rem;
+      background: linear-gradient(135deg, #007aff 0%, #0056cc 100%);
+      color: white;
+      text-decoration: none;
+      border-radius: 16px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      box-shadow: 0 4px 20px rgba(0, 122, 255, 0.4);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .download-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0, 122, 255, 0.5); }
+    .download-btn:active { transform: translateY(0); }
+    .version-info { margin-top: 2rem; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); }
+    .version-info p { margin: 0.25rem 0; font-size: 0.9rem; color: #8e8e93; }
+    .version-info strong { color: #e8e8e8; }
+    .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 2.5rem; }
+    .feature { padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
+    .feature-icon { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .feature-title { font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; }
+    .feature-desc { font-size: 0.75rem; color: #8e8e93; }
+    @media (max-width: 400px) { .features { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <img src="https://raw.githubusercontent.com/marvel-254/chat-app/main/assets/icon/app_icon.png" alt="Pulse Chat" class="logo" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23007aff%22 width=%22100%22 height=%22100%22 rx=%2224%22/><text x=%2250%22 y=%2262%22 font-size=%2248%22 text-anchor=%22middle%22 fill=%22white%22>💬</text></svg>'">
+    <h1>Pulse Chat</h1>
+    <p class="subtitle">Secure, real-time messaging for everyone</p>
+    
+    <a href="https://github.com/marvel-254/chat-app/releases/latest/download/app-release.apk" class="download-btn" id="downloadBtn">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download APK
+    </a>
+    
+    <div class="version-info">
+      <p>Latest release: <strong id="version">Loading…</strong></p>
+      <p>Updated: <strong id="date">Loading…</strong></p>
+      <p>Size: <strong id="size">Loading…</strong></p>
+    </div>
+    
+    <div class="features">
+      <div class="feature">
+        <div class="feature-icon">🔒</div>
+        <div class="feature-title">End-to-End Encrypted</div>
+        <div class="feature-desc">Your messages stay private</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">⚡</div>
+        <div class="feature-title">Real-time Sync</div>
+        <div class="feature-desc">Instant delivery across devices</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🌙</div>
+        <div class="feature-title">Dark Mode Native</div>
+        <div class="feature-desc">Beautiful by default</div>
+      </div>
+    </div>
+  </div>
+  <script>
+    fetch('https://api.github.com/repos/marvel-254/chat-app/releases/latest')
+      .then(r => r.json())
+      .then(data => {
+        document.getElementById('version').textContent = data.tag_name || 'v1.0.0';
+        document.getElementById('date').textContent = new Date(data.published_at).toLocaleDateString();
+        const asset = data.assets.find(a => a.name.endsWith('.apk'));
+        if (asset) {
+          document.getElementById('size').textContent = (asset.size / 1024 / 1024).toFixed(1) + ' MB';
+          document.getElementById('downloadBtn').href = asset.browser_download_url;
+        }
+      })
+      .catch(() => {
+        document.getElementById('version').textContent = 'v1.0.0';
+        document.getElementById('date').textContent = 'Recent';
+        document.getElementById('size').textContent = '~21 MB';
+      });
+  </script>
+</body>
+</html>
