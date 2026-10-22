@@ -1,0 +1,8 @@
+# Chat App
+
+Chat App is a real-time messaging application built with Flutter. It offers a fast, accessible web experience alongside native mobile and desktop targets.
+
+- Stack: Flutter (web), Dart
+- Entry point: `web/index.html`
+- PWA manifest: `web/manifest.json`
+- Primary route: `/` (single-page application)
