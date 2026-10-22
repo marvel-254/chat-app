@@ -1,11 +1,11 @@
 {
-    "name": "Chat App",
-    "short_name": "ChatApp",
+    "name": "Vantastic",
+    "short_name": "Vantastic",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0A0A0A",
-    "theme_color": "#0A0A0A",
-    "description": "Real-time messaging web app built with Flutter.",
+    "background_color": "#0E0F13",
+    "theme_color": "#0E0F13",
+    "description": "A beautifully dark messaging app built with Flutter.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

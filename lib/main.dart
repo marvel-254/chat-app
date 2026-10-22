@@ -120,7 +120,7 @@ class _ChatScreenState extends State<ChatScreen> {
         title: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Pulse', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _P.text)),
+            Text('Vantastic', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _P.text)),
             Text('online', style: TextStyle(fontSize: 12, color: _P.primary)),
           ],
         ),
