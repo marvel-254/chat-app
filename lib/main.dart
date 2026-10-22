@@ -22,12 +22,12 @@ class _P {
   static const primary = _indigo;
 }
 
-class PulseChatApp extends StatelessWidget {
-  const PulseChatApp({super.key});
+class VantasticApp extends StatelessWidget {
+  const VantasticApp({super.key});
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Pulse Chat',
+      title: 'Vantastic',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,

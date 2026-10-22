@@ -18,7 +18,21 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="Chat App – Real-time messaging built with Flutter.">
+<meta name="keywords" content="chat, messaging, flutter, real-time, web app">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0A0A0A">
+<!-- Open Graph -->
+<meta property="og:title" content="Chat App">
+<meta property="og:description" content="Real-time messaging web app built with Flutter.">
+<meta property="og:image" content="icons/Icon-512.png">
+<meta property="og:url" content="https://example.com/">
+<meta property="og:type" content="website">
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Chat App">
+<meta name="twitter:description" content="Real-time messaging web app built with Flutter.">
+<meta name="twitter:image" content="icons/Icon-512.png">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -29,8 +43,20 @@
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>chat_app</title>
+  <title>Chat App – Real-time Messaging</title>
   <link rel="manifest" href="manifest.json">
+<link rel="canonical" href="https://example.com/">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Chat App",
+  "description": "Real-time messaging web app built with Flutter.",
+  "url": "https://example.com/",
+  "applicationCategory": "Communication",
+  "operatingSystem": "Web"
+}
+</script>
 </head>
 <body>
   <!--
@@ -41,6 +67,16 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
-  <script src="flutter_bootstrap.js" async></script>
+  <div id="loading" style="position:fixed;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#fff;z-index:9999;">
+  Loading...
+</div>
+<script src="flutter_bootstrap.js" async></script>
+<script>
+  // Hide the loading overlay once Flutter is ready
+  window.addEventListener('flutter-first-frame', function () {
+    const loading = document.getElementById('loading');
+    if (loading) loading.style.display = 'none';
+  });
+</script>
 </body>
 </html>
