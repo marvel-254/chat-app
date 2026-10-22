@@ -683,7 +683,7 @@ class _Bubble extends StatelessWidget {
       ),
     );
 
-  static String _fmtTime(DateTime t) {
+  String _fmtTime(DateTime t) {
     final h = t.hour == 0 ? 12 : (t.hour > 12 ? t.hour - 12 : t.hour);
     final m = t.minute.toString().padLeft(2, '0');
     final ap = t.hour >= 12 ? 'PM' : 'AM';
@@ -692,7 +692,7 @@ class _Bubble extends StatelessWidget {
 }
 
 class _Composer extends StatelessWidget {
-  const _Composer({required this.controller, required this.onSend});
+  _Composer({required this.controller, required this.onSend});
   final TextEditingController controller;
   final VoidCallback onSend;
 
@@ -752,7 +752,7 @@ class _Composer extends StatelessWidget {
 }
 
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.name, this.size = 44});
+  _Avatar({required this.name, this.size = 44});
   final String name;
   final double size;
 
@@ -776,7 +776,7 @@ class _Avatar extends StatelessWidget {
 }
 
 class _ActionBtn extends StatelessWidget {
-  const _ActionBtn(this.icon);
+  _ActionBtn(this.icon);
   final IconData icon;
   @override
   Widget build(BuildContext context) {
