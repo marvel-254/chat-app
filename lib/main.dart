@@ -683,7 +683,7 @@ class _Bubble extends StatelessWidget {
       ),
     );
 
-  String _fmtTime(DateTime t) {
+  static String _fmtTime(DateTime t) {
     final h = t.hour == 0 ? 12 : (t.hour > 12 ? t.hour - 12 : t.hour);
     final m = t.minute.toString().padLeft(2, '0');
     final ap = t.hour >= 12 ? 'PM' : 'AM';
