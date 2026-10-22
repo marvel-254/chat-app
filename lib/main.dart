@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-void main() => runApp(const PulseChatApp());
+void main() => runApp(const VantasticApp());
 
 const _indigo = Color(0xFF6366F1);
 const _indigoDeep = Color(0xFF3B3E8F);
@@ -61,7 +61,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _ctrl = TextEditingController();
   final _scroll = ScrollController();
   final List<_Msg> _msgs = [
-    _Msg(DateTime.now().subtract(const Duration(minutes: 6)), 'Hey! Welcome to Pulse Chat.', false, read: true),
+    _Msg(DateTime.now().subtract(const Duration(minutes: 6)), 'Hey! Welcome to Vantastic.', false, read: true),
     _Msg(DateTime.now().subtract(const Duration(minutes: 5)), 'Type a message below and hit send.', false, read: true),
     _Msg(DateTime.now().subtract(const Duration(minutes: 4)), 'Messages group automatically as they arrive, with the time shown on each one.', false, read: true),
   ];
