@@ -1,4 +1,4 @@
-package com.omixsystems.chat_app
+package com.omixsystems.pulsechat
 
 import io.flutter.embedding.android.FlutterActivity
 
