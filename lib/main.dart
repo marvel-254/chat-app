@@ -67,6 +67,13 @@ class _ChatScreenState extends State<ChatScreen> {
   ];
   bool _typing = false;
 
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
   void _send() {
     final t = _ctrl.text.trim();
     if (t.isEmpty) return;
@@ -81,7 +88,10 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) return;
       setState(() {
         _typing = false;
-        _msgs.last = _Msg(now, _msgs.last.text, true, read: true);
+        final i = _msgs.lastIndexWhere((m) => m.ts == now && m.mine);
+        if (i >= 0) {
+          _msgs[i] = _Msg(now, _msgs[i].text, true, read: true);
+        }
         _msgs.add(_Msg(DateTime.now(), 'Got it: "$t"', false, read: true));
       });
       _rollToBottom();
@@ -278,7 +288,7 @@ class _Bubble extends StatelessWidget {
                 if (mine) ...[
                   const SizedBox(width: 3),
                   Icon(
-                    msg.read ? Icons.done_all : Icons.done_all,
+                    msg.read ? Icons.done_all : Icons.done,
                     size: 13,
                     color: msg.read ? const Color(0xFFB9FBC0) : Colors.white70,
                   ),
