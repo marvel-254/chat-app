@@ -50,7 +50,7 @@ final _router = GoRouter(
     final loggingIn = state.matchedLocation == '/login';
     if (!authed && !loggingIn) return '/login';
     if (authed && loggingIn) return '/conversations';
-    return null;
+  return null;
   },
 );
 
@@ -58,7 +58,7 @@ class VantasticApp extends StatelessWidget {
   const VantasticApp({super.key});
   @override
   Widget build(BuildContext context) {
-    return MaterialApp.router(
+  return MaterialApp.router(
       title: 'Vantastic',
       debugShowCheckedModeBanner: false,
       routerConfig: _router,
@@ -80,14 +80,14 @@ class VantasticApp extends StatelessWidget {
         ),
       ),
     );
-  }
+}
 }
 
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<AuthState>(
+  return StreamBuilder<AuthState>(
       stream: Supa.authStateChanges,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -100,7 +100,7 @@ class AuthGate extends StatelessWidget {
         return const LoginScreen();
       },
     );
-  }
+}
 }
 
 class LoginScreen extends StatefulWidget {
@@ -135,11 +135,11 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
-  }
+}
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+  return Scaffold(
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -287,7 +287,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
     );
-  }
+}
 }
 
 class ConversationListScreen extends StatefulWidget {
@@ -305,16 +305,16 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   void dispose() {
     _search.dispose();
     super.dispose();
-  }
+}
 
   Future<void> _startDM(Profile other) async {
     final conv = await Supa.getOrCreateDM(other.id);
     if (mounted) context.go('/chat/${conv.id}');
-  }
+}
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+  return Scaffold(
       appBar: AppBar(
         title: const Text('Vantastic', style: TextStyle(fontWeight: FontWeight.w600)),
         actions: [
@@ -436,7 +436,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
         ],
       ),
     );
-  }
+}
 }
 
 class ChatScreen extends StatefulWidget {
@@ -458,7 +458,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _scroll.dispose();
     _typingTimer?.cancel();
     super.dispose();
-  }
+}
 
   void _send() async {
     final t = _ctrl.text.trim();
@@ -466,7 +466,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _ctrl.clear();
     _rollToBottom();
     await Supa.sendMessage(widget.conversationId, t);
-  }
+}
 
   void _rollToBottom() {
     if (!_scroll.hasClients) return;
@@ -475,11 +475,11 @@ class _ChatScreenState extends State<ChatScreen> {
       _scroll.animateTo(_scroll.position.maxScrollExtent,
           duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
     });
-  }
+}
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+  return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
         leadingWidth: 64,
@@ -533,14 +533,14 @@ class _ChatScreenState extends State<ChatScreen> {
         ],
       ),
     );
-  }
+}
 }
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
   @override
   Widget build(BuildContext context) {
-    return Center(
+  return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: const [
@@ -552,21 +552,21 @@ class _EmptyState extends StatelessWidget {
         ],
       ),
     );
-  }
+}
 }
 
 class _TypingIndicator extends StatelessWidget {
   const _TypingIndicator();
   @override
   Widget build(BuildContext context) {
-    return const Padding(
+  return const Padding(
       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Align(
         alignment: Alignment.centerLeft,
         child: Text('Typing…', style: TextStyle(color: _P.muted, fontSize: 12, fontStyle: FontStyle.italic)),
       ),
     );
-  }
+}
 }
 
 class _MessageRow extends StatelessWidget {
@@ -586,14 +586,14 @@ class _MessageRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+  return Column(
       crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
         if (_nowDateLine) _DateLine(ts: msg.createdAt),
         _Bubble(msg: msg, groupedTop: _groupPrev, groupedBottom: _groupNext, mine: mine),
       ],
     );
-  }
+}
 }
 
 class _DateLine extends StatelessWidget {
@@ -610,7 +610,7 @@ class _DateLine extends StatelessWidget {
     } else {
       label = '${ts.day} ${_months[ts.month - 1]}';
     }
-    return Padding(
+  return Padding(
       padding: const EdgeInsets.symmetric(vertical: 14),
       child: Center(
         child: Container(
@@ -624,7 +624,7 @@ class _DateLine extends StatelessWidget {
         ),
       ),
     );
-  }
+}
 }
 const _months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -643,7 +643,7 @@ class _Bubble extends StatelessWidget {
       bottomLeft: Radius.circular(mine ? (groupedBottom ? 6 : 18) : 18),
       bottomRight: Radius.circular(mine ? 18 : (groupedBottom ? 6 : 18)),
     );
-    return Padding(
+  return Padding(
       padding: EdgeInsets.only(
         top: groupedTop ? 2 : 6,
         bottom: groupedBottom ? 2 : 6,
@@ -682,6 +682,7 @@ class _Bubble extends StatelessWidget {
         ),
       ),
     );
+  }
 
   static String _fmtTime(DateTime t) {
     final h = t.hour == 0 ? 12 : (t.hour > 12 ? t.hour - 12 : t.hour);
@@ -698,7 +699,7 @@ class _Composer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+  return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       child: Container(
         decoration: BoxDecoration(
@@ -748,7 +749,7 @@ class _Composer extends StatelessWidget {
         ),
       ),
     );
-  }
+}
 }
 
 class _Avatar extends StatelessWidget {
@@ -758,7 +759,7 @@ class _Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+  return Container(
       width: size,
       height: size,
       alignment: Alignment.center,
@@ -772,7 +773,7 @@ class _Avatar extends StatelessWidget {
         style: TextStyle(color: Colors.white, fontSize: size * 0.4, fontWeight: FontWeight.w600),
       ),
     );
-  }
+}
 }
 
 class _ActionBtn extends StatelessWidget {
@@ -780,6 +781,6 @@ class _ActionBtn extends StatelessWidget {
   final IconData icon;
   @override
   Widget build(BuildContext context) {
-    return IconButton(icon: Icon(icon, color: _P.muted, size: 22), onPressed: () {});
-  }
+  return IconButton(icon: Icon(icon, color: _P.muted, size: 22), onPressed: () {});
+}
 }
