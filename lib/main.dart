@@ -753,7 +753,7 @@ class _Composer extends StatelessWidget {
 }
 
 class _Avatar extends StatelessWidget {
-  _Avatar({required this.name, this.size = 44});
+  const _Avatar({required this.name, this.size = 44});
   final String name;
   final double size;
 
@@ -777,7 +777,7 @@ class _Avatar extends StatelessWidget {
 }
 
 class _ActionBtn extends StatelessWidget {
-  _ActionBtn(this.icon);
+  const _ActionBtn(this.icon);
   final IconData icon;
   @override
   Widget build(BuildContext context) {
