@@ -10,7 +10,7 @@
 <meta property="og:title" content="NYX">
 <meta property="og:description" content="A beautifully dark messaging app built with Flutter.">
 <meta property="og:image" content="icons/Icon-512.png">
-<meta property="og:url" content="https://example.com/">
+<meta property="og:url" content="https://marvel-254.github.io/chat-app/">
 <meta property="og:type" content="website">
 
   <style>
@@ -26,7 +26,24 @@
       --radius: 12px;
     }
     * { box-sizing: border-box; margin: 0; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      position: relative;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background:
+        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(99,102,241,0.15), transparent 60%),
+        radial-gradient(ellipse 60% 40% at 90% 10%, rgba(34,211,238,0.08), transparent 55%),
+        radial-gradient(ellipse 70% 50% at 50% 110%, rgba(99,102,241,0.10), transparent 60%);
+      pointer-events: none;
+    }
     .container { max-width: 860px; margin: 0 auto; padding: 2rem 1.5rem; }
     .header { text-align: center; padding: 3rem 1rem 2rem; border-bottom: 1px solid var(--border); margin-bottom: 2rem; }
     .header h1 { font-size: 2.5rem; font-weight: 300; letter-spacing: -1px; background: linear-gradient(135deg, #fff 0%, #e0e0e0 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.5rem; }
@@ -75,10 +92,10 @@
       <h2>About NYX</h2>
       <p>NYX is a dark-first messaging application focused on privacy, simplicity, and beautiful design. Connect with friends, share moments, and communicate in style.</p>
       <div class="legal-links">
-        <a href="/terms">Terms of Service</a>
-        <a href="/privacy">Privacy Policy</a>
-        <a href="/cookie">Cookie Policy</a>
-        <a href="/license">License (MIT)</a>
+        <a href="legal/terms.html">Terms of Service</a>
+        <a href="legal/privacy.html">Privacy Policy</a>
+        <a href="legal/cookie.html">Cookie Policy</a>
+        <a href="https://github.com/marvel-254/chat-app/blob/main/LICENSE">License (MIT)</a>
       </div>
     </div>
 
@@ -98,10 +115,10 @@
       <h2>Legal</h2>
       <p>Please review our legal documents:</p>
       <div class="legal-links">
-        <a href="/terms">Terms of Service</a>
-        <a href="/privacy">Privacy Policy</a>
-        <a href="/cookie">Cookie Policy</a>
-        <a href="/license">License (MIT)</a>
+        <a href="legal/terms.html">Terms of Service</a>
+        <a href="legal/privacy.html">Privacy Policy</a>
+        <a href="legal/cookie.html">Cookie Policy</a>
+        <a href="https://github.com/marvel-254/chat-app/blob/main/LICENSE">License (MIT)</a>
       </div>
     </div>
 
