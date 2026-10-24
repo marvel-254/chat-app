@@ -1,12 +1,10 @@
-# chat_app
+# NYX
 
-A new Flutter project.
+A beautifully dark messaging app built with Flutter.
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
+This project is a starting point for a NYX messaging application.
 
 - [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
 - [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)

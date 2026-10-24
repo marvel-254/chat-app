@@ -12,7 +12,7 @@ void main() async {
     url: 'http://localhost:54321',
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0',
   );
-  runApp(const VantasticApp());
+  runApp(const NYXApp());
 }
 
 const _indigo = Color(0xFF6366F1);
@@ -56,12 +56,12 @@ final _router = GoRouter(
   },
 );
 
-class VantasticApp extends StatelessWidget {
-  const VantasticApp({super.key});
+class NYXApp extends StatelessWidget {
+  const NYXApp({super.key});
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'Vantastic',
+      title: 'NYX',
       debugShowCheckedModeBanner: false,
       routerConfig: _router,
       theme: ThemeData(
@@ -169,7 +169,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 Text(_isSignUp ? 'Create Account' : 'Welcome Back',
                     style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: _P.text)),
                 const SizedBox(height: 8),
-                Text(_isSignUp ? 'Start messaging with Vantastic' : 'Sign in to continue',
+                Text(_isSignUp ? 'Start messaging with NYX' : 'Sign in to continue',
                     style: const TextStyle(fontSize: 16, color: _P.muted)),
                 const SizedBox(height: 32),
                 if (_error != null)
@@ -318,7 +318,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Vantastic', style: TextStyle(fontWeight: FontWeight.w600)),
+        title: const Text('NYX', style: TextStyle(fontWeight: FontWeight.w600)),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
@@ -570,7 +570,7 @@ class _ChatScreenState extends State<ChatScreen> {
         title: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Vantastic', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _P.text)),
+            Text('NYX', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _P.text)),
             Text('online', style: TextStyle(fontSize: 12, color: _P.primary)),
           ],
         ),

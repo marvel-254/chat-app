@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, master]
     paths:
-      - 'docs/**'
+      - 'web/**'
   workflow_dispatch:
 
 permissions:
@@ -29,6 +29,6 @@ jobs:
           enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: docs
+          path: web
       - id: deployment
         uses: actions/deploy-pages@v4
