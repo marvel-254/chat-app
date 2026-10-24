@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intf.dart';
 import 'services/supabase.dart';
 import 'models/profile.dart';
 
@@ -23,6 +23,8 @@ const _border = Color(0xFF26272E);
 const _text = Color(0xFFE8EAED);
 const _muted = Color(0xFF8A8C94);
 const _success = Color(0xFF22C55E);
+
+const _adaptiveBreakpoint = 600.0;
 
 class _P {
   static const bg = _bg;
@@ -50,7 +52,7 @@ final _router = GoRouter(
     final loggingIn = state.matchedLocation == '/login';
     if (!authed && !loggingIn) return '/login';
     if (authed && loggingIn) return '/conversations';
-  return null;
+    return null;
   },
 );
 
@@ -58,7 +60,7 @@ class VantasticApp extends StatelessWidget {
   const VantasticApp({super.key});
   @override
   Widget build(BuildContext context) {
-  return MaterialApp.router(
+    return MaterialApp.router(
       title: 'Vantastic',
       debugShowCheckedModeBanner: false,
       routerConfig: _router,
@@ -80,14 +82,14 @@ class VantasticApp extends StatelessWidget {
         ),
       ),
     );
-}
+  }
 }
 
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
   @override
   Widget build(BuildContext context) {
-  return StreamBuilder<AuthState>(
+    return StreamBuilder<AuthState>(
       stream: Supa.authStateChanges,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -100,7 +102,7 @@ class AuthGate extends StatelessWidget {
         return const LoginScreen();
       },
     );
-}
+  }
 }
 
 class LoginScreen extends StatefulWidget {
@@ -135,11 +137,11 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
-}
+  }
 
   @override
   Widget build(BuildContext context) {
-  return Scaffold(
+    return Scaffold(
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -287,7 +289,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
     );
-}
+  }
 }
 
 class ConversationListScreen extends StatefulWidget {
@@ -305,16 +307,16 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   void dispose() {
     _search.dispose();
     super.dispose();
-}
+  }
 
   Future<void> _startDM(Profile other) async {
     final conv = await Supa.getOrCreateDM(other.id);
     if (mounted) context.go('/chat/${conv.id}');
-}
+  }
 
   @override
   Widget build(BuildContext context) {
-  return Scaffold(
+    return Scaffold(
       appBar: AppBar(
         title: const Text('Vantastic', style: TextStyle(fontWeight: FontWeight.w600)),
         actions: [
@@ -327,117 +329,195 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              controller: _search,
-              style: const TextStyle(color: _P.text),
-              decoration: InputDecoration(
-                hintText: 'Search users...',
-                hintStyle: TextStyle(color: _P.muted),
-                prefixIcon: Icon(Icons.search, color: _P.muted),
-                filled: true,
-                fillColor: _P.surface,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                suffixIcon: _search.text.isNotEmpty
-                    ? IconButton(
-                        icon: Icon(Icons.clear, color: _P.muted),
-                        onPressed: () => _search.clear(),
-                      )
-                    : null,
-              ),
-              onChanged: (v) async {
-                if (v.trim().isEmpty) {
-                  setState(() => _searchResults = []);
-                  return;
-                }
-                final results = await Supa.searchUsers(v.trim());
-                if (mounted) setState(() => _searchResults = results);
-              },
-            ),
-          ),
-          if (_search.text.isNotEmpty && _searchResults.isNotEmpty) ...[
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Text('Users', style: TextStyle(color: _P.muted, fontSize: 12, fontWeight: FontWeight.w600)),
-            ),
-            ..._searchResults.map((u) => ListTile(
-              leading: _Avatar(name: u.username[0].toUpperCase(), size: 44),
-              title: Text(u.username, style: const TextStyle(color: _P.text)),
-              subtitle: Text(u.displayName ?? '', style: TextStyle(color: _P.muted, fontSize: 13)),
-              onTap: () => _startDM(u),
-            )),
-            const Divider(height: 1),
-          ],
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                Text('Chats', style: TextStyle(color: _P.muted, fontSize: 12, fontWeight: FontWeight.w600)),
-                const Spacer(),
-                StreamBuilder<AuthState>(
-                  stream: Supa.authStateChanges,
-                  builder: (_, __) => Text(Supa.currentUser?.email ?? '',
-                      style: TextStyle(color: _P.muted, fontSize: 11)),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: StreamBuilder<List<Conversation>>(
-              stream: Supa.watchConversations(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final conversations = snapshot.data ?? [];
-                if (conversations.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.forum_outlined, color: _P.muted, size: 56),
-                        const SizedBox(height: 16),
-                        Text('No chats yet', style: TextStyle(color: _P.muted, fontSize: 15)),
-                        const SizedBox(height: 4),
-                        Text('Search a user above to start messaging', style: TextStyle(color: _P.muted, fontSize: 13)),
-                      ],
-                    ),
-                  );
-                }
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  itemCount: conversations.length,
-                  itemBuilder: (_, i) {
-                    final conv = conversations[i];
-                    final lastMsg = conv.messages?.isNotEmpty == true ? conv.messages!.last : null;
-                    return ListTile(
-                      leading: _Avatar(name: 'C', size: 44),
-                      title: Text('Conversation ${conv.id.substring(0, 8)}', style: const TextStyle(color: _P.text)),
-                      subtitle: lastMsg != null
-                          ? Text(lastMsg.content, style: TextStyle(color: _P.muted, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis)
-                          : null,
-                      trailing: lastMsg != null
-                          ? Text(DateFormat('h:mm a').format(lastMsg.createdAt), style: TextStyle(color: _P.muted, fontSize: 11))
-                          : null,
-                      onTap: () => context.go('/chat/${conv.id}'),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth > _adaptiveBreakpoint) {
+            return _buildLargeScreenLayout(context);
+          } else {
+            return _buildSmallScreenLayout(context);
+          }
+        },
       ),
     );
-}
-}
+  }
+
+  Widget _buildSmallScreenLayout(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: TextField(
+            controller: _search,
+            style: const TextStyle(color: _P.text),
+            decoration: InputDecoration(
+              hintText: 'Search users...',
+              hintStyle: TextStyle(color: _P.muted),
+              prefixIcon: Icon(Icons.search, color: _P.muted),
+              filled: true,
+              fillColor: _P.surface,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              suffixIcon: _search.text.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(Icons.clear, color: _P.muted),
+                      onPressed: () => _search.clear(),
+                    )
+                  : null,
+            ),
+            onChanged: (v) async {
+              if (v.trim().isEmpty) {
+                setState(() => _searchResults = []);
+                return;
+              }
+              final results = await Supa.searchUsers(v.trim());
+              if (mounted) setState(() => _searchResults = results);
+            },
+          ),
+        ),
+        if (_search.text.isNotEmpty && _searchResults.isNotEmpty) ...[
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text('Users', style: TextStyle(color: _P.muted, fontSize: 12, fontWeight: FontWeight.w600)),
+          ),
+          ..._searchResults.map((u) => ListTile(
+            leading: _Avatar(name: u.username[0].toUpperCase(), size: 44),
+            title: Text(u.username, style: const TextStyle(color: _P.text)),
+            subtitle: Text(u.displayName ?? '', style: TextStyle(color: _P.muted, fontSize: 13)),
+            onTap: () => _startDM(u),
+          ),),
+          const Divider(height: 1),
+        ],
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Text('Chats', style: TextStyle(color: _P.muted, fontSize: 12, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              StreamBuilder<AuthState>(
+                stream: Supa.authStateChanges,
+                builder: (_, __) => Text(Supa.currentUser?.email ?? '',
+                    style: TextStyle(color: _P.muted, fontSize: 11)),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: StreamBuilder<List<Conversation>>(
+            stream: Supa.watchConversations(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final conversations = snapshot.data ?? [];
+              if (conversations.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.forum_outlined, color: _P.muted, size: 56),
+                      const SizedBox(height: 16),
+                      Text('No chats yet', style: TextStyle(color: _P.muted, fontSize: 15)),
+                      const SizedBox(height: 4),
+                      Text('Search a user above to start messaging', style: TextStyle(color: _P.muted, fontSize: 13)),
+                    ],
+                  ),
+                );
+              }
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 600),
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    itemCount: conversations.length,
+                    itemBuilder: (_, i) {
+                      final conv = conversations[i];
+                      final lastMsg = conv.messages?.isNotEmpty == true ? conv.messages!.last : null;
+                      return ListTile(
+                        leading: _Avatar(name: 'C', size: 44),
+                        title: Text('Conversation ${conv.id.substring(0, 8)}', style: const TextStyle(color: _P.text)),
+                        subtitle: lastMsg != null
+                            ? Text(lastMsg.content, style: TextStyle(color: _P.muted, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis)
+                            : null,
+                        trailing: lastMsg != null
+                            ? Text(DateFormat('h:mm a').format(lastMsg.createdAt), style: TextStyle(color: _P.muted, fontSize: 11))
+                            : null,
+                        onTap: () => context.go('/chat/${conv.id}'),
+                      );
+                    },
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLargeScreenLayout(BuildContext context) {
+    return Row(
+      children: [
+        const _NavSidebar(),
+        Expanded(
+          child: _buildSmallScreenLayout(context),
+        ),
+      ],
+    );
+  }
+
+  class _Sidebar extends StatelessWidget {
+    const _Sidebar({super.key});
+    @override
+    Widget build(BuildContext context) {
+      return Container(
+        width: 250,
+        decoration: const BoxDecoration(
+          color: _P.surface,
+          border: Border(right: BorderSide(color: _P.border, width: 1)),
+        ),
+        child: Column(children: [
+          Container(
+            width: 56, height: 56, margin: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [_indigo, _indigoDeep], begin: Alignment.topLeft, end: Alignment.bottomRight),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Center(child: Text('V', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: Colors.white))),
+          ),
+          _NavItem(icon: Icons.forum_outlined, label: 'Chats', onTap: () => context.go('/conversations')),
+          _NavItem(icon: Icons.search, label: 'Discover', onTap: () {}),
+          _NavItem(icon: Icons.settings_outlined, label: 'Settings', onTap: () {}),
+          const Spacer(),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(Supa.currentUser?.email ?? '', style: const TextStyle(color: _P.muted, fontSize: 12)),
+          ),
+        ]),
+      );
+    }
+  }
+
+  class _NavItem extends StatelessWidget {
+    const _NavItem({required this.icon, required this.label, required this.onTap});
+    final IconData icon; final String label; final VoidCallback onTap;
+    @override
+    Widget build(BuildContext context) {
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(onTap: onTap, child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(children: [
+            Icon(icon, size: 22, color: _P.muted),
+            const SizedBox(width: 12),
+            Text(label, style: TextStyle(color: _P.muted, fontSize: 15)),
+          ]),
+        ))),
+      );
+    }
+  }
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
@@ -458,7 +538,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _scroll.dispose();
     _typingTimer?.cancel();
     super.dispose();
-}
+  }
 
   void _send() async {
     final t = _ctrl.text.trim();
@@ -466,7 +546,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _ctrl.clear();
     _rollToBottom();
     await Supa.sendMessage(widget.conversationId, t);
-}
+  }
 
   void _rollToBottom() {
     if (!_scroll.hasClients) return;
@@ -475,11 +555,11 @@ class _ChatScreenState extends State<ChatScreen> {
       _scroll.animateTo(_scroll.position.maxScrollExtent,
           duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
     });
-}
+  }
 
   @override
   Widget build(BuildContext context) {
-  return Scaffold(
+    return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
         leadingWidth: 64,
@@ -501,46 +581,109 @@ class _ChatScreenState extends State<ChatScreen> {
           SizedBox(width: 8),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: StreamBuilder<List<Message>>(
-              stream: Supa.watchMessages(widget.conversationId),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final messages = snapshot.data ?? [];
-                if (messages.isEmpty) {
-                  return const _EmptyState();
-                }
-                return ListView.builder(
-                  controller: _scroll,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  itemCount: messages.length,
-                  itemBuilder: (_, i) => _MessageRow(
-                    msg: messages[i],
-                    prev: i > 0 ? messages[i - 1] : null,
-                    next: i + 1 < messages.length ? messages[i + 1] : null,
-                    me: Supa.currentUser!.id,
-                  ),
-                );
-              },
-            ),
-          ),
-          if (_typing) const _TypingIndicator(),
-          _Composer(controller: _ctrl, onSend: _send),
-        ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth > _adaptiveBreakpoint) {
+            return _buildLargeScreenChat(context);
+          } else {
+            return _buildSmallScreenChat(context);
+          }
+        },
       ),
     );
-}
+  }
+
+  Widget _buildSmallScreenChat(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(
+          child: StreamBuilder<List<Message>>(
+            stream: Supa.watchMessages(widget.conversationId),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final messages = snapshot.data ?? [];
+              if (messages.isEmpty) {
+                return const _EmptyState();
+              }
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 600),
+                  child: ListView.builder(
+                    controller: _scroll,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    itemCount: messages.length,
+                    itemBuilder: (_, i) => _MessageRow(
+                      msg: messages[i],
+                      prev: i > 0 ? messages[i - 1] : null,
+                      next: i + 1 < messages.length ? messages[i + 1] : null,
+                      me: Supa.currentUser!.id,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        if (_typing) const _TypingIndicator(),
+        _Composer(controller: _ctrl, onSend: _send),
+      ],
+    );
+  }
+
+  Widget _buildLargeScreenChat(BuildContext context) {
+    return Row(
+      children: [
+        const _NavSidebar(),
+        Expanded(
+          child: Column(
+            children: [
+              Expanded(
+                child: StreamBuilder<List<Message>>(
+                  stream: Supa.watchMessages(widget.conversationId),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final messages = snapshot.data ?? [];
+                    if (messages.isEmpty) {
+                      return const _EmptyState();
+                    }
+                    return Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 600),
+                        child: ListView.builder(
+                          controller: _scroll,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          itemCount: messages.length,
+                          itemBuilder: (_, i) => _MessageRow(
+                            msg: messages[i],
+                            prev: i > 0 ? messages[i - 1] : null,
+                            next: i + 1 < messages.length ? messages[i + 1] : null,
+                            me: Supa.currentUser!.id,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              if (_typing) const _TypingIndicator(),
+              _Composer(controller: _ctrl, onSend: _send),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
   @override
   Widget build(BuildContext context) {
-  return Center(
+    return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: const [
@@ -552,21 +695,21 @@ class _EmptyState extends StatelessWidget {
         ],
       ),
     );
-}
+  }
 }
 
 class _TypingIndicator extends StatelessWidget {
   const _TypingIndicator();
   @override
   Widget build(BuildContext context) {
-  return const Padding(
+    return const Padding(
       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Align(
         alignment: Alignment.centerLeft,
         child: Text('Typing…', style: TextStyle(color: _P.muted, fontSize: 12, fontStyle: FontStyle.italic)),
       ),
     );
-}
+  }
 }
 
 class _MessageRow extends StatelessWidget {
@@ -586,14 +729,14 @@ class _MessageRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-  return Column(
+    return Column(
       crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
         if (_nowDateLine) _DateLine(ts: msg.createdAt),
         _Bubble(msg: msg, groupedTop: _groupPrev, groupedBottom: _groupNext, mine: mine),
       ],
     );
-}
+  }
 }
 
 class _DateLine extends StatelessWidget {
@@ -610,7 +753,7 @@ class _DateLine extends StatelessWidget {
     } else {
       label = '${ts.day} ${_months[ts.month - 1]}';
     }
-  return Padding(
+    return Padding(
       padding: const EdgeInsets.symmetric(vertical: 14),
       child: Center(
         child: Container(
@@ -624,8 +767,9 @@ class _DateLine extends StatelessWidget {
         ),
       ),
     );
+  }
 }
-}
+
 const _months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 class _Bubble extends StatelessWidget {
@@ -643,7 +787,7 @@ class _Bubble extends StatelessWidget {
       bottomLeft: Radius.circular(mine ? (groupedBottom ? 6 : 18) : 18),
       bottomRight: Radius.circular(mine ? 18 : (groupedBottom ? 6 : 18)),
     );
-  return Padding(
+    return Padding(
       padding: EdgeInsets.only(
         top: groupedTop ? 2 : 6,
         bottom: groupedBottom ? 2 : 6,
@@ -699,7 +843,7 @@ class _Composer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-  return Padding(
+    return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       child: Container(
         decoration: BoxDecoration(
@@ -749,7 +893,7 @@ class _Composer extends StatelessWidget {
         ),
       ),
     );
-}
+  }
 }
 
 class _Avatar extends StatelessWidget {
@@ -759,7 +903,7 @@ class _Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-  return Container(
+    return Container(
       width: size,
       height: size,
       alignment: Alignment.center,
@@ -773,7 +917,7 @@ class _Avatar extends StatelessWidget {
         style: TextStyle(color: Colors.white, fontSize: size * 0.4, fontWeight: FontWeight.w600),
       ),
     );
-}
+  }
 }
 
 class _ActionBtn extends StatelessWidget {
@@ -781,6 +925,57 @@ class _ActionBtn extends StatelessWidget {
   final IconData icon;
   @override
   Widget build(BuildContext context) {
-  return IconButton(icon: Icon(icon, color: _P.muted, size: 22), onPressed: () {});
+    return IconButton(icon: Icon(icon, color: _P.muted, size: 22), onPressed: () {});
+  }
 }
+
+class _NavSidebar extends StatelessWidget {
+  const _NavSidebar();
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 250,
+      decoration: const BoxDecoration(
+        color: _P.surface,
+        border: Border(right: BorderSide(color: _P.border, width: 1)),
+      ),
+      child: Column(children: [
+        Container(
+          width: 56, height: 56, margin: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(colors: [_indigo, _indigoDeep], begin: Alignment.topLeft, end: Alignment.bottomRight),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: const Center(child: Text('V', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: Colors.white))),
+        ),
+        _NavItem(icon: Icons.forum_outlined, label: 'Chats', onTap: () => context.go('/conversations')),
+        _NavItem(icon: Icons.search, label: 'Discover', onTap: () {}),
+        _NavItem(icon: Icons.settings_outlined, label: 'Settings', onTap: () {}),
+        const Spacer(),
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(Supa.currentUser?.email ?? '', style: const TextStyle(color: _P.muted, fontSize: 12)),
+        ),
+      ]),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  const _NavItem({required this.icon, required this.label, required this.onTap});
+  final IconData icon; final String label; final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(onTap: onTap, child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(children: [
+          Icon(icon, size: 22, color: _P.muted),
+          const SizedBox(width: 12),
+          Text(label, style: TextStyle(color: _P.muted, fontSize: 15)),
+        ]),
+      ))),
+    );
+  }
 }
