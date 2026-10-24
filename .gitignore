@@ -48,3 +48,7 @@ app.*.map.json
 .widget_preview/
 .vercel
 .env*
+
+# APKs are built by CI (build-apk.yml) and published to GitHub Releases.
+# Do not commit build artifacts to the repo root.
+/app-*.apk

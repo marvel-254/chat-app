@@ -80,10 +80,10 @@
     </div>
 
     <div class="download-section">
-      <a href="https://github.com/marvel-254/chat-app/releases/tag/v25" class="download-btn">
+      <a id="download-btn" href="https://github.com/marvel-254/chat-app/releases/latest" class="download-btn">
         Download Android APK
       </a>
-      <p class="release-note" style="margin-top: 0.5rem; color: var(--text-muted); font-size: 0.85rem;">v25 • 3 APKs: arm64, armeabi-v7a, x86_64</p>
+      <p class="release-note" id="release-info" style="margin-top: 0.5rem; color: var(--text-muted); font-size: 0.85rem;">Fetching latest release…</p>
     </div>
 
     <a id="download"></a>
@@ -128,4 +128,28 @@
     </div>
   </div>
 </body>
+<script>
+  (async function() {
+    const repo = 'marvel-254/chat-app';
+    const btn = document.getElementById('download-btn');
+    const note = document.getElementById('release-info');
+    try {
+      const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`);
+      if (!res.ok) throw new Error('release fetch failed');
+      const release = await res.json();
+      // Find the arm64 APK asset (most common device) — fall back to first asset
+      const assets = release.assets || [];
+      const arm64 = assets.find(a => a.name.includes('arm64-v8a')) || assets[0];
+      if (arm64) {
+        btn.href = arm64.browser_download_url;
+        btn.textContent = 'Download for Android (' + arm64.name + ')';
+      }
+      note.textContent = release.tag_name + ' • ' + (assets.length || 0) + ' APKs: arm64, armeabi-v7a, x86_64';
+    } catch (e) {
+      // Fall back to releases page if API fails
+      btn.href = 'https://github.com/' + repo + '/releases/latest';
+      note.textContent = 'Latest release • 3 APKs: arm64, armeabi-v7a, x86_64';
+    }
+  })();
+</script>
 </html>
