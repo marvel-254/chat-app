@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NYX Design System — Tokens, Components & Guidelines</title>
+  <meta name="description" content="Design tokens, reusable components, and accessibility guidelines for NYX, the dark-first Android messaging application.">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/components.css">
+  <style>
+    /* Design System Showcase Layout Styles */
+    body {
+      background-color: var(--nyx-color-bg);
+      color: var(--nyx-color-text);
+      font-family: var(--nyx-font-family);
+      margin: 0;
+      padding: 0;
+      line-height: var(--nyx-line-height-normal);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .ds-nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background-color: var(--nyx-color-surface-overlay);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--nyx-color-border);
+      padding: var(--nyx-space-3) var(--nyx-space-6);
+    }
+
+    .ds-nav-inner {
+      max-width: var(--nyx-container-max-width);
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--nyx-space-4);
+    }
+
+    .ds-brand {
+      display: flex;
+      align-items: center;
+      gap: var(--nyx-space-3);
+      text-decoration: none;
+      color: var(--nyx-color-text);
+    }
+
+    .ds-brand svg {
+      width: 28px;
+      height: 28px;
+      border-radius: var(--nyx-radius-sm);
+    }
+
+    .ds-brand span {
+      font-weight: var(--nyx-font-weight-bold);
+      font-size: var(--nyx-font-size-lg);
+      letter-spacing: var(--nyx-letter-spacing-wide);
+    }
+
+    .ds-container {
+      max-width: var(--nyx-container-max-width);
+      margin: 0 auto;
+      padding: var(--nyx-space-10) var(--nyx-space-6);
+    }
+
+    .ds-header {
+      margin-bottom: var(--nyx-space-12);
+      border-bottom: 1px solid var(--nyx-color-border-subtle);
+      padding-bottom: var(--nyx-space-8);
+    }
+
+    .ds-section {
+      margin-bottom: var(--nyx-space-16);
+    }
+
+    .ds-section-title {
+      display: flex;
+      align-items: center;
+      gap: var(--nyx-space-3);
+      margin-bottom: var(--nyx-space-2);
+    }
+
+    .ds-section-desc {
+      color: var(--nyx-color-text-muted);
+      font-size: var(--nyx-font-size-base);
+      max-width: 720px;
+      margin-bottom: var(--nyx-space-8);
+    }
+
+    /* Grid Layouts */
+    .ds-grid-swatches {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: var(--nyx-space-4);
+    }
+
+    .ds-swatch {
+      background-color: var(--nyx-color-surface);
+      border: 1px solid var(--nyx-color-border);
+      border-radius: var(--nyx-radius-md);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .ds-swatch-color {
+      height: 90px;
+      width: 100%;
+      border-bottom: 1px solid var(--nyx-color-border-subtle);
+    }
+
+    .ds-swatch-details {
+      padding: var(--nyx-space-3);
+    }
+
+    .ds-swatch-name {
+      font-weight: var(--nyx-font-weight-semibold);
+      font-size: var(--nyx-font-size-sm);
+      color: var(--nyx-color-text);
+      margin-bottom: 2px;
+    }
+
+    .ds-swatch-token {
+      font-family: var(--nyx-font-family-mono);
+      font-size: var(--nyx-font-size-xs);
+      color: var(--nyx-color-accent-secondary);
+      margin-bottom: 4px;
+    }
+
+    .ds-swatch-val {
+      font-family: var(--nyx-font-family-mono);
+      font-size: var(--nyx-font-size-xs);
+      color: var(--nyx-color-text-subtle);
+    }
+
+    /* Component Specimen Card */
+    .ds-specimen {
+      background-color: var(--nyx-color-surface-subtle);
+      border: 1px solid var(--nyx-color-border);
+      border-radius: var(--nyx-radius-lg);
+      margin-bottom: var(--nyx-space-8);
+      overflow: hidden;
+    }
+
+    .ds-specimen-header {
+      padding: var(--nyx-space-4) var(--nyx-space-6);
+      background-color: var(--nyx-color-surface);
+      border-bottom: 1px solid var(--nyx-color-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: var(--nyx-space-2);
+    }
+
+    .ds-specimen-title {
+      font-size: var(--nyx-font-size-base);
+      font-weight: var(--nyx-font-weight-semibold);
+      color: var(--nyx-color-text);
+      margin: 0;
+    }
+
+    .ds-specimen-body {
+      padding: var(--nyx-space-8) var(--nyx-space-6);
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--nyx-space-4);
+      align-items: center;
+    }
+
+    .ds-specimen-code {
+      padding: var(--nyx-space-4) var(--nyx-space-6);
+      background-color: #050608;
+      border-top: 1px solid var(--nyx-color-border-subtle);
+      font-family: var(--nyx-font-family-mono);
+      font-size: var(--nyx-font-size-xs);
+      color: var(--nyx-color-text-muted);
+      overflow-x: auto;
+      line-height: 1.6;
+    }
+
+    /* Spacing demo */
+    .ds-space-row {
+      display: flex;
+      align-items: center;
+      gap: var(--nyx-space-4);
+      margin-bottom: var(--nyx-space-3);
+    }
+
+    .ds-space-label {
+      width: 140px;
+      font-family: var(--nyx-font-family-mono);
+      font-size: var(--nyx-font-size-xs);
+      color: var(--nyx-color-accent-secondary);
+      flex-shrink: 0;
+    }
+
+    .ds-space-bar {
+      height: 18px;
+      background: var(--nyx-color-accent);
+      border-radius: var(--nyx-radius-xs);
+      min-width: 4px;
+    }
+
+    .ds-space-size {
+      font-family: var(--nyx-font-family-mono);
+      font-size: var(--nyx-font-size-xs);
+      color: var(--nyx-color-text-subtle);
+    }
+
+    /* Radii demo */
+    .ds-radii-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: var(--nyx-space-4);
+    }
+
+    .ds-radii-box {
+      background-color: var(--nyx-color-surface);
+      border: 2px solid var(--nyx-color-accent);
+      height: 100px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: var(--nyx-space-2);
+    }
+
+    .ds-guidelines-box {
+      background-color: var(--nyx-color-surface);
+      border: 1px solid var(--nyx-color-border);
+      border-radius: var(--nyx-radius-lg);
+      padding: var(--nyx-space-6);
+      margin-top: var(--nyx-space-6);
+    }
+
+    .ds-guidelines-box h4 {
+      color: var(--nyx-color-accent-secondary);
+      margin-top: 0;
+      margin-bottom: var(--nyx-space-3);
+    }
+
+    .ds-guidelines-box ul {
+      margin: 0;
+      padding-left: var(--nyx-space-5);
+      color: var(--nyx-color-text-muted);
+      font-size: var(--nyx-font-size-sm);
+    }
+
+    .ds-guidelines-box li {
+      margin-bottom: var(--nyx-space-2);
+    }
+
+    .phone-preview-frame {
+      max-width: 340px;
+      width: 100%;
+      background-color: var(--nyx-color-bg);
+      border: 2px solid var(--nyx-color-border);
+      border-radius: 28px;
+      padding: var(--nyx-space-4);
+      display: flex;
+      flex-direction: column;
+      gap: var(--nyx-space-3);
+      box-shadow: var(--nyx-shadow-lg);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation -->
+  <header class="ds-nav">
+    <div class="ds-nav-inner">
+      <a href="index.html" class="ds-brand" aria-label="NYX Home">
+        <img src="assets/branding/nyx/concept-a/logo.svg" alt="NYX Logo" width="28" height="28" style="border-radius: var(--nyx-radius-sm);">
+        <span>NYX</span>
+        <span class="nyx-badge nyx-badge--accent">Design System v1.0</span>
+      </a>
+      <div style="display: flex; gap: var(--nyx-space-3); align-items: center;">
+        <a href="index.html" class="nyx-btn nyx-btn--secondary nyx-btn--sm">
+          <svg class="nyx-icon nyx-icon--sm" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          Back to Live Site
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="ds-container">
+    
+    <!-- Header -->
+    <header class="ds-header">
+      <span class="nyx-label-text">Official Design Language</span>
+      <h1 class="nyx-h1" style="margin-top: var(--nyx-space-2); margin-bottom: var(--nyx-space-3);">NYX Design System</h1>
+      <p class="nyx-lead">
+        The centralized token architecture, reusable component library, and visual guidelines powering the NYX dark-first messaging ecosystem.
+      </p>
+    </header>
+
+    <!-- SECTION 0: Brand Identity & Logos -->
+    <section class="ds-section" id="branding">
+      <div class="ds-section-title">
+        <h2 class="nyx-h2">1. Brand Identity &amp; Generated Logo Assets</h2>
+      </div>
+      <p class="ds-section-desc">
+        Generated brand marks, wordmarks, and visual identity concepts for NYX located in the project assets directory.
+      </p>
+
+      <div class="ds-specimen">
+        <div class="ds-specimen-header">
+          <span class="ds-specimen-title">Logo Concepts</span>
+          <span class="nyx-caption">assets/branding/nyx/</span>
+        </div>
+        <div class="ds-specimen-body" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--nyx-space-6); width: 100%;">
+          
+          <!-- Concept A (Primary) -->
+          <div style="background: var(--nyx-color-surface); border: 1px solid var(--nyx-color-border); border-radius: var(--nyx-radius-lg); padding: var(--nyx-space-5); text-align: center;">
+            <img src="assets/branding/nyx/concept-a/logo.svg" alt="Concept A - Bubble N" width="96" height="96" style="margin-bottom: var(--nyx-space-3); border-radius: 18px; box-shadow: var(--nyx-shadow-glow-sm);">
+            <div style="font-weight: 600; font-size: 14px; color: var(--nyx-color-text);">Concept A — Bubble N</div>
+            <div class="nyx-caption" style="margin-top: 4px;">Primary App Icon &amp; Favicon</div>
+            <span class="nyx-badge nyx-badge--accent" style="margin-top: 8px;">Selected Active Brand</span>
+          </div>
+
+          <!-- Concept B -->
+          <div style="background: var(--nyx-color-surface); border: 1px solid var(--nyx-color-border); border-radius: var(--nyx-radius-lg); padding: var(--nyx-space-5); text-align: center;">
+            <img src="assets/branding/nyx/concept-b/logo.svg" alt="Concept B - Night Moon" width="96" height="96" style="margin-bottom: var(--nyx-space-3); border-radius: 18px;">
+            <div style="font-weight: 600; font-size: 14px; color: var(--nyx-color-text);">Concept B — Night Moon</div>
+            <div class="nyx-caption" style="margin-top: 4px;">Nocturnal Messenger Concept</div>
+          </div>
+
+          <!-- Concept C -->
+          <div style="background: var(--nyx-color-surface); border: 1px solid var(--nyx-color-border); border-radius: var(--nyx-radius-lg); padding: var(--nyx-space-5); text-align: center;">
+            <img src="assets/branding/nyx/concept-c/logo.svg" alt="Concept C - Monogram" width="96" height="96" style="margin-bottom: var(--nyx-space-3); border-radius: 18px;">
+            <div style="font-weight: 600; font-size: 14px; color: var(--nyx-color-text);">Concept C — Monogram</div>
+            <div class="nyx-caption" style="margin-top: 4px;">Geometric Minimalist Mark</div>
+          </div>
+
+        </div>
+
+        <div style="padding: var(--nyx-space-6); background-color: var(--nyx-color-surface); border-top: 1px solid var(--nyx-color-border-subtle);">
+          <div class="nyx-label-text" style="margin-bottom: var(--nyx-space-2);">Full Brand Wordmark</div>
+          <div style="background-color: #08090D; border: 1px solid var(--nyx-color-border); border-radius: var(--nyx-radius-md); padding: var(--nyx-space-4); display: flex; justify-content: center;">
+            <img src="assets/branding/nyx/wordmark/wordmark.svg" alt="NYX Official Wordmark" style="max-width: 480px; width: 100%; height: auto;">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: Color Tokens -->
+    <section class="ds-section" id="colors">
+      <div class="ds-section-title">
+        <h2 class="nyx-h2">2. Color Palette Tokens</h2>
+      </div>
+      <p class="ds-section-desc">
+        A dark-first, cinematic palette optimized for OLED displays, low eye strain, and clear visual hierarchy.
+      </p>
+
+      <div class="ds-grid-swatches">
+        <!-- Background -->
+        <div class="ds-swatch">
+          <div class="ds-swatch-color" style="background-color: #08090D;"></div>
+          <div class="ds-swatch-details">
+            <div class="ds-swatch-name">Background</div>
+            <div class="ds-swatch-token">--nyx-color-bg</div>
+            <div class="ds-swatch-val">#08090D</div>
+          </div>
+        </div>
+
+        <!-- Elevated Surface -->
+        <div class="ds-swatch">
+          <div class="ds-swatch-color" style="background-color: #151622;"></div>
+          <div class="ds-swatch-details">
+            <div class="ds-swatch-name">Surface</div>
+            <div class="ds-swatch-token">--nyx-color-surface</div>
+            <div class="ds-swatch-val">#151622</div>
+          </div>
+        </div>
+
+        <!-- Elevated Hover Surface -->
+        <div class="ds-swatch">
+          <div class="ds-swatch-color" style="background-color: #1C1E2E;"></div>
+          <div class="ds-swatch-details">
+            <div class="ds-swatch-name">Surface Elevated</div>
+            <div class="ds-swatch-token">--nyx-color-surface-elevated</div>
+            <div class="ds-swatch-val">#1C1E2E</div>
+          </div>
+        </div>
+
+        <!-- Primary Accent -->
+        <div class="ds-swatch">
+          <div class="ds-swatch-color" style="background-color: #7764FF;"></div>
+          <div class="ds-swatch-details">
+            <div class="ds-swatch-name">Primary Accent</div>
+            <div class="ds-swatch-token">--nyx-color-accent</div>
+            <div class="ds-swatch-val">#7764FF</div>
+          </div>
+        </div>
+
+        <!-- Secondary Accent -->
+        <div class="ds-swatch">
+          <div class="ds-swatch-color" style="background-color: #B6A9FF;"></div>
+          <div class="ds-swatch-details">
+            <div class="ds-swatch-name">Secondary Accent</div>
+            <div class="ds-swatch-token">--nyx-color-accent-secondary</div>
+            <div class="ds-swatch-val">#B6A9FF</div>
+          </div>
+        </div>
+
+        <!-- Primary Text -->
+        <div class="ds-swatch">
+          <div class="ds-swatch-color" style="background-color: #F2F1F8;"></div>
+          <div class="ds-swatch-details">
+            <div class="ds-swatch-name">Primary Text</div>
+            <div class="ds-swatch-token">--nyx-color-text</div>
+            <div class="ds-swatch-val">#F2F1F8</div>
+          </div>
+        </div>
+
+        <!-- Muted Text -->
+        <div class="ds-swatch">
+          <div class="ds-swatch-color" style="background-color: #A9A6BC;"></div>
+          <div class="ds-swatch-details">
+            <div class="ds-swatch-name">Muted Text</div>
+            <div class="ds-swatch-token">--nyx-color-text-muted</div>
+            <div class="ds-swatch-val">#A9A6BC</div>
+          </div>
+        </div>
+
+        <!-- Online / Success -->
+        <div class="ds-swatch">
+          <div class="ds-swatch-color" style="background-color: #67E8C0;"></div>
+          <div class="ds-swatch-details">
+            <div class="ds-swatch-name">Status Success / Online</div>
+            <div class="ds-swatch-token">--nyx-color-status-success</div>
+            <div class="ds-swatch-val">#67E8C0</div>
+          </div>
+        </div>
+
+        <!-- Border -->
+        <div class="ds-swatch">
+          <div class="ds-swatch-color" style="background-color: #26273B;"></div>
+          <div class="ds-swatch-details">
+            <div class="ds-swatch-name">Border</div>
+            <div class="ds-swatch-token">--nyx-color-border</div>
+            <div class="ds-swatch-val">#26273B</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: Typography Scale -->
+    <section class="ds-section" id="typography">
+      <div class="ds-section-title">
+        <h2 class="nyx-h2">2. Typography Scale</h2>
+      </div>
+      <p class="ds-section-desc">
+        Modern geometric sans-serif type hierarchy utilizing <code style="color: var(--nyx-color-accent-secondary);">Inter</code> with fallback to native system fonts.
+      </p>
+
+      <div class="ds-specimen">
+        <div class="ds-specimen-header">
+          <span class="ds-specimen-title">Type Hierarchy Preview</span>
+        </div>
+        <div class="ds-specimen-body" style="flex-direction: column; align-items: flex-start; gap: var(--nyx-space-6);">
+          <div>
+            <span class="nyx-label-text">.nyx-h1 (56px / 44px)</span>
+            <div class="nyx-h1">Your conversations, elevated.</div>
+          </div>
+          <div>
+            <span class="nyx-label-text">.nyx-h2 (32px / 24px)</span>
+            <div class="nyx-h2">Smart Message Grouping</div>
+          </div>
+          <div>
+            <span class="nyx-label-text">.nyx-h3 (20px)</span>
+            <div class="nyx-h3">Real-Time Sync & Delivery Receipts</div>
+          </div>
+          <div>
+            <span class="nyx-label-text">.nyx-lead (18px)</span>
+            <div class="nyx-lead">A calmer, distraction-free messaging space designed for night owls and daylight thinkers.</div>
+          </div>
+          <div>
+            <span class="nyx-label-text">.nyx-body (16px)</span>
+            <div class="nyx-body">Consecutive thoughts merge seamlessly, keeping chats clean without visual clutter or repetitive avatars.</div>
+          </div>
+          <div>
+            <span class="nyx-label-text">.nyx-caption (12px)</span>
+            <div class="nyx-caption">Verified via Row-Level Security • Open Source under MIT License</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 3: Spacing & Radii -->
+    <section class="ds-section" id="spacing-radii">
+      <div class="ds-section-title">
+        <h2 class="nyx-h2">3. Spacing Scale & Corner Radii</h2>
+      </div>
+      <p class="ds-section-desc">
+        Mathematically consistent 4px-based spacing system and thoughtful corner radii.
+      </p>
+
+      <div class="ds-specimen">
+        <div class="ds-specimen-header">
+          <span class="ds-specimen-title">Spacing Scale</span>
+        </div>
+        <div class="ds-specimen-body" style="flex-direction: column; align-items: flex-start;">
+          <div class="ds-space-row">
+            <span class="ds-space-label">--nyx-space-1</span>
+            <div class="ds-space-bar" style="width: 4px;"></div>
+            <span class="ds-space-size">4px</span>
+          </div>
+          <div class="ds-space-row">
+            <span class="ds-space-label">--nyx-space-2</span>
+            <div class="ds-space-bar" style="width: 8px;"></div>
+            <span class="ds-space-size">8px</span>
+          </div>
+          <div class="ds-space-row">
+            <span class="ds-space-label">--nyx-space-3</span>
+            <div class="ds-space-bar" style="width: 12px;"></div>
+            <span class="ds-space-size">12px</span>
+          </div>
+          <div class="ds-space-row">
+            <span class="ds-space-label">--nyx-space-4</span>
+            <div class="ds-space-bar" style="width: 16px;"></div>
+            <span class="ds-space-size">16px</span>
+          </div>
+          <div class="ds-space-row">
+            <span class="ds-space-label">--nyx-space-6</span>
+            <div class="ds-space-bar" style="width: 24px;"></div>
+            <span class="ds-space-size">24px</span>
+          </div>
+          <div class="ds-space-row">
+            <span class="ds-space-label">--nyx-space-8</span>
+            <div class="ds-space-bar" style="width: 32px;"></div>
+            <span class="ds-space-size">32px</span>
+          </div>
+          <div class="ds-space-row">
+            <span class="ds-space-label">--nyx-space-12</span>
+            <div class="ds-space-bar" style="width: 48px;"></div>
+            <span class="ds-space-size">48px</span>
+          </div>
+          <div class="ds-space-row">
+            <span class="ds-space-label">--nyx-space-16</span>
+            <div class="ds-space-bar" style="width: 64px;"></div>
+            <span class="ds-space-size">64px</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="ds-specimen">
+        <div class="ds-specimen-header">
+          <span class="ds-specimen-title">Radii Scale</span>
+        </div>
+        <div class="ds-specimen-body">
+          <div class="ds-radii-grid" style="width: 100%;">
+            <div class="ds-radii-box" style="border-radius: var(--nyx-radius-sm);">
+              <span class="nyx-caption">--nyx-radius-sm</span>
+              <span class="nyx-body" style="font-weight: 600;">8px</span>
+            </div>
+            <div class="ds-radii-box" style="border-radius: var(--nyx-radius-md);">
+              <span class="nyx-caption">--nyx-radius-md</span>
+              <span class="nyx-body" style="font-weight: 600;">12px</span>
+            </div>
+            <div class="ds-radii-box" style="border-radius: var(--nyx-radius-lg);">
+              <span class="nyx-caption">--nyx-radius-lg</span>
+              <span class="nyx-body" style="font-weight: 600;">18px</span>
+            </div>
+            <div class="ds-radii-box" style="border-radius: var(--nyx-radius-xl);">
+              <span class="nyx-caption">--nyx-radius-xl</span>
+              <span class="nyx-body" style="font-weight: 600;">28px</span>
+            </div>
+            <div class="ds-radii-box" style="border-radius: var(--nyx-radius-full);">
+              <span class="nyx-caption">--nyx-radius-full</span>
+              <span class="nyx-body" style="font-weight: 600;">9999px</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 4: Component Inventory -->
+    <section class="ds-section" id="components">
+      <div class="ds-section-title">
+        <h2 class="nyx-h2">4. Component Inventory & Interactive States</h2>
+      </div>
+      <p class="ds-section-desc">
+        Battle-tested components consuming shared tokens with default, hover, active, focus, and disabled states.
+      </p>
+
+      <!-- Buttons -->
+      <div class="ds-specimen">
+        <div class="ds-specimen-header">
+          <span class="ds-specimen-title">Buttons (.nyx-btn)</span>
+          <span class="nyx-caption">Variants: Primary, Secondary, Outline, Text</span>
+        </div>
+        <div class="ds-specimen-body">
+          <button type="button" class="nyx-btn nyx-btn--primary">Primary Button</button>
+          <button type="button" class="nyx-btn nyx-btn--secondary">Secondary Button</button>
+          <button type="button" class="nyx-btn nyx-btn--outline">Outline Button</button>
+          <button type="button" class="nyx-btn nyx-btn--text">Text Button</button>
+          <button type="button" class="nyx-btn nyx-btn--primary nyx-btn--sm">Small Button</button>
+          <button type="button" class="nyx-btn nyx-btn--primary nyx-btn--lg">Large CTA</button>
+          <button type="button" class="nyx-btn nyx-btn--primary" disabled>Disabled State</button>
+          <button type="button" class="nyx-btn nyx-btn--primary nyx-btn--loading">Loading State</button>
+        </div>
+        <div class="ds-specimen-code">
+&lt;button class="nyx-btn nyx-btn--primary"&gt;Get NYX for Android&lt;/button&gt;
+&lt;button class="nyx-btn nyx-btn--secondary"&gt;Explore Features&lt;/button&gt;
+&lt;button class="nyx-btn nyx-btn--outline nyx-btn--sm"&gt;Read Docs&lt;/button&gt;
+        </div>
+      </div>
+
+      <!-- Badges and Status Indicators -->
+      <div class="ds-specimen">
+        <div class="ds-specimen-header">
+          <span class="ds-specimen-title">Badges & Status Indicators</span>
+        </div>
+        <div class="ds-specimen-body">
+          <span class="nyx-badge">Default Badge</span>
+          <span class="nyx-badge nyx-badge--accent">
+            <span class="nyx-status-indicator" style="background-color: var(--nyx-color-accent);"></span>
+            Accent Pill
+          </span>
+          <span class="nyx-badge nyx-badge--success">
+            <span class="nyx-status-indicator nyx-status-indicator--online"></span>
+            Active Now
+          </span>
+          <span class="nyx-badge">
+            <span class="nyx-status-indicator"></span>
+            Offline
+          </span>
+        </div>
+        <div class="ds-specimen-code">
+&lt;span class="nyx-badge nyx-badge--success"&gt;
+  &lt;span class="nyx-status-indicator nyx-status-indicator--online"&gt;&lt;/span&gt;
+  Active Now
+&lt;/span&gt;
+        </div>
+      </div>
+
+      <!-- Form Controls -->
+      <div class="ds-specimen">
+        <div class="ds-specimen-header">
+          <span class="ds-specimen-title">Form Controls (.nyx-input)</span>
+        </div>
+        <div class="ds-specimen-body" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); width: 100%;">
+          <div class="nyx-input-group">
+            <label class="nyx-label" for="demo-input-normal">Standard Text Input</label>
+            <input type="text" id="demo-input-normal" class="nyx-input" placeholder="Type a message…">
+          </div>
+          <div class="nyx-input-group">
+            <label class="nyx-label" for="demo-input-err">Error State Input</label>
+            <input type="text" id="demo-input-err" class="nyx-input nyx-input--error" value="invalid_username!">
+            <span class="nyx-input-error-msg">Username must contain only letters and numbers.</span>
+          </div>
+          <div class="nyx-input-group">
+            <label class="nyx-label" for="demo-input-dis">Disabled Input</label>
+            <input type="text" id="demo-input-dis" class="nyx-input" value="Disabled value" disabled>
+          </div>
+        </div>
+        <div class="ds-specimen-code">
+&lt;div class="nyx-input-group"&gt;
+  &lt;label class="nyx-label" for="msg"&gt;Message&lt;/label&gt;
+  &lt;input type="text" id="msg" class="nyx-input" placeholder="Type a message…"&gt;
+&lt;/div&gt;
+        </div>
+      </div>
+
+      <!-- Real Chat UI Components -->
+      <div class="ds-specimen">
+        <div class="ds-specimen-header">
+          <span class="ds-specimen-title">Actual Product Chat Components (Verified from Flutter main.dart)</span>
+        </div>
+        <div class="ds-specimen-body" style="justify-content: center; width: 100%;">
+          
+          <div class="phone-preview-frame">
+            <!-- Header snippet -->
+            <div style="display: flex; align-items: center; gap: var(--nyx-space-3); border-bottom: 1px solid var(--nyx-color-border-subtle); padding-bottom: var(--nyx-space-2);">
+              <div style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #7764FF, #3B3E8F); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; color: #fff;">E</div>
+              <div>
+                <div style="font-weight: 600; font-size: 13px; color: var(--nyx-color-text);">Elena Rostova</div>
+                <div style="font-size: 11px; color: var(--nyx-color-status-success); display: flex; align-items: center; gap: 4px;">
+                  <span class="nyx-status-indicator nyx-status-indicator--online" style="width: 6px; height: 6px;"></span>
+                  Active now
+                </div>
+              </div>
+            </div>
+
+            <!-- Inbound single -->
+            <div class="nyx-chat-bubble nyx-chat-bubble--in">
+              <span>Have you tested the updated build yet?</span>
+              <div class="nyx-chat-meta nyx-chat-meta--in">11:15 AM</div>
+            </div>
+
+            <!-- Outbound Grouped Top -->
+            <div class="nyx-chat-bubble nyx-chat-bubble--out nyx-chat-bubble--grouped-bottom">
+              <span>Just flashed it onto the test device.</span>
+            </div>
+            <!-- Outbound Grouped Bottom -->
+            <div class="nyx-chat-bubble nyx-chat-bubble--out nyx-chat-bubble--grouped-top">
+              <span>The smart message grouping and read receipts feel silky smooth.</span>
+              <div class="nyx-chat-meta nyx-chat-meta--out">
+                <span>11:16 AM</span>
+                <span class="nyx-receipt-check">
+                  <svg style="width: 13px; height: 13px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                </span>
+              </div>
+            </div>
+
+            <!-- Typing indicator -->
+            <div class="nyx-typing-dots">
+              <span class="nyx-typing-dot"></span>
+              <span class="nyx-typing-dot"></span>
+              <span class="nyx-typing-dot"></span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 5: Guidelines & Accessibility -->
+    <section class="ds-section" id="guidelines">
+      <div class="ds-section-title">
+        <h2 class="nyx-h2">5. Accessibility & Implementation Guidelines</h2>
+      </div>
+      
+      <div class="ds-guidelines-box">
+        <h4>WCAG 2.2 Level AA Requirements</h4>
+        <ul>
+          <li><strong>Contrast Ratios:</strong> Normal text must meet at least 4.5:1 against surfaces; large text (18px+ or 14px bold) must meet 3:1. Our primary text (<code style="color:var(--nyx-color-text);">#F2F1F8</code>) on <code style="color:var(--nyx-color-bg);">#08090D</code> achieves a contrast ratio greater than 16:1.</li>
+          <li><strong>Keyboard Navigation:</strong> Every interactive element (buttons, links, form inputs) must have a visible <code style="color:var(--nyx-color-accent-secondary);">:focus-visible</code> ring with high-contrast outline offset.</li>
+          <li><strong>Reduced Motion:</strong> All CSS keyframes, transitions, and hover transforms must gracefully disable when <code style="color:var(--nyx-color-accent-secondary);">prefers-reduced-motion: reduce</code> is signaled by the operating system.</li>
+          <li><strong>Semantic HTML:</strong> Use native <code style="color:var(--nyx-color-accent-secondary);">&lt;button&gt;</code>, <code style="color:var(--nyx-color-accent-secondary);">&lt;a&gt;</code>, <code style="color:var(--nyx-color-accent-secondary);">&lt;nav&gt;</code>, and heading tags (<code style="color:var(--nyx-color-accent-secondary);">&lt;h1&gt;</code>–<code style="color:var(--nyx-color-accent-secondary);">&lt;h3&gt;</code>) rather than generic divs.</li>
+        </ul>
+      </div>
+
+      <div class="ds-guidelines-box">
+        <h4>Adding New Variants</h4>
+        <ul>
+          <li>Always define new colors in <code style="color:var(--nyx-color-accent-secondary);">css/tokens.css</code> under the appropriate semantic category (<code style="color:var(--nyx-color-accent-secondary);">--nyx-color-*</code>).</li>
+          <li>Consume tokens in <code style="color:var(--nyx-color-accent-secondary);">css/components.css</code> using BEM class conventions (<code style="color:var(--nyx-color-accent-secondary);">.nyx-block__element--modifier</code>).</li>
+          <li>Never hardcode hex values directly into component declarations.</li>
+        </ul>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer style="border-top: 1px solid var(--nyx-color-border); padding: var(--nyx-space-8) var(--nyx-space-6); text-align: center; color: var(--nyx-color-text-muted); font-size: var(--nyx-font-size-sm);">
+    <p>© 2026 NYX. Open Source under MIT License.</p>
+    <p style="margin-top: var(--nyx-space-2);">
+      <a href="index.html" class="nyx-link">Back to NYX Landing Page</a> • 
+      <a href="https://github.com/marvel-254/chat-app" class="nyx-link" target="_blank" rel="noopener">GitHub Repository</a>
+    </p>
+  </footer>
+
+</body>
+</html>

@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 320" width="100%" height="100%" fill="none">
+  <defs>
+    <linearGradient id="bubbleOut" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8A79FF" />
+      <stop offset="100%" stop-color="#6752EE" />
+    </linearGradient>
+    <radialGradient id="groupGlow" cx="230" cy="160" r="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#7764FF" stop-opacity="0.14" />
+      <stop offset="100%" stop-color="#7764FF" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <rect width="460" height="320" rx="20" fill="#11121C" stroke="#26273B" stroke-width="1.5" />
+  <circle cx="230" cy="160" r="140" fill="url(#groupGlow)" />
+
+  <!-- Background decorative grid marks -->
+  <circle cx="40" cy="40" r="2" fill="#26273B" />
+  <circle cx="420" cy="40" r="2" fill="#26273B" />
+  <circle cx="40" cy="280" r="2" fill="#26273B" />
+  <circle cx="420" cy="280" r="2" fill="#26273B" />
+
+  <!-- Inbound Message Cluster (Left) -->
+  <g transform="translate(36, 46)">
+    <!-- Avatar -->
+    <circle cx="16" cy="16" r="16" fill="url(#bubbleOut)" />
+    <text x="16" y="21" font-family="'Inter', system-ui, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">E</text>
+    <circle cx="28" cy="28" r="4" fill="#67E8C0" stroke="#11121C" stroke-width="1.5" />
+
+    <!-- Inbound Bubble 1 (Top) -->
+    <rect x="44" y="0" width="220" height="38" rx="6" style="border-top-left-radius: 18px; border-top-right-radius: 18px; border-bottom-right-radius: 18px; border-bottom-left-radius: 6px;" fill="#151622" stroke="#26273B" stroke-width="1" />
+    <text x="58" y="24" font-family="'Inter', system-ui, sans-serif" font-size="12.5" fill="#F2F1F8">Did you update to the new build?</text>
+
+    <!-- Inbound Bubble 2 (Bottom - Grouped!) -->
+    <rect x="44" y="42" width="260" height="38" rx="6" style="border-top-left-radius: 6px; border-top-right-radius: 18px; border-bottom-right-radius: 18px; border-bottom-left-radius: 18px;" fill="#151622" stroke="#26273B" stroke-width="1" />
+    <text x="58" y="66" font-family="'Inter', system-ui, sans-serif" font-size="12.5" fill="#F2F1F8">The typography feels so much calmer.</text>
+    <text x="282" y="72" font-family="'Inter', system-ui, sans-serif" font-size="9" fill="#6D6A82">10:42</text>
+  </g>
+
+  <!-- Outbound Message Cluster (Right - Grouped!) -->
+  <g transform="translate(140, 158)">
+    <!-- Outbound Bubble 1 (Top) -->
+    <rect x="20" y="0" width="260" height="38" rx="6" style="border-top-left-radius: 18px; border-top-right-radius: 18px; border-bottom-left-radius: 18px; border-bottom-right-radius: 6px;" fill="url(#bubbleOut)" />
+    <text x="36" y="24" font-family="'Inter', system-ui, sans-serif" font-size="12.5" fill="#FFFFFF">Notice how consecutive messages merge?</text>
+
+    <!-- Outbound Bubble 2 (Bottom) -->
+    <rect x="60" y="42" width="220" height="38" rx="6" style="border-top-left-radius: 18px; border-top-right-radius: 6px; border-bottom-left-radius: 18px; border-bottom-right-radius: 18px;" fill="url(#bubbleOut)" />
+    <text x="76" y="66" font-family="'Inter', system-ui, sans-serif" font-size="12.5" fill="#FFFFFF">Zero clutter, pure reading flow.</text>
+    
+    <!-- Read Receipt: Double Checkmarks -->
+    <path d="M 246 64 L 249 67 L 255 60" fill="none" stroke="#67E8C0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M 251 64 L 254 67 L 260 60" fill="none" stroke="#67E8C0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+
+  <!-- Adaptive corner annotation pill -->
+  <g transform="translate(48, 260)">
+    <rect width="180" height="26" rx="13" fill="#151622" stroke="#26273B" stroke-width="1" />
+    <circle cx="14" cy="13" r="4" fill="#7764FF" />
+    <text x="26" y="17" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="600" fill="#B6A9FF">Adaptive Corner Radius</text>
+  </g>
+</svg>

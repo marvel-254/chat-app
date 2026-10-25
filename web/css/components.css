@@ -1,0 +1,556 @@
+/**
+ * NYX Component Library
+ * 
+ * Reusable UI components powered by NYX design tokens.
+ */
+
+/* ==========================================================================
+   Typography Styles
+   ========================================================================== */
+.nyx-h1 {
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-4xl);
+  font-weight: var(--nyx-font-weight-extrabold);
+  line-height: var(--nyx-line-height-tight);
+  letter-spacing: var(--nyx-letter-spacing-tight);
+  color: var(--nyx-color-text);
+  margin: 0;
+}
+
+@media (min-width: 768px) {
+  .nyx-h1 {
+    font-size: var(--nyx-font-size-5xl);
+  }
+}
+
+.nyx-h2 {
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-2xl);
+  font-weight: var(--nyx-font-weight-bold);
+  line-height: var(--nyx-line-height-snug);
+  letter-spacing: var(--nyx-letter-spacing-tight);
+  color: var(--nyx-color-text);
+  margin: 0;
+}
+
+@media (min-width: 768px) {
+  .nyx-h2 {
+    font-size: var(--nyx-font-size-3xl);
+  }
+}
+
+.nyx-h3 {
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-xl);
+  font-weight: var(--nyx-font-weight-semibold);
+  line-height: var(--nyx-line-height-snug);
+  color: var(--nyx-color-text);
+  margin: 0;
+}
+
+.nyx-lead {
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-lg);
+  font-weight: var(--nyx-font-weight-regular);
+  line-height: var(--nyx-line-height-normal);
+  color: var(--nyx-color-text-muted);
+  margin: 0;
+}
+
+.nyx-body {
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-base);
+  font-weight: var(--nyx-font-weight-regular);
+  line-height: var(--nyx-line-height-normal);
+  color: var(--nyx-color-text-muted);
+  margin: 0;
+}
+
+.nyx-caption {
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-xs);
+  font-weight: var(--nyx-font-weight-regular);
+  line-height: var(--nyx-line-height-normal);
+  color: var(--nyx-color-text-subtle);
+  margin: 0;
+}
+
+.nyx-label-text {
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-xs);
+  font-weight: var(--nyx-font-weight-semibold);
+  letter-spacing: var(--nyx-letter-spacing-wider);
+  text-transform: uppercase;
+  color: var(--nyx-color-accent-secondary);
+}
+
+/* ==========================================================================
+   Buttons
+   ========================================================================== */
+.nyx-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--nyx-space-2);
+  padding: 0.75rem 1.5rem;
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-base);
+  font-weight: var(--nyx-font-weight-semibold);
+  line-height: 1.25;
+  text-decoration: none;
+  white-space: nowrap;
+  border-radius: var(--nyx-radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  user-select: none;
+  transition: all var(--nyx-transition-fast);
+  position: relative;
+  overflow: hidden;
+}
+
+.nyx-btn:focus-visible {
+  outline: 2px solid var(--nyx-color-accent);
+  outline-offset: 3px;
+}
+
+/* Button Variants */
+.nyx-btn--primary {
+  background-color: var(--nyx-color-accent);
+  color: #FFFFFF;
+  border-color: var(--nyx-color-accent);
+  box-shadow: 0 4px 16px rgba(119, 100, 255, 0.28);
+}
+
+.nyx-btn--primary:hover:not(:disabled):not(.nyx-btn--disabled) {
+  background-color: var(--nyx-color-accent-hover);
+  border-color: var(--nyx-color-accent-hover);
+  box-shadow: 0 8px 24px rgba(119, 100, 255, 0.42);
+  transform: translateY(-2px);
+}
+
+.nyx-btn--primary:active:not(:disabled):not(.nyx-btn--disabled) {
+  background-color: var(--nyx-color-accent-active);
+  transform: translateY(0);
+}
+
+.nyx-btn--secondary {
+  background-color: var(--nyx-color-surface);
+  color: var(--nyx-color-text);
+  border-color: var(--nyx-color-border);
+}
+
+.nyx-btn--secondary:hover:not(:disabled):not(.nyx-btn--disabled) {
+  background-color: var(--nyx-color-surface-elevated);
+  border-color: var(--nyx-color-border-active);
+  color: #FFFFFF;
+  transform: translateY(-2px);
+}
+
+.nyx-btn--secondary:active:not(:disabled):not(.nyx-btn--disabled) {
+  background-color: var(--nyx-color-surface);
+  transform: translateY(0);
+}
+
+.nyx-btn--outline {
+  background-color: transparent;
+  color: var(--nyx-color-accent-secondary);
+  border-color: var(--nyx-color-border);
+}
+
+.nyx-btn--outline:hover:not(:disabled):not(.nyx-btn--disabled) {
+  background-color: var(--nyx-color-accent-subtle);
+  border-color: var(--nyx-color-accent);
+  color: #FFFFFF;
+  transform: translateY(-2px);
+}
+
+.nyx-btn--text {
+  background-color: transparent;
+  color: var(--nyx-color-text-muted);
+  border-color: transparent;
+  padding-left: var(--nyx-space-2);
+  padding-right: var(--nyx-space-2);
+}
+
+.nyx-btn--text:hover:not(:disabled):not(.nyx-btn--disabled) {
+  color: var(--nyx-color-text);
+}
+
+/* Button Sizes */
+.nyx-btn--sm {
+  padding: 0.5rem 1rem;
+  font-size: var(--nyx-font-size-sm);
+  border-radius: var(--nyx-radius-sm);
+}
+
+.nyx-btn--lg {
+  padding: 0.95rem 2rem;
+  font-size: var(--nyx-font-size-lg);
+  border-radius: var(--nyx-radius-lg);
+}
+
+/* Button States */
+.nyx-btn:disabled,
+.nyx-btn--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.nyx-btn--loading {
+  color: transparent !important;
+  pointer-events: none;
+}
+
+.nyx-btn--loading::after {
+  content: "";
+  position: absolute;
+  width: 1.125rem;
+  height: 1.125rem;
+  top: 50%;
+  left: 50%;
+  margin-top: -0.5625rem;
+  margin-left: -0.5625rem;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #FFFFFF;
+  border-radius: 50%;
+  animation: nyx-spin 0.75s linear infinite;
+}
+
+@keyframes nyx-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ==========================================================================
+   Surfaces and Cards
+   ========================================================================== */
+.nyx-surface {
+  background-color: var(--nyx-color-surface);
+  border: 1px solid var(--nyx-color-border);
+  border-radius: var(--nyx-radius-lg);
+}
+
+.nyx-card {
+  background-color: var(--nyx-color-surface);
+  border: 1px solid var(--nyx-color-border);
+  border-radius: var(--nyx-radius-lg);
+  padding: var(--nyx-space-6);
+  position: relative;
+  transition: all var(--nyx-transition-base);
+}
+
+.nyx-card--interactive {
+  cursor: pointer;
+}
+
+.nyx-card--interactive:hover {
+  background-color: var(--nyx-color-surface-elevated);
+  border-color: var(--nyx-color-border-active);
+  transform: translateY(-4px);
+  box-shadow: var(--nyx-shadow-md), var(--nyx-shadow-glow-sm);
+}
+
+/* ==========================================================================
+   Badges and Status Indicators
+   ========================================================================== */
+.nyx-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nyx-space-2);
+  padding: 0.25rem 0.75rem;
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-xs);
+  font-weight: var(--nyx-font-weight-semibold);
+  letter-spacing: var(--nyx-letter-spacing-wide);
+  border-radius: var(--nyx-radius-full);
+  background-color: var(--nyx-color-surface-elevated);
+  border: 1px solid var(--nyx-color-border);
+  color: var(--nyx-color-text-muted);
+}
+
+.nyx-badge--accent {
+  background-color: var(--nyx-color-accent-subtle);
+  border-color: rgba(119, 100, 255, 0.3);
+  color: var(--nyx-color-accent-secondary);
+}
+
+.nyx-badge--success {
+  background-color: var(--nyx-color-status-success-subtle);
+  border-color: rgba(103, 232, 192, 0.3);
+  color: var(--nyx-color-status-success);
+}
+
+.nyx-status-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--nyx-color-text-subtle);
+}
+
+.nyx-status-indicator--online {
+  background-color: var(--nyx-color-status-success);
+  box-shadow: 0 0 8px rgba(103, 232, 192, 0.6);
+}
+
+/* ==========================================================================
+   Form Controls
+   ========================================================================== */
+.nyx-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nyx-space-2);
+  width: 100%;
+}
+
+.nyx-label {
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-sm);
+  font-weight: var(--nyx-font-weight-medium);
+  color: var(--nyx-color-text);
+}
+
+.nyx-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-base);
+  color: var(--nyx-color-text);
+  background-color: var(--nyx-color-surface);
+  border: 1px solid var(--nyx-color-border);
+  border-radius: var(--nyx-radius-md);
+  outline: none;
+  transition: all var(--nyx-transition-fast);
+  box-sizing: border-box;
+}
+
+.nyx-input::placeholder {
+  color: var(--nyx-color-text-subtle);
+}
+
+.nyx-input:hover:not(:disabled) {
+  border-color: var(--nyx-color-accent-secondary);
+}
+
+.nyx-input:focus {
+  border-color: var(--nyx-color-accent);
+  box-shadow: 0 0 0 3px var(--nyx-color-focus-ring);
+  background-color: var(--nyx-color-surface-elevated);
+}
+
+.nyx-input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background-color: var(--nyx-color-surface-subtle);
+}
+
+.nyx-input--error {
+  border-color: var(--nyx-color-status-danger) !important;
+}
+
+.nyx-input--error:focus {
+  box-shadow: 0 0 0 3px var(--nyx-color-status-danger-subtle) !important;
+}
+
+.nyx-input-error-msg {
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-xs);
+  color: var(--nyx-color-status-danger);
+}
+
+/* ==========================================================================
+   Links and Navigation
+   ========================================================================== */
+.nyx-link {
+  color: var(--nyx-color-accent-secondary);
+  text-decoration: none;
+  transition: color var(--nyx-transition-fast);
+}
+
+.nyx-link:hover {
+  color: var(--nyx-color-text);
+  text-decoration: underline;
+}
+
+.nyx-link:focus-visible {
+  outline: 2px solid var(--nyx-color-accent);
+  outline-offset: 2px;
+  border-radius: var(--nyx-radius-xs);
+}
+
+.nyx-nav-link {
+  color: var(--nyx-color-text-muted);
+  text-decoration: none;
+  font-size: var(--nyx-font-size-sm);
+  font-weight: var(--nyx-font-weight-medium);
+  padding: var(--nyx-space-2) var(--nyx-space-3);
+  border-radius: var(--nyx-radius-sm);
+  transition: all var(--nyx-transition-fast);
+}
+
+.nyx-nav-link:hover {
+  color: var(--nyx-color-text);
+  background-color: var(--nyx-color-surface-elevated);
+}
+
+.nyx-nav-link:focus-visible {
+  outline: 2px solid var(--nyx-color-accent);
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   Icons
+   ========================================================================== */
+.nyx-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  stroke-width: 2;
+  stroke: currentColor;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+.nyx-icon--sm {
+  width: 1rem;
+  height: 1rem;
+}
+
+.nyx-icon--lg {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+/* ==========================================================================
+   Real Product Chat UI Components (Matches Flutter main.dart)
+   ========================================================================== */
+.nyx-chat-bubble {
+  max-width: 82%;
+  padding: 0.65rem 0.95rem;
+  font-family: var(--nyx-font-family);
+  font-size: 0.9375rem;
+  line-height: 1.35;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.nyx-chat-bubble--in {
+  align-self: flex-start;
+  background-color: var(--nyx-color-surface);
+  color: var(--nyx-color-text);
+  border: 1px solid var(--nyx-color-border);
+  border-radius: 18px 18px 18px 6px;
+  margin-right: auto;
+}
+
+.nyx-chat-bubble--out {
+  align-self: flex-end;
+  background-color: var(--nyx-color-accent);
+  color: #FFFFFF;
+  border-radius: 18px 18px 6px 18px;
+  margin-left: auto;
+}
+
+/* Grouped consecutive messages */
+.nyx-chat-bubble--in.nyx-chat-bubble--grouped-top {
+  border-top-left-radius: 6px;
+  margin-top: 2px;
+}
+.nyx-chat-bubble--in.nyx-chat-bubble--grouped-bottom {
+  border-bottom-left-radius: 6px;
+  margin-bottom: 2px;
+}
+
+.nyx-chat-bubble--out.nyx-chat-bubble--grouped-top {
+  border-top-right-radius: 6px;
+  margin-top: 2px;
+}
+.nyx-chat-bubble--out.nyx-chat-bubble--grouped-bottom {
+  border-bottom-right-radius: 6px;
+  margin-bottom: 2px;
+}
+
+.nyx-chat-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 3px;
+  font-size: 0.6875rem;
+}
+
+.nyx-chat-meta--in {
+  color: var(--nyx-color-text-subtle);
+}
+
+.nyx-chat-meta--out {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.nyx-receipt-check {
+  color: var(--nyx-color-status-success);
+  display: inline-flex;
+}
+
+/* Typing Indicator Animation */
+.nyx-typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0.5rem 0.85rem;
+  background-color: var(--nyx-color-surface);
+  border: 1px solid var(--nyx-color-border);
+  border-radius: 14px;
+  width: fit-content;
+}
+
+.nyx-typing-dot {
+  width: 6px;
+  height: 6px;
+  background-color: var(--nyx-color-accent-secondary);
+  border-radius: 50%;
+  animation: nyx-typing-bounce 1.4s infinite ease-in-out both;
+}
+
+.nyx-typing-dot:nth-child(1) { animation-delay: -0.32s; }
+.nyx-typing-dot:nth-child(2) { animation-delay: -0.16s; }
+.nyx-typing-dot:nth-child(3) { animation-delay: 0s; }
+
+@keyframes nyx-typing-bounce {
+  0%, 80%, 100% {
+    transform: scale(0.65);
+    opacity: 0.4;
+  }
+  40% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
+/* ==========================================================================
+   Reduced Motion
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .nyx-btn--primary:hover,
+  .nyx-btn--secondary:hover,
+  .nyx-btn--outline:hover,
+  .nyx-card--interactive:hover {
+    transform: none !important;
+  }
+}

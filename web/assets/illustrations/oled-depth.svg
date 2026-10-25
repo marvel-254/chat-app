@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 320" width="100%" height="100%" fill="none">
+  <defs>
+    <radialGradient id="oledGlow" cx="230" cy="160" r="150" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#7764FF" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="#7764FF" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="layerGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1C1E2E" />
+      <stop offset="100%" stop-color="#11121C" />
+    </linearGradient>
+  </defs>
+
+  <rect width="460" height="320" rx="20" fill="#08090D" stroke="#26273B" stroke-width="1.5" />
+  <circle cx="230" cy="160" r="140" fill="url(#oledGlow)" />
+
+  <!-- Layer 1: Base Canvas #08090D (OLED True Black) -->
+  <g transform="translate(60, 40)">
+    <rect width="340" height="240" rx="16" fill="#0E0F17" stroke="#1D1E2C" stroke-width="1.5" />
+    
+    <!-- Layer 2: Elevated Surface #151622 -->
+    <rect x="25" y="25" width="290" height="190" rx="14" fill="#151622" stroke="#26273B" stroke-width="1.5" />
+    
+    <!-- Layer 3: Top Focused Card #1C1E2E -->
+    <rect x="50" y="50" width="240" height="140" rx="12" fill="url(#layerGrad)" stroke="#7764FF" stroke-width="1.5" />
+    
+    <!-- Content inside Top Card -->
+    <circle cx="80" cy="80" r="14" fill="#7764FF" />
+    <path d="M 76 80 L 79 83 L 85 77" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+    
+    <rect x="105" y="74" width="120" height="12" rx="4" fill="#F2F1F8" />
+    <rect x="80" y="108" width="180" height="8" rx="3" fill="#A9A6BC" opacity="0.6" />
+    <rect x="80" y="126" width="140" height="8" rx="3" fill="#A9A6BC" opacity="0.4" />
+    
+    <!-- Accent Pill -->
+    <rect x="80" y="150" width="86" height="22" rx="11" fill="rgba(119, 100, 255, 0.2)" stroke="#7764FF" stroke-width="1" />
+    <text x="123" y="165" font-family="'Inter', system-ui, sans-serif" font-size="10" font-weight="600" fill="#B6A9FF" text-anchor="middle">OLED Pure Black</text>
+  </g>
+</svg>

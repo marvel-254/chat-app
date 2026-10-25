@@ -1,27 +1,125 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Terms of Service - NYX</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terms of Service — NYX</title>
+  <link rel="icon" type="image/png" href="../favicon.png">
+  <link rel="stylesheet" href="../css/tokens.css">
+  <link rel="stylesheet" href="../css/components.css">
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; color: #e0e0e0; background: #0a0a0f; }
-    h1 { color: #fff; border-bottom: 1px solid #333; padding-bottom: 1rem; }
-    a { color: #666; text-decoration: none; }
-    a:hover { color: #fff; }
+    body {
+      background-color: var(--nyx-color-bg);
+      color: var(--nyx-color-text);
+      font-family: var(--nyx-font-family);
+      margin: 0;
+      padding: var(--nyx-space-8) var(--nyx-space-4);
+      line-height: var(--nyx-line-height-normal);
+      -webkit-font-smoothing: antialiased;
+    }
+    .legal-container {
+      max-width: 780px;
+      margin: 0 auto;
+      background-color: var(--nyx-color-surface);
+      border: 1px solid var(--nyx-color-border);
+      border-radius: var(--nyx-radius-xl);
+      padding: var(--nyx-space-10) var(--nyx-space-8);
+      box-shadow: var(--nyx-shadow-lg);
+    }
+    h1 {
+      font-size: var(--nyx-font-size-3xl);
+      font-weight: var(--nyx-font-weight-extrabold);
+      color: var(--nyx-color-text);
+      margin-bottom: var(--nyx-space-2);
+    }
+    .legal-date {
+      color: var(--nyx-color-text-subtle);
+      font-size: var(--nyx-font-size-xs);
+      margin-bottom: var(--nyx-space-6);
+    }
+    h2 {
+      font-size: var(--nyx-font-size-xl);
+      font-weight: var(--nyx-font-weight-semibold);
+      color: var(--nyx-color-text);
+      margin-top: var(--nyx-space-6);
+      margin-bottom: var(--nyx-space-3);
+      border-bottom: 1px solid var(--nyx-color-border-subtle);
+      padding-bottom: var(--nyx-space-2);
+    }
+    p, li {
+      color: var(--nyx-color-text-muted);
+      font-size: var(--nyx-font-size-base);
+      line-height: 1.65;
+    }
+    ul {
+      padding-left: var(--nyx-space-6);
+      margin-bottom: var(--nyx-space-4);
+    }
+    li {
+      margin-bottom: var(--nyx-space-2);
+    }
+    .nav-back {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--nyx-space-2);
+      margin-bottom: var(--nyx-space-6);
+      color: var(--nyx-color-accent-secondary);
+      text-decoration: none;
+      font-size: var(--nyx-font-size-sm);
+      font-weight: var(--nyx-font-weight-medium);
+    }
+    .nav-back:hover {
+      color: var(--nyx-color-text);
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
-  <h1>Terms of Service</h1>
-  <p>Last updated: December 2026</p>
-  <p>These terms govern your use of the NYX messaging application. By accessing or using the Service, you agree to these terms. If you disagree with any part of these terms, you may not access the Service.</p>
-  <h3>1. Acceptance</h3>
-  <p>By visiting or using NYX, you accept these Terms of Service. This agreement applies to visitors, users, and others who access or use the Service.</p>
-  <h3>2. Privacy</h3>
-  <p>Your privacy is important to us. Our privacy policy explains how we handle your personal data. Please read it at <a href="/privacy">Privacy Policy</a>.</p>
-  <h3>3. User Conduct</h3>
-  <p>Users are expected to communicate respectfully and lawfully. Prohibited content includes but is not limited to: illegal material, harassment, threats, or spam.</p>
-  <h3>4. Termination</h3>
-  <p>We reserve the right to terminate or suspend accounts at our discretion, without notice, for conduct that we believe violates these terms or is otherwise harmful to the Service or its users.</p>
-  <p><a href="/">Back to NYX</a></p>
+  <div class="legal-container">
+    <a href="../index.html" class="nav-back">
+      <svg class="nyx-icon nyx-icon--sm" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      Back to NYX
+    </a>
+
+    <h1>Terms of Service</h1>
+    <div class="legal-date">Last updated: October 2026 • NYX Version 25</div>
+
+    <p>
+      These Terms of Service govern your access to and use of the NYX messaging application and related web services. By downloading, accessing, or using NYX, you agree to be bound by these terms.
+    </p>
+
+    <h2>1. Acceptance of Terms</h2>
+    <p>
+      By using NYX, you confirm that you are at least 13 years old (or the legal age of digital consent in your jurisdiction) and agree to comply with all applicable local, national, and international laws.
+    </p>
+
+    <h2>2. Open Source License</h2>
+    <p>
+      The NYX application source code is released under the permissive MIT License. You are free to inspect, modify, and distribute the software subject to the terms of the MIT License, which is available in the project repository.
+    </p>
+
+    <h2>3. Acceptable Use</h2>
+    <p>
+      You agree not to use NYX to:
+    </p>
+    <ul>
+      <li>Transmit illegal, abusive, harassing, defamatory, or threatening material.</li>
+      <li>Distribute spam, unauthorized advertising, or bulk unsolicited messages.</li>
+      <li>Attempt to exploit, probe, or compromise database security or service integrity.</li>
+    </ul>
+
+    <h2>4. Termination</h2>
+    <p>
+      We reserve the right to suspend or terminate accounts that violate these terms or threaten the stability and security of the NYX network.
+    </p>
+
+    <div style="margin-top: var(--nyx-space-8); padding-top: var(--nyx-space-6); border-top: 1px solid var(--nyx-color-border-subtle); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--nyx-space-4);">
+      <a href="../index.html" class="nyx-btn nyx-btn--secondary nyx-btn--sm">Back to Home</a>
+      <div style="font-size: var(--nyx-font-size-xs); color: var(--nyx-color-text-subtle);">
+        <a href="privacy.html" class="nyx-link">Privacy Policy</a> • 
+        <a href="cookie.html" class="nyx-link">Cookie Policy</a>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

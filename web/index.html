@@ -3,153 +3,1057 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="NYX – A beautifully dark messaging app built with Flutter.">
-<meta name="keywords" content="messaging, flutter, dark theme, nyx, chat">
-  <meta name="theme-color" content="#0E0F13">
-<!-- Open Graph -->
-<meta property="og:title" content="NYX">
-<meta property="og:description" content="A beautifully dark messaging app built with Flutter.">
-<meta property="og:image" content="icons/Icon-512.png">
-<meta property="og:url" content="https://marvel-254.github.io/chat-app/">
-<meta property="og:type" content="website">
+  <title>NYX — Pure, Dark-First Android Messaging</title>
+  <meta name="description" content="NYX is a dark-first Android messaging application built for clarity, privacy, and calm. Real-time sync, smart message grouping, and pure OLED aesthetics.">
+  <meta name="keywords" content="NYX, Android, messaging app, dark theme, flutter, privacy, realtime chat, OLED">
+  <meta name="theme-color" content="#08090D">
+  <link rel="canonical" href="https://marvel-254.github.io/chat-app/">
+  <link rel="icon" type="image/png" href="favicon.png">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="NYX — Pure, Dark-First Android Messaging">
+  <meta property="og:description" content="A dark-first Android messaging application built for clarity, privacy, and calm. Real-time sync and pure OLED aesthetics.">
+  <meta property="og:image" content="https://marvel-254.github.io/chat-app/assets/branding/nyx/preview-montage.png">
+  <meta property="og:url" content="https://marvel-254.github.io/chat-app/">
+  <meta property="og:type" content="website">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="NYX — Pure, Dark-First Android Messaging">
+  <meta name="twitter:description" content="A dark-first Android messaging application built for clarity, privacy, and calm.">
+  <meta name="twitter:image" content="https://marvel-254.github.io/chat-app/assets/branding/nyx/preview-montage.png">
+
+  <!-- Design System Tokens & Components -->
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/components.css">
 
   <style>
-    :root {
-      --bg: #0a0a0f;
-      --bg-elevated: #17181d;
-      --bg-card: #1a1b22;
-      --border: #26272e;
-      --text: #e8eaed;
-      --text-muted: #8a8c94;
-      --primary: #6366f1;
-      --accent: #22d3ee;
-      --radius: 12px;
+    /* ==========================================================================
+       NYX Landing Page Layout & Custom Theming
+       ========================================================================== */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
     }
-    * { box-sizing: border-box; margin: 0; }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
     body {
-      font-family: system-ui, -apple-system, sans-serif;
-      background: var(--bg);
-      color: var(--text);
+      background-color: var(--nyx-color-bg);
+      color: var(--nyx-color-text);
+      font-family: var(--nyx-font-family);
       min-height: 100vh;
+      line-height: var(--nyx-line-height-normal);
       position: relative;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
     }
+
+    /* Ambient background lighting */
     body::before {
       content: "";
       position: fixed;
       inset: 0;
       z-index: -1;
       background:
-        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(99,102,241,0.15), transparent 60%),
-        radial-gradient(ellipse 60% 40% at 90% 10%, rgba(34,211,238,0.08), transparent 55%),
-        radial-gradient(ellipse 70% 50% at 50% 110%, rgba(99,102,241,0.10), transparent 60%);
+        radial-gradient(ellipse 65% 50% at 20% 0%, rgba(119, 100, 255, 0.12), transparent 60%),
+        radial-gradient(ellipse 50% 40% at 85% 15%, rgba(182, 169, 255, 0.06), transparent 55%),
+        radial-gradient(ellipse 70% 60% at 50% 100%, rgba(119, 100, 255, 0.08), transparent 65%);
       pointer-events: none;
     }
-    .container { max-width: 860px; margin: 0 auto; padding: 2rem 1.5rem; }
-    .header { text-align: center; padding: 3rem 1rem 2rem; border-bottom: 1px solid var(--border); margin-bottom: 2rem; }
-    .header h1 { font-size: 2.5rem; font-weight: 300; letter-spacing: -1px; background: linear-gradient(135deg, #fff 0%, #e0e0e0 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.5rem; }
-    .header p { color: var(--text-muted); font-size: 1.1rem; }
-    .download-section { text-align: center; margin: 2rem 0; }
-    .download-btn {
-      display: inline-block; padding: 0.85rem 1.75rem;
-      background: var(--primary); color: #fff; text-decoration: none;
-      font-size: 1.1rem; font-weight: 500; border-radius: var(--radius);
-      transition: transform 0.2s, box-shadow 0.2s; border: none; cursor: pointer;
+
+    .container {
+      max-width: var(--nyx-container-max-width);
+      margin: 0 auto;
+      padding: 0 var(--nyx-space-6);
     }
-    .download-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(99,102,241,0.35); }
-    .download-btn:focus { outline: 2px solid #fff; outline-offset: 2px; }
-    @media (prefers-reduced-motion) { .download-btn:hover { transform: none; box-shadow: none; } }
-    .section { margin: 2.5rem 0; }
-    .section h2 { color: #fff; font-size: 1.5rem; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px var(--border); }
-    .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; }
-    .feature { background: var(--bg-card); padding: 1rem; border-radius: var(--radius); }
-    .feature h3 { color: var(--primary); font-size: 0.95rem; margin-bottom: 0.25rem; }
-    .feature p { font-size: 0.85rem; color: var(--text-muted); line-height: 1.4; }
-    .legal-links { display: flex; gap: 1.5rem; margin-top: 1rem; flex-wrap: wrap; }
-    .legal-links a { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; transition: color 0.2s; }
-    .legal-links a:hover { color: var(--text); }
-    .footer { margin-top: 3rem; padding: 1.5rem 0; text-align: center; color: var(--text-muted); font-size: 0.75rem; border-top: 1px solid var(--border); }
-    .badge { display: inline-block; padding: 0.2rem 0.6rem; background: var(--border); color: var(--text); font-size: 0.65rem; border-radius: 3px; margin-left: 0.5rem; }
-    .release-note { background: var(--bg-card); padding: 1rem; border-radius: var(--radius); margin: 1rem 0; font-size: 0.85rem; color: var(--text-muted); }
+
+    /* Navigation Bar */
+    .nyx-navbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background-color: var(--nyx-color-surface-overlay);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--nyx-color-border-subtle);
+      transition: border-color var(--nyx-transition-fast);
+    }
+
+    .nyx-navbar-inner {
+      height: var(--nyx-nav-height);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--nyx-space-4);
+    }
+
+    .nyx-logo-link {
+      display: flex;
+      align-items: center;
+      gap: var(--nyx-space-3);
+      text-decoration: none;
+      color: var(--nyx-color-text);
+    }
+
+    .nyx-logo-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--nyx-radius-sm);
+      flex-shrink: 0;
+    }
+
+    .nyx-logo-text {
+      font-size: 1.25rem;
+      font-weight: var(--nyx-font-weight-extrabold);
+      letter-spacing: var(--nyx-letter-spacing-wider);
+      color: #FFFFFF;
+    }
+
+    .nyx-nav-menu {
+      display: flex;
+      align-items: center;
+      gap: var(--nyx-space-1);
+    }
+
+    .nyx-nav-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--nyx-space-3);
+    }
+
+    /* Hero Section */
+    .hero-section {
+      padding: var(--nyx-space-12) 0 var(--nyx-space-16);
+      position: relative;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: var(--nyx-space-10);
+      align-items: center;
+    }
+
+    @media (min-width: 1024px) {
+      .hero-grid {
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: var(--nyx-space-12);
+      }
+    }
+
+    .hero-content {
+      display: flex;
+      flex-direction: column;
+      gap: var(--nyx-space-5);
+    }
+
+    .hero-badge-wrap {
+      display: flex;
+      align-items: center;
+      gap: var(--nyx-space-2);
+    }
+
+    .hero-title {
+      font-size: clamp(2.25rem, 5vw, 3.75rem);
+      font-weight: var(--nyx-font-weight-extrabold);
+      line-height: 1.1;
+      letter-spacing: var(--nyx-letter-spacing-tight);
+      color: var(--nyx-color-text);
+    }
+
+    .hero-title span {
+      background: linear-gradient(135deg, #FFFFFF 30%, var(--nyx-color-accent-secondary) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-lead {
+      font-size: clamp(1.125rem, 2vw, 1.35rem);
+      color: var(--nyx-color-text-muted);
+      line-height: var(--nyx-line-height-normal);
+      max-width: 520px;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--nyx-space-4);
+      align-items: center;
+      margin-top: var(--nyx-space-2);
+    }
+
+    .hero-trust {
+      display: flex;
+      align-items: center;
+      gap: var(--nyx-space-2);
+      color: var(--nyx-color-text-subtle);
+      font-size: var(--nyx-font-size-xs);
+      margin-top: var(--nyx-space-1);
+    }
+
+    .hero-trust-dot {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background-color: var(--nyx-color-border);
+    }
+
+    /* Product Showcase Phone Frame */
+    .phone-showcase-wrapper {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .phone-glow {
+      position: absolute;
+      width: 320px;
+      height: 480px;
+      background: radial-gradient(circle, rgba(119, 100, 255, 0.22) 0%, rgba(119, 100, 255, 0) 70%);
+      filter: blur(40px);
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .phone-frame {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 380px;
+      background-color: var(--nyx-color-bg);
+      border: 3px solid var(--nyx-color-border);
+      border-radius: 36px;
+      box-shadow: var(--nyx-shadow-lg), 0 0 30px rgba(0,0,0,0.8);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Phone Status Bar */
+    .phone-status-bar {
+      height: 28px;
+      padding: 0 var(--nyx-space-4);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--nyx-color-text-muted);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    }
+
+    .phone-status-icons {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Phone App Bar */
+    .phone-app-bar {
+      padding: var(--nyx-space-3) var(--nyx-space-4);
+      background-color: var(--nyx-color-bg);
+      border-bottom: 1px solid var(--nyx-color-border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .phone-peer-info {
+      display: flex;
+      align-items: center;
+      gap: var(--nyx-space-3);
+    }
+
+    .phone-peer-avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #7764FF, #3B3E8F);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #FFFFFF;
+      font-weight: 700;
+      font-size: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .phone-peer-name {
+      font-size: 14px;
+      font-weight: var(--nyx-font-weight-semibold);
+      color: var(--nyx-color-text);
+      line-height: 1.2;
+    }
+
+    .phone-peer-status {
+      font-size: 11px;
+      color: var(--nyx-color-status-success);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .phone-actions {
+      display: flex;
+      gap: var(--nyx-space-2);
+      color: var(--nyx-color-text-muted);
+    }
+
+    /* Phone Chat Body */
+    .phone-chat-body {
+      padding: var(--nyx-space-4);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background-color: var(--nyx-color-bg);
+      min-height: 380px;
+    }
+
+    .date-separator {
+      align-self: center;
+      padding: 3px 10px;
+      background-color: var(--nyx-color-surface);
+      border: 1px solid var(--nyx-color-border);
+      border-radius: var(--nyx-radius-full);
+      font-size: 10px;
+      color: var(--nyx-color-text-subtle);
+      margin: var(--nyx-space-2) 0;
+    }
+
+    /* Phone Composer */
+    .phone-composer {
+      padding: var(--nyx-space-3);
+      background-color: var(--nyx-color-bg);
+      border-top: 1px solid var(--nyx-color-border-subtle);
+    }
+
+    .phone-composer-inner {
+      background-color: var(--nyx-color-surface);
+      border: 1px solid var(--nyx-color-border);
+      border-radius: 20px;
+      padding: 6px 8px 6px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .phone-composer-placeholder {
+      font-size: 13px;
+      color: var(--nyx-color-text-subtle);
+      flex: 1;
+    }
+
+    .phone-send-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background-color: var(--nyx-color-accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #FFFFFF;
+      border: none;
+      cursor: pointer;
+    }
+
+    /* Section Highlights */
+    .section-highlights {
+      padding: var(--nyx-space-16) 0;
+      border-top: 1px solid var(--nyx-color-border-subtle);
+    }
+
+    .section-header {
+      text-align: center;
+      max-width: 640px;
+      margin: 0 auto var(--nyx-space-12);
+    }
+
+    .highlight-item {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: var(--nyx-space-8);
+      align-items: center;
+      margin-bottom: var(--nyx-space-16);
+    }
+
+    @media (min-width: 900px) {
+      .highlight-item {
+        grid-template-columns: 1fr 1fr;
+        gap: var(--nyx-space-12);
+      }
+
+      .highlight-item--reverse {
+        direction: rtl;
+      }
+
+      .highlight-item--reverse > * {
+        direction: ltr;
+      }
+    }
+
+    .highlight-content {
+      display: flex;
+      flex-direction: column;
+      gap: var(--nyx-space-3);
+    }
+
+    .highlight-visual {
+      background-color: var(--nyx-color-surface-subtle);
+      border: 1px solid var(--nyx-color-border);
+      border-radius: var(--nyx-radius-xl);
+      padding: var(--nyx-space-6);
+      box-shadow: var(--nyx-shadow-md);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .highlight-visual img,
+    .highlight-visual svg {
+      width: 100%;
+      max-width: 440px;
+      height: auto;
+      display: block;
+    }
+
+    /* Section Privacy */
+    .section-privacy {
+      padding: var(--nyx-space-16) 0;
+      border-top: 1px solid var(--nyx-color-border-subtle);
+    }
+
+    .privacy-card {
+      background: linear-gradient(145deg, var(--nyx-color-surface) 0%, #0E0F17 100%);
+      border: 1px solid var(--nyx-color-border);
+      border-radius: var(--nyx-radius-xl);
+      padding: var(--nyx-space-10) var(--nyx-space-8);
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: var(--nyx-space-8);
+      align-items: center;
+      box-shadow: var(--nyx-shadow-lg);
+    }
+
+    @media (min-width: 900px) {
+      .privacy-card {
+        grid-template-columns: 0.9fr 1.1fr;
+        padding: var(--nyx-space-12);
+      }
+    }
+
+    .privacy-illustration-wrap {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .privacy-illustration-wrap img,
+    .privacy-illustration-wrap svg {
+      width: 100%;
+      max-width: 320px;
+      height: auto;
+    }
+
+    .privacy-points {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: var(--nyx-space-4);
+      margin-top: var(--nyx-space-6);
+    }
+
+    @media (min-width: 600px) {
+      .privacy-points {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .privacy-point {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .privacy-point-title {
+      font-size: var(--nyx-font-size-sm);
+      font-weight: var(--nyx-font-weight-semibold);
+      color: var(--nyx-color-text);
+      display: flex;
+      align-items: center;
+      gap: var(--nyx-space-2);
+    }
+
+    .privacy-point-desc {
+      font-size: var(--nyx-font-size-xs);
+      color: var(--nyx-color-text-muted);
+      line-height: 1.5;
+    }
+
+    /* Section Final Download CTA */
+    .section-download {
+      padding: var(--nyx-space-16) 0;
+      border-top: 1px solid var(--nyx-color-border-subtle);
+    }
+
+    .download-card {
+      background: radial-gradient(ellipse 80% 60% at 50% 20%, rgba(119, 100, 255, 0.16), transparent 70%),
+                  var(--nyx-color-surface);
+      border: 1px solid var(--nyx-color-border);
+      border-radius: var(--nyx-radius-xl);
+      padding: var(--nyx-space-12) var(--nyx-space-6);
+      text-align: center;
+      box-shadow: var(--nyx-shadow-lg), var(--nyx-shadow-glow);
+      max-width: 840px;
+      margin: 0 auto;
+    }
+
+    .download-card h2 {
+      margin-bottom: var(--nyx-space-3);
+    }
+
+    .download-card p {
+      max-width: 520px;
+      margin: 0 auto var(--nyx-space-8);
+    }
+
+    .download-cta-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--nyx-space-3);
+    }
+
+    .arch-downloads {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: var(--nyx-space-2);
+      margin-top: var(--nyx-space-4);
+    }
+
+    .arch-link {
+      font-size: var(--nyx-font-size-xs);
+      color: var(--nyx-color-text-muted);
+      text-decoration: none;
+      padding: 4px 10px;
+      border-radius: var(--nyx-radius-sm);
+      border: 1px solid var(--nyx-color-border-subtle);
+      background-color: var(--nyx-color-surface-subtle);
+      transition: all var(--nyx-transition-fast);
+    }
+
+    .arch-link:hover {
+      color: var(--nyx-color-text);
+      border-color: var(--nyx-color-border);
+      background-color: var(--nyx-color-surface-elevated);
+    }
+
+    .arch-link:focus-visible {
+      outline: 2px solid var(--nyx-color-accent);
+      outline-offset: 2px;
+    }
+
+    /* Footer */
+    .nyx-footer {
+      border-top: 1px solid var(--nyx-color-border-subtle);
+      padding: var(--nyx-space-12) 0 var(--nyx-space-8);
+      background-color: var(--nyx-color-bg);
+      font-size: var(--nyx-font-size-sm);
+      color: var(--nyx-color-text-muted);
+    }
+
+    .footer-top {
+      display: flex;
+      flex-direction: column;
+      gap: var(--nyx-space-6);
+      margin-bottom: var(--nyx-space-8);
+    }
+
+    @media (min-width: 768px) {
+      .footer-top {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+      }
+    }
+
+    .footer-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--nyx-space-4);
+      align-items: center;
+    }
+
+    .footer-bottom {
+      border-top: 1px solid var(--nyx-color-border-subtle);
+      padding-top: var(--nyx-space-6);
+      display: flex;
+      flex-direction: column;
+      gap: var(--nyx-space-4);
+      color: var(--nyx-color-text-subtle);
+      font-size: var(--nyx-font-size-xs);
+    }
+
+    @media (min-width: 768px) {
+      .footer-bottom {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+      }
+    }
+
+    .footer-legal-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--nyx-space-4);
+    }
+
+    /* Mobile adjustments */
+    @media (max-width: 640px) {
+      .nyx-nav-menu {
+        display: none;
+      }
+      .hero-actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .hero-actions .nyx-btn {
+        width: 100%;
+      }
+    }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>NYX</h1>
-      <p>A beautifully dark messaging app built with Flutter.</p>
-    </div>
 
-    <div class="download-section">
-      <a id="download-btn" href="https://github.com/marvel-254/chat-app/releases/latest" class="download-btn">
-        Download Android APK
-      </a>
-      <p class="release-note" id="release-info" style="margin-top: 0.5rem; color: var(--text-muted); font-size: 0.85rem;">Fetching latest release…</p>
-    </div>
+  <!-- Sticky Top Navigation -->
+  <header class="nyx-navbar">
+    <div class="container">
+      <div class="nyx-navbar-inner">
+        
+        <a href="index.html" class="nyx-logo-link" aria-label="NYX Homepage">
+          <img src="assets/branding/nyx/concept-a/logo.svg" alt="NYX Logo" class="nyx-logo-icon" width="34" height="34">
+          <span class="nyx-logo-text">NYX</span>
+        </a>
 
-    <a id="download"></a>
+        <!-- Desktop Navigation Links -->
+        <nav class="nyx-nav-menu" aria-label="Primary Navigation">
+          <a href="#features" class="nyx-nav-link">Highlights</a>
+          <a href="#privacy" class="nyx-nav-link">Privacy &amp; Trust</a>
+          <a href="design-system.html" class="nyx-nav-link">Design System</a>
+        </nav>
 
-    <div class="section">
-      <h2>About NYX</h2>
-      <p>NYX is a dark-first messaging application focused on privacy, simplicity, and beautiful design. Connect with friends, share moments, and communicate in style.</p>
-      <div class="legal-links">
-        <a href="legal/terms.html">Terms of Service</a>
-        <a href="legal/privacy.html">Privacy Policy</a>
-        <a href="legal/cookie.html">Cookie Policy</a>
-        <a href="https://github.com/marvel-254/chat-app/blob/main/LICENSE">License (MIT)</a>
+        <!-- Navbar Action Buttons -->
+        <div class="nyx-nav-actions">
+          <a href="https://github.com/marvel-254/chat-app" class="nyx-btn nyx-btn--secondary nyx-btn--sm" target="_blank" rel="noopener" aria-label="GitHub Repository">
+            <svg class="nyx-icon nyx-icon--sm" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
+              <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+            </svg>
+            <span>GitHub</span>
+          </a>
+          <a href="#download" class="nyx-btn nyx-btn--primary nyx-btn--sm">Get NYX</a>
+        </div>
+
       </div>
     </div>
+  </header>
 
-    <div class="section">
-      <h2>Features</h2>
-      <div class="features">
-        <div class="feature"><h3>End-to-End Encrypted</h3><p>Your messages stay between you and the recipient.</p></div>
-        <div class="feature"><h3>Real-Time Sync</h3><p>Messages appear instantly across all your devices.</p></div>
-        <div class="feature"><h3>Dark Mode Native</h3><p>Designed for OLED screens with true blacks and indigo accents.</p></div>
-        <div class="feature"><h3>Smart Message Grouping</h3><p>Consecutive messages merge seamlessly. Clean conversations without visual clutter.</p></div>
-        <div class="feature"><h3>Read Receipts</h3><p>Know when your message is delivered and read.</p></div>
-        <div class="feature"><h3>Typing Indicators</h3><p>See when someone's composing a reply.</p></div>
+  <!-- Hero Section -->
+  <section class="hero-section" id="hero">
+    <div class="container">
+      <div class="hero-grid">
+        
+        <!-- Left Side: Editorial Typography & Conversion CTAs -->
+        <div class="hero-content">
+          <div class="hero-badge-wrap">
+            <div style="display: flex; align-items: center; gap: var(--nyx-space-2);">
+              <img src="assets/branding/nyx/concept-a/logo.svg" alt="NYX Logo Icon" width="28" height="28" style="border-radius: 6px;">
+              <span style="font-weight: 800; font-size: 15px; letter-spacing: 0.05em; color: var(--nyx-color-text);">NYX</span>
+            </div>
+            <span class="nyx-badge nyx-badge--accent" style="margin-left: 6px;">
+              <span class="nyx-status-indicator nyx-status-indicator--online" style="width: 6px; height: 6px;"></span>
+              NYX for Android • Latest v25
+            </span>
+          </div>
+
+          <h1 class="hero-title">
+            Your people.<br>
+            Your space.<br>
+            <span>Your conversations.</span>
+          </h1>
+
+          <p class="hero-lead">
+            A better way to stay connected.
+          </p>
+
+          <div class="hero-actions">
+            <a id="hero-download-btn" href="https://github.com/marvel-254/chat-app/releases/download/v25/app-arm64-v8a-release.apk" class="nyx-btn nyx-btn--primary nyx-btn--lg">
+              <svg class="nyx-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span id="hero-download-label">Get NYX for Android</span>
+            </a>
+
+            <a href="#features" class="nyx-btn nyx-btn--secondary nyx-btn--lg">
+              Explore features
+            </a>
+          </div>
+
+          <div class="hero-trust">
+            <span>Free &amp; Open Source (MIT)</span>
+            <span class="hero-trust-dot"></span>
+            <span>Row-Level Security</span>
+            <span class="hero-trust-dot"></span>
+            <span>No tracking or ads</span>
+          </div>
+        </div>
+
+        <!-- Right Side: Illustrative NYX Phone Showcase -->
+        <div class="phone-showcase-wrapper" aria-label="NYX Application Interface Preview">
+          <div class="phone-glow" aria-hidden="true"></div>
+          
+          <div class="phone-frame">
+            <!-- Android System Status Bar -->
+            <div class="phone-status-bar" aria-hidden="true">
+              <span>9:41</span>
+              <div class="phone-status-icons">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L12 22l7.03-4.39C20.26 16.07 21 14.12 21 12c0-4.97-4.03-9-9-9z"/></svg>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20V2z"/></svg>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="6" width="18" height="12" rx="2"/><rect x="4" y="8" width="14" height="8" rx="1"/></svg>
+              </div>
+            </div>
+
+            <!-- NYX Top Chat Bar -->
+            <div class="phone-app-bar">
+              <div class="phone-peer-info">
+                <div class="phone-peer-avatar" aria-hidden="true">E</div>
+                <div>
+                  <div class="phone-peer-name">Elena Rostova</div>
+                  <div class="phone-peer-status">
+                    <span class="nyx-status-indicator nyx-status-indicator--online" style="width: 6px; height: 6px;"></span>
+                    Active now
+                  </div>
+                </div>
+              </div>
+              <div class="phone-actions" aria-hidden="true">
+                <svg class="nyx-icon" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                <svg class="nyx-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+              </div>
+            </div>
+
+            <!-- Chat Stream Preview -->
+            <div class="phone-chat-body">
+              <div class="date-separator">Today</div>
+
+              <!-- Inbound message -->
+              <div class="nyx-chat-bubble nyx-chat-bubble--in">
+                <span>Hey! Did you see the new dark theme build?</span>
+                <div class="nyx-chat-meta nyx-chat-meta--in">9:38 AM</div>
+              </div>
+
+              <!-- Outbound message 1 (Top of group) -->
+              <div class="nyx-chat-bubble nyx-chat-bubble--out nyx-chat-bubble--grouped-bottom">
+                <span>Just installed it. The violet accents and OLED blacks look incredible.</span>
+              </div>
+
+              <!-- Outbound message 2 (Bottom of group, with read checkmarks) -->
+              <div class="nyx-chat-bubble nyx-chat-bubble--out nyx-chat-bubble--grouped-top">
+                <span>Real-time sync feels instant too.</span>
+                <div class="nyx-chat-meta nyx-chat-meta--out">
+                  <span>9:39 AM</span>
+                  <span class="nyx-receipt-check" title="Read">
+                    <svg style="width: 13px; height: 13px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                      <polyline points="15 6 9 13 6 10"></polyline>
+                    </svg>
+                  </span>
+                </div>
+              </div>
+
+              <!-- Inbound message 2 -->
+              <div class="nyx-chat-bubble nyx-chat-bubble--in">
+                <span>Clean layout, no distractions. Exactly what chat should feel like.</span>
+                <div class="nyx-chat-meta nyx-chat-meta--in">9:41 AM</div>
+              </div>
+
+              <!-- Typing indicator -->
+              <div class="nyx-typing-dots" aria-label="Elena is typing">
+                <span class="nyx-typing-dot"></span>
+                <span class="nyx-typing-dot"></span>
+                <span class="nyx-typing-dot"></span>
+              </div>
+            </div>
+
+            <!-- Phone Composer Bar -->
+            <div class="phone-composer">
+              <div class="phone-composer-inner">
+                <svg class="nyx-icon" style="color: var(--nyx-color-text-subtle);" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                <span class="phone-composer-placeholder">Message</span>
+                <button type="button" class="phone-send-btn" aria-label="Send message">
+                  <svg style="width: 16px; height: 16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="19" x2="12" y2="5"></line>
+                    <polyline points="5 12 12 5 19 12"></polyline>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
       </div>
     </div>
+  </section>
 
-    <div class="section" style="border-top: 1px solid var(--border); padding-top: 2rem; margin-top: 3rem; max-width: 600px;">
-      <h2>Legal</h2>
-      <p>Please review our legal documents:</p>
-      <div class="legal-links">
-        <a href="legal/terms.html">Terms of Service</a>
-        <a href="legal/privacy.html">Privacy Policy</a>
-        <a href="legal/cookie.html">Cookie Policy</a>
-        <a href="https://github.com/marvel-254/chat-app/blob/main/LICENSE">License (MIT)</a>
+  <!-- SECTION A: Product Highlights -->
+  <section class="section-highlights" id="features">
+    <div class="container">
+      
+      <div class="section-header">
+        <span class="nyx-label-text">Product Highlights</span>
+        <h2 class="nyx-h2" style="margin-top: var(--nyx-space-2); margin-bottom: var(--nyx-space-3);">Engineered for clarity and calm</h2>
+        <p class="nyx-lead">Every interaction is designed to respect your focus and reduce cognitive fatigue.</p>
       </div>
-    </div>
 
-    <div class="footer">
-      <p>© 2026 NYX. Open source under MIT license.</p>
-      <span class="badge">Open Source</span>
+      <!-- Highlight 1: Smart Message Grouping -->
+      <div class="highlight-item">
+        <div class="highlight-content">
+          <span class="nyx-badge nyx-badge--accent" style="width: fit-content;">Adaptive Flow</span>
+          <h3 class="nyx-h2">Smart Message Grouping</h3>
+          <p class="nyx-lead">Consecutive thoughts merge seamlessly, keeping conversations clean without visual clutter.</p>
+        </div>
+        <div class="highlight-visual">
+          <img src="assets/illustrations/smart-grouping.svg" alt="Illustration demonstrating NYX smart message grouping with adaptive corner radii" loading="lazy">
+        </div>
+      </div>
+
+      <!-- Highlight 2: Real-Time Sync & Receipts (Alternated Layout) -->
+      <div class="highlight-item highlight-item--reverse">
+        <div class="highlight-content">
+          <span class="nyx-badge nyx-badge--success" style="width: fit-content;">Instant Presence</span>
+          <h3 class="nyx-h2">Real-Time Sync &amp; Receipts</h3>
+          <p class="nyx-lead">Instant message synchronization, active typing awareness, and clear delivery receipts keep you in rhythm.</p>
+        </div>
+        <div class="highlight-visual">
+          <img src="assets/illustrations/realtime-sync.svg" alt="Illustration showing real-time delivery synchronization and live typing broadcasts" loading="lazy">
+        </div>
+      </div>
+
+      <!-- Highlight 3: Dark-First Architecture -->
+      <div class="highlight-item">
+        <div class="highlight-content">
+          <span class="nyx-badge" style="width: fit-content;">True OLED</span>
+          <h3 class="nyx-h2">Cinematic Dark-First Design</h3>
+          <p class="nyx-lead">True OLED blacks and restful violet tones engineered for low eye strain and maximum battery efficiency.</p>
+        </div>
+        <div class="highlight-visual">
+          <img src="assets/illustrations/oled-depth.svg" alt="Illustration of NYX layered OLED surface depth and contrast system" loading="lazy">
+        </div>
+      </div>
+
     </div>
-  </div>
-</body>
-<script>
-  (async function() {
-    const repo = 'marvel-254/chat-app';
-    const btn = document.getElementById('download-btn');
-    const note = document.getElementById('release-info');
-    try {
-      const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`);
-      if (!res.ok) throw new Error('release fetch failed');
-      const release = await res.json();
-      // Find the arm64 APK asset (most common device) — fall back to first asset
-      const assets = release.assets || [];
-      const arm64 = assets.find(a => a.name.includes('arm64-v8a')) || assets[0];
-      if (arm64) {
-        btn.href = arm64.browser_download_url;
-        btn.textContent = 'Download for Android (' + arm64.name + ')';
+  </section>
+
+  <!-- SECTION B: Privacy & Trust -->
+  <section class="section-privacy" id="privacy">
+    <div class="container">
+      
+      <div class="privacy-card">
+        
+        <div class="privacy-illustration-wrap">
+          <img src="assets/illustrations/privacy-shield.svg" alt="Security shield vector symbolizing verified Row-Level Security and privacy protections" loading="lazy">
+        </div>
+
+        <div>
+          <span class="nyx-label-text">Privacy &amp; Trust</span>
+          <h2 class="nyx-h2" style="margin-top: var(--nyx-space-2); margin-bottom: var(--nyx-space-3);">Private by architecture, not marketing claims</h2>
+          <p class="nyx-body">
+            NYX is built with a minimal data footprint and strong database isolation. We do not track your activity, scan your address book, or monetize your conversations.
+          </p>
+
+          <div class="privacy-points">
+            <div class="privacy-point">
+              <div class="privacy-point-title">
+                <svg class="nyx-icon nyx-icon--sm" style="color: var(--nyx-color-status-success);" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Row-Level Security
+              </div>
+              <div class="privacy-point-desc">Postgres RLS guarantees participants only ever access their own conversations.</div>
+            </div>
+
+            <div class="privacy-point">
+              <div class="privacy-point-title">
+                <svg class="nyx-icon nyx-icon--sm" style="color: var(--nyx-color-status-success);" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Zero Telemetry
+              </div>
+              <div class="privacy-point-desc">No tracking SDKs, no behavioral profiling, and no third-party advertisers.</div>
+            </div>
+
+            <div class="privacy-point">
+              <div class="privacy-point-title">
+                <svg class="nyx-icon nyx-icon--sm" style="color: var(--nyx-color-status-success);" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Minimal Permissions
+              </div>
+              <div class="privacy-point-desc">No phone number requirement or invasive contacts access to begin messaging.</div>
+            </div>
+
+            <div class="privacy-point">
+              <div class="privacy-point-title">
+                <svg class="nyx-icon nyx-icon--sm" style="color: var(--nyx-color-status-success);" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Open Source (MIT)
+              </div>
+              <div class="privacy-point-desc">Transparent code that you can inspect, verify, build, and run yourself.</div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- SECTION C: Final Download Call to Action -->
+  <section class="section-download" id="download">
+    <div class="container">
+      
+      <div class="download-card">
+        <div style="display: flex; justify-content: center; margin-bottom: var(--nyx-space-4);">
+          <img src="assets/branding/nyx/concept-a/logo.svg" alt="NYX Android App Icon" width="76" height="76" style="border-radius: 18px; box-shadow: var(--nyx-shadow-glow);">
+        </div>
+        <span class="nyx-label-text">Ready for Android</span>
+        <h2 class="nyx-h1" style="margin-top: var(--nyx-space-2);">Experience calmer conversations</h2>
+        <p class="nyx-lead">
+          Download NYX for Android and enjoy messaging crafted for clarity, privacy, and speed.
+        </p>
+
+        <div class="download-cta-group">
+          <!-- Primary Download Button -->
+          <a id="main-download-btn" href="https://github.com/marvel-254/chat-app/releases/download/v25/app-arm64-v8a-release.apk" class="nyx-btn nyx-btn--primary nyx-btn--lg">
+            <svg class="nyx-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span id="main-download-label">Download NYX for Android (APK)</span>
+          </a>
+
+          <!-- Dynamic Release Status Note -->
+          <div id="release-info" class="nyx-caption" style="color: var(--nyx-color-accent-secondary);">
+            Latest Release v25 • arm64-v8a (18.7 MB)
+          </div>
+
+          <!-- Architecture Specific APK Links -->
+          <div class="arch-downloads">
+            <span class="nyx-caption" style="align-self: center; margin-right: 4px;">Target architecture:</span>
+            <a id="arch-arm64" href="https://github.com/marvel-254/chat-app/releases/download/v25/app-arm64-v8a-release.apk" class="arch-link">arm64-v8a (Standard)</a>
+            <a id="arch-v7a" href="https://github.com/marvel-254/chat-app/releases/download/v25/app-armeabi-v7a-release.apk" class="arch-link">armeabi-v7a (32-bit)</a>
+            <a id="arch-x86" href="https://github.com/marvel-254/chat-app/releases/download/v25/app-x86_64-release.apk" class="arch-link">x86_64 (Emulator)</a>
+            <a href="https://github.com/marvel-254/chat-app/releases/latest" class="arch-link" target="_blank" rel="noopener">All Releases &rarr;</a>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="nyx-footer">
+    <div class="container">
+      
+      <div class="footer-top">
+        <div style="display: flex; align-items: center; gap: var(--nyx-space-3);">
+          <img src="assets/branding/nyx/concept-a/logo.svg" alt="NYX Logo" class="nyx-logo-icon" width="28" height="28" style="border-radius: 6px;">
+          <div>
+            <span style="font-weight: var(--nyx-font-weight-bold); color: var(--nyx-color-text);">NYX</span>
+            <span style="color: var(--nyx-color-text-subtle); margin-left: 8px;">A beautifully dark messaging app</span>
+          </div>
+        </div>
+
+        <nav class="footer-nav" aria-label="Footer Navigation">
+          <a href="#features" class="nyx-link">Highlights</a>
+          <a href="#privacy" class="nyx-link">Privacy</a>
+          <a href="#download" class="nyx-link">Download</a>
+          <a href="design-system.html" class="nyx-link">Design System</a>
+          <a href="https://github.com/marvel-254/chat-app" class="nyx-link" target="_blank" rel="noopener">GitHub</a>
+        </nav>
+      </div>
+
+      <div class="footer-bottom">
+        <div>&copy; 2026 NYX Project. Open source under the MIT License.</div>
+        <div class="footer-legal-links">
+          <a href="legal/terms.html" class="nyx-link">Terms of Service</a>
+          <a href="legal/privacy.html" class="nyx-link">Privacy Policy</a>
+          <a href="legal/cookie.html" class="nyx-link">Cookie Policy</a>
+          <a href="https://github.com/marvel-254/chat-app/blob/main/LICENSE" class="nyx-link" target="_blank" rel="noopener">MIT License</a>
+        </div>
+      </div>
+
+    </div>
+  </footer>
+
+  <!-- Dynamic GitHub Release Resolver -->
+  <script>
+    (async function() {
+      const repo = 'marvel-254/chat-app';
+      const mainBtn = document.getElementById('main-download-btn');
+      const mainLabel = document.getElementById('main-download-label');
+      const heroBtn = document.getElementById('hero-download-btn');
+      const heroLabel = document.getElementById('hero-download-label');
+      const infoEl = document.getElementById('release-info');
+      const linkArm64 = document.getElementById('arch-arm64');
+      const linkV7a = document.getElementById('arch-v7a');
+      const linkX86 = document.getElementById('arch-x86');
+
+      function formatBytes(bytes) {
+        if (!bytes) return '';
+        const mb = (bytes / (1024 * 1024)).toFixed(1);
+        return mb + ' MB';
       }
-      note.textContent = release.tag_name + ' • ' + (assets.length || 0) + ' APKs: arm64, armeabi-v7a, x86_64';
-    } catch (e) {
-      // Fall back to releases page if API fails
-      btn.href = 'https://github.com/' + repo + '/releases/latest';
-      note.textContent = 'Latest release • 3 APKs: arm64, armeabi-v7a, x86_64';
-    }
-  })();
-</script>
+
+      try {
+        const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`);
+        if (!res.ok) throw new Error('Release fetch status: ' + res.status);
+        const release = await res.json();
+        const assets = release.assets || [];
+
+        const arm64 = assets.find(a => a.name.includes('arm64-v8a'));
+        const v7a = assets.find(a => a.name.includes('armeabi-v7a'));
+        const x86 = assets.find(a => a.name.includes('x86_64'));
+        const primary = arm64 || assets[0];
+
+        if (primary) {
+          const sizeStr = formatBytes(primary.size);
+          const btnText = `Download NYX for Android (${release.tag_name || 'Latest'})`;
+          
+          if (mainBtn) mainBtn.href = primary.browser_download_url;
+          if (mainLabel) mainLabel.textContent = btnText;
+          if (heroBtn) heroBtn.href = primary.browser_download_url;
+          if (heroLabel) heroLabel.textContent = btnText;
+
+          if (infoEl) {
+            infoEl.textContent = `${release.tag_name} • ${primary.name} ${sizeStr ? '(' + sizeStr + ')' : ''}`;
+          }
+        }
+
+        if (arm64 && linkArm64) linkArm64.href = arm64.browser_download_url;
+        if (v7a && linkV7a) linkV7a.href = v7a.browser_download_url;
+        if (x86 && linkX86) linkX86.href = x86.browser_download_url;
+
+      } catch (err) {
+        // Fall back gracefully to stable pre-configured release URLs
+        if (infoEl) {
+          infoEl.textContent = 'Latest Release • 3 APK builds: arm64, armeabi-v7a, x86_64';
+        }
+      }
+    })();
+  </script>
+
+</body>
 </html>

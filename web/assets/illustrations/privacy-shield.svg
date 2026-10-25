@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%" fill="none">
+  <defs>
+    <linearGradient id="shieldGrad" x1="50" y1="30" x2="350" y2="370" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1C1E2E" />
+      <stop offset="100%" stop-color="#0E0F17" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="120" y1="100" x2="280" y2="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#B6A9FF" />
+      <stop offset="50%" stop-color="#7764FF" />
+      <stop offset="100%" stop-color="#4E3EBE" />
+    </linearGradient>
+    <radialGradient id="glowGrad" cx="200" cy="200" r="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#7764FF" stop-opacity="0.22" />
+      <stop offset="60%" stop-color="#7764FF" stop-opacity="0.04" />
+      <stop offset="100%" stop-color="#7764FF" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="strokeGrad" x1="100" y1="40" x2="300" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#7764FF" />
+      <stop offset="50%" stop-color="#26273B" />
+      <stop offset="100%" stop-color="#151622" />
+    </linearGradient>
+  </defs>
+
+  <!-- Ambient Glow -->
+  <circle cx="200" cy="200" r="160" fill="url(#glowGrad)" />
+
+  <!-- Shield Outer Geometry -->
+  <path d="M 200 45 C 275 45 330 75 330 145 C 330 250 250 315 200 355 C 150 315 70 250 70 145 C 70 75 125 45 200 45 Z" 
+        fill="url(#shieldGrad)" 
+        stroke="url(#strokeGrad)" 
+        stroke-width="3" />
+
+  <!-- Inner Concentric Shield Rim -->
+  <path d="M 200 70 C 255 70 298 94 298 150 C 298 232 236 288 200 322 C 164 288 102 232 102 150 C 102 94 145 70 200 70 Z" 
+        fill="none" 
+        stroke="#26273B" 
+        stroke-width="1.5" 
+        stroke-dasharray="4 4" />
+
+  <!-- Security Padlock / Core Keyhole -->
+  <!-- Shackle -->
+  <path d="M 160 185 V 155 C 160 133 178 115 200 115 C 222 115 240 133 240 155 V 185" 
+        fill="none" 
+        stroke="url(#accentGrad)" 
+        stroke-width="12" 
+        stroke-linecap="round" />
+
+  <!-- Lock Body -->
+  <rect x="145" y="180" width="110" height="85" rx="18" 
+        fill="#151622" 
+        stroke="#7764FF" 
+        stroke-width="2.5" />
+
+  <!-- Keyhole Cutout -->
+  <circle cx="200" cy="214" r="10" fill="url(#accentGrad)" />
+  <path d="M 197 218 L 194 238 H 206 L 203 218 Z" fill="url(#accentGrad)" />
+
+  <!-- Success / Row Level Security Check Node -->
+  <circle cx="200" cy="300" r="16" fill="#151622" stroke="#67E8C0" stroke-width="2.5" />
+  <path d="M 193 300 L 198 305 L 208 295" fill="none" stroke="#67E8C0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- Subtle Data Protection Dots -->
+  <circle cx="120" cy="120" r="3" fill="#7764FF" opacity="0.6" />
+  <circle cx="280" cy="120" r="3" fill="#7764FF" opacity="0.6" />
+  <circle cx="110" cy="240" r="2.5" fill="#B6A9FF" opacity="0.4" />
+  <circle cx="290" cy="240" r="2.5" fill="#B6A9FF" opacity="0.4" />
+</svg>
