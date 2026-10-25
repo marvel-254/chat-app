@@ -39,6 +39,7 @@ dependencies:
   go_router: ^14.0.0
   uuid: ^4.4.0
   intl: ^0.19.0
+  ably_flutter: ^1.2.44
 
 dev_dependencies:
   flutter_test:

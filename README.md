@@ -13,3 +13,7 @@ This project is a starting point for a NYX messaging application.
 For help getting started with Flutter development, view the
 [online documentation](https://docs.flutter.dev/), which offers tutorials,
 samples, guidance on mobile development, and a full API reference.
+
+## License
+
+NYX is released under the [MIT License](LICENSE).

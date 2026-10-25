@@ -3,8 +3,20 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 import 'services/supabase.dart';
+import 'services/ably.dart';
 import 'models/profile.dart';
+
+/// Initialise the Ably Realtime connection for the signed-in user.
+/// Called once after sign-in. [key] comes from the `ABLY_KEY` build define so
+/// the credential is never hard-coded in source.
+Future<void> initAbly() async {
+  await AblyService.instance.init(
+    String.fromEnvironment('ABLY_KEY', defaultValue: ''),
+    clientId: Supa.currentUser!.id,
+  );
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -166,7 +178,11 @@ class _LoginScreenState extends State<LoginScreen> {
       } else {
         await Supa.signIn(_email.text.trim(), _password.text);
       }
-      if (mounted) context.go('/conversations');
+      if (mounted) {
+        await initAbly();
+        if (!mounted) return;
+        context.go('/conversations');
+      }
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -552,19 +568,19 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _loadPeer();
-    Supa.onTyping(widget.conversationId, _onPeerTyping);
+    AblyService.instance.watchTyping(widget.conversationId).listen(_onPeerTyping);
   }
 
-  void _onPeerTyping(String userId, bool isTyping) {
-    if (userId == Supa.currentUser!.id) return; // ignore own broadcasts
-    if (isTyping) {
-      setState(() => _peerTyping = userId);
+  void _onPeerTyping(TypingEvent e) {
+    if (e.userId == Supa.currentUser!.id) return; // ignore own broadcasts
+    if (e.isTyping) {
+      setState(() => _peerTyping = e.userId);
       _peerTypingTimer?.cancel();
       _peerTypingTimer = Timer(const Duration(seconds: 3), () {
         if (mounted) setState(() => _peerTyping = null);
       });
     } else {
-      if (mounted && _peerTyping == userId) setState(() => _peerTyping = null);
+      if (mounted && _peerTyping == e.userId) setState(() => _peerTyping = null);
     }
   }
 
@@ -582,11 +598,16 @@ class _ChatScreenState extends State<ChatScreen> {
     if (uid == null) return;
     final profile = await Supa.getProfile(uid);
     if (mounted) setState(() => _peer = profile);
+    // Announce this user as present on the conversation channel.
+    if (mounted && profile != null) {
+      AblyService.instance.enterPresence(widget.conversationId, profile);
+    }
   }
 
   @override
   void dispose() {
-    Supa.unsubscribeTyping(widget.conversationId);
+    AblyService.instance.leavePresence(widget.conversationId);
+    AblyService.instance.disposeConversation(widget.conversationId);
     _ctrl.dispose();
     _scroll.dispose();
     _typingTimer?.cancel();
@@ -597,12 +618,19 @@ class _ChatScreenState extends State<ChatScreen> {
   void _send() async {
     final t = _ctrl.text.trim();
     if (t.isEmpty) return;
-    Supa.broadcastTyping(widget.conversationId, false);
+    AblyService.instance.broadcastTyping(widget.conversationId, false);
     _typingTimer?.cancel();
     if (mounted) setState(() => _typing = false);
     _ctrl.clear();
     _rollToBottom();
-    await Supa.sendMessage(widget.conversationId, t);
+    final msg = Message(
+      id: const Uuid().v4(),
+      conversationId: widget.conversationId,
+      senderId: Supa.currentUser!.id,
+      content: t,
+      createdAt: DateTime.now(),
+    );
+    await AblyService.instance.sendMessage(widget.conversationId, msg);
   }
 
   void _markUnreadAsRead(List<Message> messages) {
@@ -722,7 +750,7 @@ class _ChatScreenState extends State<ChatScreen> {
       children: [
         Expanded(
           child: StreamBuilder<List<Message>>(
-            stream: Supa.watchMessages(widget.conversationId),
+            stream: AblyService.instance.watchMessages(widget.conversationId),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
@@ -773,7 +801,7 @@ class _ChatScreenState extends State<ChatScreen> {
             children: [
               Expanded(
                 child: StreamBuilder<List<Message>>(
-                  stream: Supa.watchMessages(widget.conversationId),
+                  stream: AblyService.instance.watchMessages(widget.conversationId),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(child: CircularProgressIndicator());

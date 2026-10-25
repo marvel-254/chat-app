@@ -52,3 +52,6 @@ app.*.map.json
 # APKs are built by CI (build-apk.yml) and published to GitHub Releases.
 # Do not commit build artifacts to the repo root.
 /app-*.apk
+
+# Ably realtime API key (never commit). Put the real key here, or export ABLY_KEY.
+/android/app/ably.properties
