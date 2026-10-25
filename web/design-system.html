@@ -723,10 +723,52 @@
       </div>
     </section>
 
-    <!-- SECTION 5: Guidelines & Accessibility -->
+    <!-- SECTION 5: Design Motion System -->
+    <section class="ds-section" id="motion">
+      <div class="ds-section-title">
+        <h2 class="nyx-h2">5. Design Motion System</h2>
+      </div>
+      <p class="ds-section-desc">
+        A physics-informed motion language featuring natural deceleration entrance curves, organic springs for tactile feedback, and strict accessibility safeguards.
+      </p>
+
+      <div class="ds-specimen">
+        <div class="ds-specimen-header">
+          <span class="ds-specimen-title">Motion Curves &amp; Living Micro-Interactions</span>
+          <span class="nyx-caption">CSS Custom Properties</span>
+        </div>
+        <div class="ds-specimen-body" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--nyx-space-6); width: 100%;">
+          
+          <div style="background: var(--nyx-color-surface); border: 1px solid var(--nyx-color-border); border-radius: var(--nyx-radius-lg); padding: var(--nyx-space-5);">
+            <div class="nyx-label-text">Deceleration Entrance</div>
+            <div style="margin-top: 8px; font-weight: 600; color: var(--nyx-color-text);">--nyx-ease-decelerate</div>
+            <div class="nyx-caption" style="margin-top: 4px; font-family: var(--nyx-font-family-mono);">cubic-bezier(0.05, 0.7, 0.1, 1)</div>
+            <p class="nyx-caption" style="margin-top: 8px; color: var(--nyx-color-text-muted);">Used for incoming cards, modals, and staggered page reveals.</p>
+          </div>
+
+          <div style="background: var(--nyx-color-surface); border: 1px solid var(--nyx-color-border); border-radius: var(--nyx-radius-lg); padding: var(--nyx-space-5);">
+            <div class="nyx-label-text">Spring Interaction</div>
+            <div style="margin-top: 8px; font-weight: 600; color: var(--nyx-color-text);">--nyx-ease-spring</div>
+            <div class="nyx-caption" style="margin-top: 4px; font-family: var(--nyx-font-family-mono);">cubic-bezier(0.34, 1.4, 0.64, 1)</div>
+            <p class="nyx-caption" style="margin-top: 8px; color: var(--nyx-color-text-muted);">Used for tactile button presses, active state scaling, and badge pop.</p>
+          </div>
+
+          <div style="background: var(--nyx-color-surface); border: 1px solid var(--nyx-color-border); border-radius: var(--nyx-radius-lg); padding: var(--nyx-space-5); text-align: center;">
+            <div class="nyx-label-text">Living Ambient Pulse</div>
+            <div style="display: flex; justify-content: center; margin: 16px 0;">
+              <div class="nyx-status-indicator nyx-status-indicator--online" style="width: 16px; height: 16px;"></div>
+            </div>
+            <p class="nyx-caption" style="color: var(--nyx-color-text-muted);">Smooth 2.5s breathing cycle for active presence and read receipts.</p>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 6: Guidelines & Accessibility -->
     <section class="ds-section" id="guidelines">
       <div class="ds-section-title">
-        <h2 class="nyx-h2">5. Accessibility & Implementation Guidelines</h2>
+        <h2 class="nyx-h2">6. Accessibility &amp; Implementation Guidelines</h2>
       </div>
       
       <div class="ds-guidelines-box">

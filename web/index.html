@@ -613,7 +613,7 @@
       gap: var(--nyx-space-4);
     }
 
-    /* Mobile adjustments */
+    /* Mobile adjustments & Design Motion */
     @media (max-width: 640px) {
       .nyx-nav-menu {
         display: none;
@@ -624,6 +624,80 @@
       }
       .hero-actions .nyx-btn {
         width: 100%;
+      }
+      .hero-trust {
+        flex-wrap: wrap;
+        gap: var(--nyx-space-2) var(--nyx-space-3);
+      }
+    }
+
+    @media (max-width: 480px) {
+      .container {
+        padding: 0 var(--nyx-space-4);
+      }
+      .hero-section {
+        padding: var(--nyx-space-8) 0 var(--nyx-space-12);
+      }
+      .hero-title {
+        font-size: clamp(1.85rem, 8.5vw, 2.5rem);
+        word-break: break-word;
+      }
+      .hero-trust {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+      }
+      .hero-trust-dot {
+        display: none;
+      }
+      .phone-frame {
+        border-radius: 26px;
+        border-width: 2px;
+        max-width: 100%;
+      }
+      .phone-chat-body {
+        padding: var(--nyx-space-3);
+        min-height: 330px;
+      }
+      .nyx-chat-bubble {
+        max-width: 88%;
+        font-size: 0.875rem;
+      }
+      .highlight-visual {
+        padding: var(--nyx-space-3);
+        border-radius: var(--nyx-radius-lg);
+      }
+      .privacy-card {
+        padding: var(--nyx-space-6) var(--nyx-space-4);
+        border-radius: var(--nyx-radius-lg);
+      }
+      .download-card {
+        padding: var(--nyx-space-8) var(--nyx-space-4);
+        border-radius: var(--nyx-radius-lg);
+      }
+      .arch-downloads {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .arch-link {
+        text-align: center;
+        padding: 8px 12px;
+      }
+    }
+
+    @media (max-width: 380px) {
+      .nyx-navbar-inner {
+        gap: 6px;
+      }
+      .nyx-nav-actions {
+        gap: 6px;
+      }
+      .nyx-nav-actions .nyx-btn--sm {
+        padding: 0.4rem 0.65rem;
+        font-size: var(--nyx-font-size-xs);
+      }
+      .nyx-nav-actions .nyx-btn--secondary span {
+        display: none;
       }
     }
   </style>
@@ -669,7 +743,7 @@
         
         <!-- Left Side: Editorial Typography & Conversion CTAs -->
         <div class="hero-content">
-          <div class="hero-badge-wrap">
+          <div class="hero-badge-wrap nyx-motion-fade-up">
             <div style="display: flex; align-items: center; gap: var(--nyx-space-2);">
               <img src="assets/branding/nyx/concept-a/logo.svg" alt="NYX Logo Icon" width="28" height="28" style="border-radius: 6px;">
               <span style="font-weight: 800; font-size: 15px; letter-spacing: 0.05em; color: var(--nyx-color-text);">NYX</span>
@@ -680,17 +754,17 @@
             </span>
           </div>
 
-          <h1 class="hero-title">
+          <h1 class="hero-title nyx-motion-fade-up nyx-motion-delay-1">
             Your people.<br>
             Your space.<br>
             <span>Your conversations.</span>
           </h1>
 
-          <p class="hero-lead">
+          <p class="hero-lead nyx-motion-fade-up nyx-motion-delay-2">
             A better way to stay connected.
           </p>
 
-          <div class="hero-actions">
+          <div class="hero-actions nyx-motion-fade-up nyx-motion-delay-3">
             <a id="hero-download-btn" href="https://github.com/marvel-254/chat-app/releases/download/v25/app-arm64-v8a-release.apk" class="nyx-btn nyx-btn--primary nyx-btn--lg">
               <svg class="nyx-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -705,7 +779,7 @@
             </a>
           </div>
 
-          <div class="hero-trust">
+          <div class="hero-trust nyx-motion-fade-up nyx-motion-delay-4">
             <span>Free &amp; Open Source (MIT)</span>
             <span class="hero-trust-dot"></span>
             <span>Row-Level Security</span>
@@ -716,9 +790,9 @@
 
         <!-- Right Side: Illustrative NYX Phone Showcase -->
         <div class="phone-showcase-wrapper" aria-label="NYX Application Interface Preview">
-          <div class="phone-glow" aria-hidden="true"></div>
+          <div class="phone-glow nyx-motion-breathe" aria-hidden="true"></div>
           
-          <div class="phone-frame">
+          <div class="phone-frame nyx-motion-float">
             <!-- Android System Status Bar -->
             <div class="phone-status-bar" aria-hidden="true">
               <span>9:41</span>

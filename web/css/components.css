@@ -535,6 +535,90 @@
 }
 
 /* ==========================================================================
+   Design Motion System
+   ========================================================================== */
+
+/* Entrance Animations */
+@keyframes nyx-entrance-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes nyx-entrance-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes nyx-float-gentle {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes nyx-ambient-breathe {
+  0%, 100% {
+    transform: scale(0.95);
+    opacity: 0.2;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 0.32;
+  }
+}
+
+@keyframes nyx-pulse-dot {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.85);
+    opacity: 0.6;
+  }
+}
+
+/* Motion Utilities */
+.nyx-motion-fade-up {
+  animation: nyx-entrance-up var(--nyx-duration-slow) var(--nyx-ease-decelerate) both;
+}
+
+.nyx-motion-fade {
+  animation: nyx-entrance-fade var(--nyx-duration-normal) var(--nyx-ease-decelerate) both;
+}
+
+.nyx-motion-float {
+  animation: nyx-float-gentle 6s ease-in-out infinite;
+}
+
+.nyx-motion-breathe {
+  animation: nyx-ambient-breathe 7s ease-in-out infinite;
+}
+
+.nyx-motion-delay-1 { animation-delay: 100ms; }
+.nyx-motion-delay-2 { animation-delay: 200ms; }
+.nyx-motion-delay-3 { animation-delay: 320ms; }
+.nyx-motion-delay-4 { animation-delay: 460ms; }
+
+/* Status indicator pulsing */
+.nyx-status-indicator--online {
+  animation: nyx-pulse-dot 2.5s ease-in-out infinite;
+}
+
+/* Tactile Active States */
+.nyx-btn:active:not(:disabled):not(.nyx-btn--disabled) {
+  transform: scale(0.97) !important;
+}
+
+/* ==========================================================================
    Reduced Motion
    ========================================================================== */
 @media (prefers-reduced-motion: reduce) {
@@ -545,6 +629,17 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  .nyx-motion-fade-up,
+  .nyx-motion-fade,
+  .nyx-motion-float,
+  .nyx-motion-breathe,
+  .nyx-status-indicator--online,
+  .nyx-typing-dot {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
   }
 
   .nyx-btn--primary:hover,
