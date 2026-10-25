@@ -15,7 +15,7 @@ create index on profiles(username);
 
 -- conversations (1:1 chats)
 create table conversations (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -31,7 +31,7 @@ create table conversation_participants (
 
 -- messages
 create table messages (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   conversation_id uuid references conversations(id) on delete cascade,
   sender_id uuid references profiles(id) on delete cascade,
   content text not null,

@@ -55,3 +55,11 @@ app.*.map.json
 
 # Ably realtime API key (never commit). Put the real key here, or export ABLY_KEY.
 /android/app/ably.properties
+
+# Turso/libSQL artifacts (accidental)
+/auth
+/auth-wal
+db
+db-wal
+/version
+/version-wal
