@@ -16,4 +16,5 @@ samples, guidance on mobile development, and a full API reference.
 
 ## License
 
-NYX is released under the [MIT License](LICENSE).
+Copyright © 2026 marvel-254. All Rights Reserved — see [LICENSE](LICENSE).
+NYX is proprietary software: the source is viewable but no usage, modification, or distribution rights are granted.
