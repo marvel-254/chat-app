@@ -62,12 +62,19 @@ class Supa {
         .map((rows) async {
           final convIds = rows.map((r) => r['conversation_id'] as String).toList();
           if (convIds.isEmpty) return <Conversation>[];
-          final convs = await client
-              .from('conversations')
-              .select('*, messages!inner(*)')
-              .inFilter('id', convIds)
-              .order('updated_at', ascending: false);
-          return (convs as List).map((c) => Conversation.fromJson(c)).toList();
+          final res = await client.rpc(
+            'get_conversations_for_user',
+          );
+          final rows2 = (res as List).cast<Map<String, dynamic>>();
+          return rows2.map((r) => Conversation(
+                id: r['conversation_id'] as String,
+                createdAt: DateTime.parse(r['created_at'] as String),
+                updatedAt: DateTime.parse(r['updated_at'] as String),
+                peerId: r['peer_id'] as String?,
+                peerUsername: r['peer_username'] as String?,
+                peerDisplayName: r['peer_display_name'] as String?,
+                unreadCount: (r['unread_count'] as num?)?.toInt() ?? 0,
+              )).toList();
         })
         .asyncExpand((f) => Stream.fromFuture(f));
   }

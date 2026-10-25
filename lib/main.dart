@@ -472,15 +472,41 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                     itemBuilder: (_, i) {
                       final conv = conversations[i];
                       final lastMsg = conv.messages?.isNotEmpty == true ? conv.messages!.last : null;
+                      final unread = conv.unreadCount > 0;
                       return ListTile(
-                        leading: _Avatar(name: 'C', size: 44),
-                        title: Text('Conversation ${conv.id.substring(0, 8)}', style: const TextStyle(color: _P.text)),
+                        leading: _Avatar(name: conv.peerInitial, size: 44),
+                        title: Text(
+                          conv.peerLabel,
+                          style: TextStyle(
+                            color: _P.text,
+                            fontWeight: unread ? FontWeight.w700 : FontWeight.w600,
+                          ),
+                        ),
                         subtitle: lastMsg != null
                             ? Text(lastMsg.content, style: TextStyle(color: _P.muted, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis)
                             : null,
-                        trailing: lastMsg != null
-                            ? Text(DateFormat('h:mm a').format(lastMsg.createdAt), style: TextStyle(color: _P.muted, fontSize: 11))
-                            : null,
+                        trailing: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (unread)
+                              Container(
+                                padding: const EdgeInsets.all(2),
+                                constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                                decoration: const BoxDecoration(
+                                  color: _P.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Text(
+                                  conv.unreadCount > 99 ? '99+' : '${conv.unreadCount}',
+                                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
+                                  textAlign: TextAlign.center,
+                                ),
+                              )
+                            else if (lastMsg != null)
+                              Text(DateFormat('h:mm a').format(lastMsg.createdAt), style: const TextStyle(color: _P.muted, fontSize: 11)),
+                          ],
+                        ),
                         onTap: () => context.go('/chat/${conv.id}'),
                       );
                     },
@@ -518,6 +544,29 @@ class _ChatScreenState extends State<ChatScreen> {
   final _scroll = ScrollController();
   bool _typing = false;
   Timer? _typingTimer;
+  Profile? _peer;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPeer();
+  }
+
+  Future<void> _loadPeer() async {
+    // Resolve the other participant of this DM so the header shows their
+    // real identity instead of a hardcoded placeholder.
+    final ids = await Supa.client
+        .from('conversation_participants')
+        .select('user_id')
+        .eq('conversation_id', widget.conversationId)
+        .not('user_id', 'eq', Supa.currentUser!.id)
+        .limit(1);
+    if (!mounted) return;
+    final uid = (ids as List).cast<Map<String, dynamic>>().firstOrNull?['user_id'] as String?;
+    if (uid == null) return;
+    final profile = await Supa.getProfile(uid);
+    if (mounted) setState(() => _peer = profile);
+  }
 
   @override
   void dispose() {
@@ -562,28 +611,73 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  void _unsupported(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  void _showChatMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _P.surface,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _MenuTile(icon: Icons.info_outline, label: 'About this chat', onTap: () => Navigator.pop(context)),
+            _MenuTile(icon: Icons.block, label: 'Block ${_peer?.label ?? 'user'}', danger: true, onTap: () => Navigator.pop(context)),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAttachSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _P.surface,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _MenuTile(icon: Icons.image_outlined, label: 'Photo or video', onTap: () => Navigator.pop(context)),
+            _MenuTile(icon: Icons.insert_drive_file_outlined, label: 'Document', onTap: () => Navigator.pop(context)),
+            _MenuTile(icon: Icons.camera_alt_outlined, label: 'Camera', onTap: () => Navigator.pop(context)),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
         leadingWidth: 64,
-        leading: const Padding(
-          padding: EdgeInsets.only(left: 16, top: 2),
-          child: _Avatar(name: 'C', size: 40),
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 16, top: 2),
+          child: _Avatar(name: _peer?.peerInitial ?? '?', size: 40),
         ),
-        title: const Column(
+        title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('NYX', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _P.text)),
-            Text('online', style: TextStyle(fontSize: 12, color: _P.primary)),
+            Text(
+              _peer?.label ?? 'Chat',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _P.text),
+            ),
+            const Text('Active now', style: TextStyle(fontSize: 12, color: _P.muted)),
           ],
         ),
-        actions: const [
-          _ActionBtn(Icons.videocam_rounded),
-          _ActionBtn(Icons.phone_rounded),
-          _ActionBtn(Icons.more_vert),
-          SizedBox(width: 8),
+        actions: [
+          _ActionBtn(Icons.videocam_rounded, onTap: () => _unsupported('Video calls coming soon')),
+          _ActionBtn(Icons.phone_rounded, onTap: () => _unsupported('Voice calls coming soon')),
+          _ActionBtn(Icons.more_vert, onTap: () => _showChatMenu(context)),
+          const SizedBox(width: 8),
         ],
       ),
       body: LayoutBuilder(
@@ -637,7 +731,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
         if (_typing) const _TypingIndicator(),
-        _Composer(controller: _ctrl, onSend: _send, onTypingChanged: _onTypingChanged),
+        _Composer(controller: _ctrl, onSend: _send, onTypingChanged: _onTypingChanged, onAttach: () => _showAttachSheet(context)),
       ],
     );
   }
@@ -684,7 +778,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
               if (_typing) const _TypingIndicator(),
-              _Composer(controller: _ctrl, onSend: _send, onTypingChanged: _onTypingChanged),
+              _Composer(controller: _ctrl, onSend: _send, onTypingChanged: _onTypingChanged, onAttach: () => _showAttachSheet(context)),
             ],
           ),
         ),
@@ -879,10 +973,11 @@ class _Bubble extends StatelessWidget {
 }
 
 class _Composer extends StatelessWidget {
-  const _Composer({required this.controller, required this.onSend, this.onTypingChanged});
+  const _Composer({required this.controller, required this.onSend, this.onTypingChanged, this.onAttach});
   final TextEditingController controller;
   final VoidCallback onSend;
   final ValueChanged<String>? onTypingChanged;
+  final VoidCallback? onAttach;
 
   @override
   Widget build(BuildContext context) {
@@ -897,7 +992,10 @@ class _Composer extends StatelessWidget {
         child: Row(
           children: [
             const SizedBox(width: 8),
-            const Icon(Icons.add_rounded, color: _P.muted),
+            IconButton(
+              icon: const Icon(Icons.add_rounded, color: _P.muted, size: 22),
+              onPressed: onAttach,
+            ),
             const SizedBox(width: 4),
             Expanded(
               child: TextField(
@@ -929,7 +1027,11 @@ class _Composer extends StatelessWidget {
                           style: IconButton.styleFrom(backgroundColor: _P.primary),
                           icon: const Icon(Icons.arrow_upward_rounded, color: Colors.white),
                         )
-                      : const Icon(Icons.mic_none, color: _P.muted, key: ValueKey('mic')),
+                      : IconButton(
+                          key: const ValueKey('mic'),
+                          onPressed: onAttach,
+                          icon: const Icon(Icons.mic_none, color: _P.muted),
+                        ),
                 );
               },
             ),
@@ -965,11 +1067,29 @@ class _Avatar extends StatelessWidget {
 }
 
 class _ActionBtn extends StatelessWidget {
-  const _ActionBtn(this.icon);
+  const _ActionBtn(this.icon, {this.onTap});
   final IconData icon;
+  final VoidCallback? onTap;
   @override
   Widget build(BuildContext context) {
-    return IconButton(icon: Icon(icon, color: _P.muted, size: 22), onPressed: () {});
+    return IconButton(icon: Icon(icon, color: _P.muted, size: 22), onPressed: onTap ?? () {});
+  }
+}
+
+class _MenuTile extends StatelessWidget {
+  const _MenuTile({required this.icon, required this.label, this.danger = false, required this.onTap});
+  final IconData icon;
+  final String label;
+  final bool danger;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: danger ? Colors.red : _P.muted, size: 22),
+      title: Text(label, style: TextStyle(color: danger ? Colors.red : _P.text, fontSize: 15)),
+      onTap: onTap,
+    );
   }
 }
 

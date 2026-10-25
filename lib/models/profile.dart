@@ -32,6 +32,20 @@ class Profile {
         'created_at': createdAt.toIso8601String(),
         'updated_at': updatedAt.toIso8601String(),
       };
+
+  /// Display label for this profile (display name, else username).
+  String get label {
+    final name = displayName?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    final user = username.trim();
+    return user.isNotEmpty ? user : 'User';
+  }
+
+  /// First character used for the avatar, uppercased.
+  String get peerInitial {
+    final name = label;
+    return name.isNotEmpty ? name.trim()[0].toUpperCase() : '?';
+  }
 }
 
 class Conversation {
@@ -39,12 +53,20 @@ class Conversation {
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<Message>? messages;
+  final String? peerId;
+  final String? peerUsername;
+  final String? peerDisplayName;
+  final int unreadCount;
 
   Conversation({
     required this.id,
     required this.createdAt,
     required this.updatedAt,
     this.messages,
+    this.peerId,
+    this.peerUsername,
+    this.peerDisplayName,
+    this.unreadCount = 0,
   });
 
   factory Conversation.fromJson(Map<String, dynamic> json) => Conversation(
@@ -54,6 +76,9 @@ class Conversation {
         messages: (json['messages'] as List?)
             ?.map((m) => Message.fromJson(m as Map<String, dynamic>))
             .toList(),
+        peerUsername: json['peer_username'] as String?,
+        peerDisplayName: json['peer_display_name'] as String?,
+        unreadCount: (json['unread_count'] as num?)?.toInt() ?? 0,
       );
 
   Map<String, dynamic> toJson() => {
@@ -61,6 +86,21 @@ class Conversation {
         'created_at': createdAt.toIso8601String(),
         'updated_at': updatedAt.toIso8601String(),
       };
+
+  /// The display name to show for the other participant of this DM.
+  String get peerLabel {
+    final name = peerDisplayName?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    final user = peerUsername?.trim();
+    if (user != null && user.isNotEmpty) return user;
+    return 'Chat';
+  }
+
+  /// First character used for the avatar, uppercased.
+  String get peerInitial {
+    final name = peerLabel;
+    return name.isNotEmpty ? name.trim()[0].toUpperCase() : '?';
+  }
 }
 
 class Message {
