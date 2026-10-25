@@ -545,11 +545,27 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _typing = false;
   Timer? _typingTimer;
   Profile? _peer;
+  String? _peerTyping;
+  Timer? _peerTypingTimer;
 
   @override
   void initState() {
     super.initState();
     _loadPeer();
+    Supa.onTyping(widget.conversationId, _onPeerTyping);
+  }
+
+  void _onPeerTyping(String userId, bool isTyping) {
+    if (userId == Supa.currentUser!.id) return; // ignore own broadcasts
+    if (isTyping) {
+      setState(() => _peerTyping = userId);
+      _peerTypingTimer?.cancel();
+      _peerTypingTimer = Timer(const Duration(seconds: 3), () {
+        if (mounted) setState(() => _peerTyping = null);
+      });
+    } else {
+      if (mounted && _peerTyping == userId) setState(() => _peerTyping = null);
+    }
   }
 
   Future<void> _loadPeer() async {
@@ -570,15 +586,20 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    Supa.unsubscribeTyping(widget.conversationId);
     _ctrl.dispose();
     _scroll.dispose();
     _typingTimer?.cancel();
+    _peerTypingTimer?.cancel();
     super.dispose();
   }
 
   void _send() async {
     final t = _ctrl.text.trim();
     if (t.isEmpty) return;
+    Supa.broadcastTyping(widget.conversationId, false);
+    _typingTimer?.cancel();
+    if (mounted) setState(() => _typing = false);
     _ctrl.clear();
     _rollToBottom();
     await Supa.sendMessage(widget.conversationId, t);
@@ -595,10 +616,14 @@ class _ChatScreenState extends State<ChatScreen> {
   void _onTypingChanged(String text) {
     if (text.isNotEmpty && !_typing) {
       setState(() => _typing = true);
+      Supa.broadcastTyping(widget.conversationId, true);
     }
     _typingTimer?.cancel();
     _typingTimer = Timer(const Duration(seconds: 2), () {
-      if (mounted) setState(() => _typing = false);
+      if (mounted) {
+        setState(() => _typing = false);
+        Supa.broadcastTyping(widget.conversationId, false);
+      }
     });
   }
 
@@ -730,7 +755,10 @@ class _ChatScreenState extends State<ChatScreen> {
             },
           ),
         ),
-        if (_typing) const _TypingIndicator(),
+        if (_typing || _peerTyping != null)
+          _TypingIndicator(
+            label: _peerTyping != null ? '${_peer?.label ?? 'Someone'} is typing…' : 'Typing…',
+          ),
         _Composer(controller: _ctrl, onSend: _send, onTypingChanged: _onTypingChanged, onAttach: () => _showAttachSheet(context)),
       ],
     );
@@ -777,7 +805,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   },
                 ),
               ),
-              if (_typing) const _TypingIndicator(),
+              if (_typing || _peerTyping != null)
+                _TypingIndicator(
+                  label: _peerTyping != null ? '${_peer?.label ?? 'Someone'} is typing…' : 'Typing…',
+                ),
               _Composer(controller: _ctrl, onSend: _send, onTypingChanged: _onTypingChanged, onAttach: () => _showAttachSheet(context)),
             ],
           ),
@@ -835,14 +866,15 @@ class _ErrorState extends StatelessWidget {
 }
 
 class _TypingIndicator extends StatelessWidget {
-  const _TypingIndicator();
+  const _TypingIndicator({required this.label});
+  final String label;
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Align(
         alignment: Alignment.centerLeft,
-        child: Text('Typing…', style: TextStyle(color: _P.muted, fontSize: 12, fontStyle: FontStyle.italic)),
+        child: Text(label, style: const TextStyle(color: _P.muted, fontSize: 12, fontStyle: FontStyle.italic)),
       ),
     );
   }

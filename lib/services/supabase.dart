@@ -118,4 +118,42 @@ class Supa {
         .eq('conversation_id', conversationId)
         .eq('user_id', currentUser!.id);
   }
+
+  // Realtime typing broadcast.
+  // Broadcasts typing status on a per-conversation channel so the peer can
+  // see "Typing…". Uses a short-lived broadcast event (no persistence).
+  static const _typingEvent = 'typing';
+
+  static String _typingChannel(String conversationId) => 'typing:$conversationId';
+
+  static Future<void> broadcastTyping(String conversationId, bool isTyping) async {
+    await client.channel(_typingChannel(conversationId))
+        .httpSend(
+          event: _typingEvent,
+          payload: {
+            'user_id': currentUser?.id,
+            'is_typing': isTyping,
+          },
+        )
+        .catchError((_) {}); // never throw on a best-effort typing signal
+  }
+
+  /// Subscribe to typing broadcasts for a conversation. Invokes [onTyping]
+  /// with the sender's user id and whether they are typing.
+  static void onTyping(String conversationId, void Function(String userId, bool isTyping) onTyping) {
+    client.channel(_typingChannel(conversationId))
+        .onBroadcast(
+          event: _typingEvent,
+          callback: (payload) {
+            final uid = payload['user_id'] as String?;
+            final typing = payload['is_typing'] as bool? ?? false;
+            if (uid != null) onTyping(uid, typing);
+          },
+        )
+        .subscribe();
+  }
+
+  static void unsubscribeTyping(String conversationId) {
+    client.removeChannel(client.channel(_typingChannel(conversationId)));
+  }
 }
