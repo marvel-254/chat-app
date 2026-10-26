@@ -1,14 +1,20 @@
 {
   "outputDirectory": "build/web",
-  "framework": null,
+  "framework": "other",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ],
   "headers": [
     {
-      "source": "(.*)(\.[a-f0-9]+)(\.js|\.css|\.wasm|\.png|\.jpg|\.woff2?)",
+      "source": "(.*)\\.(js|css|wasm|png|jpg|webp|woff2?|svg)",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
       ]
     }
   ]
