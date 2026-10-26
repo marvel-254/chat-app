@@ -1,6 +1,6 @@
 {
   "outputDirectory": "build/web",
-  "framework": "other",
+  "framework": "create-react-app",
   "rewrites": [
     {
       "source": "/(.*)",
