@@ -1,10 +1,7 @@
-import java.util.Properties
-
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
-    id("org.jetbrains.kotlin.android")
 }
 
 // Release signing credentials. Kept out of version control (gitignored).
@@ -12,9 +9,18 @@ plugins {
 //   keytool -genkeypair -v -keystore release.keystore -alias nyx-release -keyalg RSA -keysize 2048 -validity 10000
 // then write the values to key.properties next to this file.
 val keystorePropertiesFile = rootProject.file("app/key.properties")
-val keystoreProperties = java.util.Properties()
-if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(keystorePropertiesFile.inputStream())
+val keystoreProperties: Map<String, String> = if (keystorePropertiesFile.exists()) {
+    // Read key.properties as simple key=value pairs without java.util.Properties
+    // (the Kotlin DSL script classpath under AGP 9.x does not expose java.util).
+    keystorePropertiesFile.readLines()
+        .mapNotNull { line ->
+            val trimmed = line.trim()
+            if (trimmed.isEmpty() || trimmed.startsWith("#")) null
+            else trimmed.split("=", limit = 2).takeIf { it.size == 2 }?.let { it[0].trim() to it[1].trim() }
+        }
+        .toMap()
+} else {
+    emptyMap()
 }
 
 android {
