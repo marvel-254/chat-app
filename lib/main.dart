@@ -160,11 +160,20 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
     try {
+      final email = _email.text.trim();
+      final password = _password.text;
+      if (!email.contains('@') || !email.contains('.')) {
+        throw 'Enter a valid email address';
+      }
+      if (password.length < 6) {
+        throw 'Password must be at least 6 characters';
+      }
       if (_isSignUp) {
-        if (_username.text.trim().isEmpty) throw 'Username required';
-        await Supa.signUp(_email.text.trim(), _password.text, _username.text.trim());
+        final username = _username.text.trim();
+        if (username.isEmpty) throw 'Username required';
+        await Supa.signUp(email, password, username);
       } else {
-        await Supa.signIn(_email.text.trim(), _password.text);
+        await Supa.signIn(email, password);
       }
       if (mounted) {
         context.go('/conversations');
