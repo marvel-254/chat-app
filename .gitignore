@@ -63,3 +63,8 @@ db
 db-wal
 /version
 /version-wal
+
+# Agent tooling (Ably skills, Claude skills) — not part of the app
+.agents/
+.claude/
+skills-lock.json
