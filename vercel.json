@@ -1,6 +1,7 @@
 {
-  "outputDirectory": "build/web",
   "framework": "create-react-app",
+  "buildCommand": "echo 'Flutter already built build/web'",
+  "outputDirectory": "build/web",
   "rewrites": [
     {
       "source": "/(.*)",
