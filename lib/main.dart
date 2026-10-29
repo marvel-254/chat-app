@@ -43,6 +43,7 @@ final _router = GoRouter(
   routes: [
     GoRoute(path: '/', builder: (_, __) => const AuthGate()),
     GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
+    GoRoute(path: '/confirm', builder: (_, state) => ConfirmationScreen(email: state.extra as String? ?? '')),
     GoRoute(path: '/conversations', builder: (_, __) => const ConversationListScreen()),
     GoRoute(
       path: '/chat/:conversationId',
@@ -171,7 +172,15 @@ class _LoginScreenState extends State<LoginScreen> {
       if (_isSignUp) {
         final username = _username.text.trim();
         if (username.isEmpty) throw 'Username required';
-        await Supa.signUp(email, password, username);
+        final res = await Supa.signUp(email, password, username);
+        // Supabase may require email confirmation before sign-in is allowed.
+        // If no session was created, the user must confirm their email first.
+        if (res.session == null) {
+          if (mounted) {
+            context.go('/confirm', extra: email);
+          }
+          return;
+        }
       } else {
         await Supa.signIn(email, password);
       }
@@ -328,6 +337,112 @@ class _LoginScreenState extends State<LoginScreen> {
                       ? 'Already have an account? Sign In'
                       : 'Need an account? Sign Up',
                       style: TextStyle(color: _P.primary)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class ConfirmationScreen extends StatefulWidget {
+  const ConfirmationScreen({super.key, required this.email});
+  final String email;
+
+  @override
+  State<ConfirmationScreen> createState() => _ConfirmationScreenState();
+}
+
+class _ConfirmationScreenState extends State<ConfirmationScreen> {
+  bool _resending = false;
+  String? _error;
+
+  Future<void> _resend() async {
+    setState(() {
+      _resending = true;
+      _error = null;
+    });
+    try {
+      await Supa.resendConfirmation(widget.email);
+      if (mounted) setState(() => _error = null);
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _resending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [_indigo, _indigoDeep],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Center(
+                    child: Icon(Icons.mark_email_unread_outlined, color: Colors.white, size: 40),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Text('Check Your Email',
+                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: _P.text)),
+                const SizedBox(height: 8),
+                Text(
+                  'We sent a confirmation link to\n${widget.email}. Click it to activate your account, then sign in.',
+                  style: const TextStyle(fontSize: 15, color: _P.muted),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+                if (_error != null)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.1),
+                      border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 14)),
+                  ),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: OutlinedButton.icon(
+                    onPressed: _resending ? null : _resend,
+                    icon: _resending
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: _P.text))
+                        : const Icon(Icons.mark_email_read_outlined, color: _P.text),
+                    label: Text(_resending ? 'Sending…' : 'Resend Confirmation',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _P.text,
+                      side: const BorderSide(color: _P.border),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: () => context.go('/login'),
+                  child: const Text('Back to Sign In', style: TextStyle(color: _P.primary)),
                 ),
               ],
             ),

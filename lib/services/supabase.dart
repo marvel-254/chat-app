@@ -29,6 +29,10 @@ class Supa {
   static User? get currentUser => client.auth.currentUser;
   static Stream<AuthState> get authStateChanges => client.auth.onAuthStateChange;
 
+  // Re-send the email confirmation link for an unconfirmed account.
+  static Future<void> resendConfirmation(String email) =>
+      client.auth.resend(type: OtpType.signup, email: email);
+
   // Profiles
   static Future<Profile?> getProfile(String uid) async {
     final res = await client.from('profiles').select().eq('id', uid).maybeSingle();
