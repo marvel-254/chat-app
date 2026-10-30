@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
@@ -9,12 +8,19 @@ import 'models/profile.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Supabase.initialize(
-    url: String.fromEnvironment('SUPABASE_URL',
-        defaultValue: 'https://your-project.supabase.co'),
-    publishableKey: String.fromEnvironment('SUPABASE_ANON_KEY',
-        defaultValue: 'your-anon-key-here'),
-  );
+  const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+  const supabaseKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+  final uri = Uri.tryParse(supabaseUrl);
+  if (uri == null ||
+      !uri.hasAuthority ||
+      uri.host.isEmpty ||
+      !const {'https', 'http'}.contains(uri.scheme) ||
+      supabaseKey.isEmpty) {
+    runApp(const BackendConfigurationApp());
+    return;
+  }
+
+  await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
   runApp(const BroApp());
 }
 
@@ -44,6 +50,51 @@ class _P {
   static const success = _success;
   static const primary = _volt;
   static const darkOnAccent = _darkOnVolt;
+}
+
+class BackendConfigurationApp extends StatelessWidget {
+  const BackendConfigurationApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'BRO setup required',
+      theme: ThemeData.dark(useMaterial3: true),
+      home: Scaffold(
+        backgroundColor: _P.bg,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.settings_ethernet, color: _P.primary, size: 48),
+                  SizedBox(height: 20),
+                  Text(
+                    'BRO needs backend configuration',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: _P.text,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  SizedBox(height: 10),
+                  Text(
+                    'Set SUPABASE_URL and SUPABASE_ANON_KEY for this build, then restart the app.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: _P.muted, height: 1.5),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 final _router = GoRouter(
@@ -198,10 +249,18 @@ class _LoginScreenState extends State<LoginScreen> {
         context.go('/conversations');
       }
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _password.dispose();
+    _username.dispose();
+    super.dispose();
   }
 
   @override
@@ -370,7 +429,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    const Text('By stepping in, you rep the Bro Code. E2E Encrypted.',
+                    const Text('By stepping in, you rep the Bro Code.',
                         style: TextStyle(fontSize: 11, color: _P.muted)),
                   ],
                 ),
@@ -660,16 +719,64 @@ class ConversationListScreen extends StatefulWidget {
 class _ConversationListScreenState extends State<ConversationListScreen> {
   final _search = TextEditingController();
   List<Profile> _searchResults = [];
+  Timer? _searchDebounce;
+  int _searchRequestId = 0;
+  bool _searchLoading = false;
+  bool _searchCompleted = false;
+  String? _searchError;
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    final requestId = ++_searchRequestId;
+    final query = value.trim();
+    setState(() {
+      _searchResults = [];
+      _searchError = null;
+      _searchLoading = false;
+      _searchCompleted = false;
+    });
+    if (query.isEmpty) return;
+
+    _searchDebounce = Timer(const Duration(milliseconds: 250), () async {
+      if (!mounted || requestId != _searchRequestId) return;
+      setState(() => _searchLoading = true);
+      try {
+        final results = await Supa.searchUsers(query);
+        if (!mounted || requestId != _searchRequestId) return;
+        setState(() {
+          _searchResults = results;
+          _searchLoading = false;
+          _searchCompleted = true;
+        });
+      } catch (_) {
+        if (!mounted || requestId != _searchRequestId) return;
+        setState(() {
+          _searchError = 'Could not search users. Please try again.';
+          _searchLoading = false;
+          _searchCompleted = true;
+        });
+      }
+    });
+  }
 
   @override
   void dispose() {
+    _searchRequestId++;
+    _searchDebounce?.cancel();
     _search.dispose();
     super.dispose();
   }
 
   Future<void> _startDM(Profile other) async {
-    final conv = await Supa.getOrCreateDM(other.id);
-    if (mounted) context.go('/chat/${conv.id}');
+    try {
+      final conv = await Supa.getOrCreateDM(other.id);
+      if (mounted) context.go('/chat/${conv.id}');
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open this conversation. Please try again.')),
+      );
+    }
   }
 
   @override
@@ -720,21 +827,35 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
               suffixIcon: _search.text.isNotEmpty
                   ? IconButton(
                       icon: Icon(Icons.clear, color: _P.muted),
-                      onPressed: () => _search.clear(),
+                      onPressed: () {
+                        _search.clear();
+                        _onSearchChanged('');
+                      },
                     )
                   : null,
             ),
-            onChanged: (v) async {
-              if (v.trim().isEmpty) {
-                setState(() => _searchResults = []);
-                return;
-              }
-              final results = await Supa.searchUsers(v.trim());
-              if (mounted) setState(() => _searchResults = results);
-            },
+            onChanged: _onSearchChanged,
           ),
         ),
-        if (_search.text.isNotEmpty && _searchResults.isNotEmpty) ...[
+        if (_search.text.trim().isNotEmpty && _searchLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: LinearProgressIndicator(minHeight: 2),
+          ),
+        if (_search.text.trim().isNotEmpty && _searchError != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text(_searchError!, style: const TextStyle(color: Colors.redAccent)),
+          ),
+        if (_search.text.trim().isNotEmpty &&
+            _searchCompleted &&
+            _searchError == null &&
+            _searchResults.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text('No users found.', style: TextStyle(color: _P.muted)),
+          ),
+        if (_search.text.trim().isNotEmpty && _searchResults.isNotEmpty) ...[
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -795,7 +916,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                     itemCount: conversations.length,
                     itemBuilder: (_, i) {
                       final conv = conversations[i];
-                      final lastMsg = conv.messages?.isNotEmpty == true ? conv.messages!.last : null;
+                      final lastMessage = conv.lastMessage;
+                      final lastMessageAt = conv.lastMessageAt;
                       final unread = conv.unreadCount > 0;
                       return ListTile(
                         leading: _Avatar(name: conv.peerInitial, size: 44),
@@ -806,8 +928,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                             fontWeight: unread ? FontWeight.w700 : FontWeight.w600,
                           ),
                         ),
-                        subtitle: lastMsg != null
-                            ? Text(lastMsg.content, style: TextStyle(color: _P.muted, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis)
+                        subtitle: lastMessage != null
+                            ? Text(lastMessage, style: TextStyle(color: _P.muted, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis)
                             : null,
                         trailing: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -827,8 +949,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                                   textAlign: TextAlign.center,
                                 ),
                               )
-                            else if (lastMsg != null)
-                              Text(DateFormat('h:mm a').format(lastMsg.createdAt), style: const TextStyle(color: _P.muted, fontSize: 11)),
+                            else if (lastMessageAt != null)
+                              Text(DateFormat('h:mm a').format(lastMessageAt), style: const TextStyle(color: _P.muted, fontSize: 11)),
                           ],
                         ),
                         onTap: () => context.go('/chat/${conv.id}'),
@@ -867,6 +989,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _ctrl = TextEditingController();
   final _scroll = ScrollController();
   bool _typing = false;
+  bool _sendingMessage = false;
   Timer? _typingTimer;
   Profile? _peer;
   String? _peerTyping;
@@ -880,7 +1003,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _onPeerTyping(String userId, bool isTyping) {
-    if (userId == Supa.currentUser!.id) return; // ignore own broadcasts
+    final currentUserId = Supa.currentUser?.id;
+    if (!mounted || currentUserId == null || userId == currentUserId) return;
     if (isTyping) {
       setState(() => _peerTyping = userId);
       _peerTypingTimer?.cancel();
@@ -918,15 +1042,27 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  void _send() async {
-    final t = _ctrl.text.trim();
-    if (t.isEmpty) return;
+  Future<void> _send() async {
+    final draft = _ctrl.text;
+    final content = draft.trim();
+    if (content.isEmpty || _sendingMessage) return;
+
+    setState(() => _sendingMessage = true);
     Supa.broadcastTyping(widget.conversationId, false);
     _typingTimer?.cancel();
-    if (mounted) setState(() => _typing = false);
-    _ctrl.clear();
-    _rollToBottom();
-    await Supa.sendMessage(widget.conversationId, t);
+    setState(() => _typing = false);
+    try {
+      await Supa.sendMessage(widget.conversationId, content);
+      if (!mounted) return;
+      if (_ctrl.text == draft) _ctrl.clear();
+      _rollToBottom();
+    } catch (_) {
+      if (mounted) {
+        _unsupported('Message failed to send. Your draft is still here.');
+      }
+    } finally {
+      if (mounted) setState(() => _sendingMessage = false);
+    }
   }
 
   void _markUnreadAsRead(List<Message> messages) {
@@ -967,6 +1103,11 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  void _closeSheetWithNotice(BuildContext context, String message) {
+    Navigator.pop(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _unsupported(message));
+  }
+
   void _showChatMenu(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -975,8 +1116,17 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _MenuTile(icon: Icons.info_outline, label: 'About this chat', onTap: () => Navigator.pop(context)),
-            _MenuTile(icon: Icons.block, label: 'Block ${_peer?.label ?? 'user'}', danger: true, onTap: () => Navigator.pop(context)),
+            _MenuTile(
+              icon: Icons.info_outline,
+              label: 'About this chat',
+              onTap: () => _closeSheetWithNotice(context, 'Chat details are coming soon.'),
+            ),
+            _MenuTile(
+              icon: Icons.block,
+              label: 'Block ${_peer?.label ?? 'user'}',
+              danger: true,
+              onTap: () => _closeSheetWithNotice(context, 'Blocking is coming soon.'),
+            ),
             const SizedBox(height: 8),
           ],
         ),
@@ -992,9 +1142,21 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _MenuTile(icon: Icons.image_outlined, label: 'Photo or video', onTap: () => Navigator.pop(context)),
-            _MenuTile(icon: Icons.insert_drive_file_outlined, label: 'Document', onTap: () => Navigator.pop(context)),
-            _MenuTile(icon: Icons.camera_alt_outlined, label: 'Camera', onTap: () => Navigator.pop(context)),
+            _MenuTile(
+              icon: Icons.image_outlined,
+              label: 'Photo or video',
+              onTap: () => _closeSheetWithNotice(context, 'Photo sharing is coming soon.'),
+            ),
+            _MenuTile(
+              icon: Icons.insert_drive_file_outlined,
+              label: 'Document',
+              onTap: () => _closeSheetWithNotice(context, 'Document sharing is coming soon.'),
+            ),
+            _MenuTile(
+              icon: Icons.camera_alt_outlined,
+              label: 'Camera',
+              onTap: () => _closeSheetWithNotice(context, 'Camera sharing is coming soon.'),
+            ),
             const SizedBox(height: 8),
           ],
         ),
@@ -1019,7 +1181,10 @@ class _ChatScreenState extends State<ChatScreen> {
               _peer?.label ?? 'Chat',
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _P.text),
             ),
-            const _OnlineStatus(),
+            const Text(
+              'Direct message',
+              style: TextStyle(fontSize: 12, color: _P.muted),
+            ),
           ],
         ),
         actions: [
@@ -1083,7 +1248,13 @@ class _ChatScreenState extends State<ChatScreen> {
           _TypingIndicator(
             label: _peerTyping != null ? '${_peer?.label ?? 'Someone'} is typing…' : 'Typing…',
           ),
-        _Composer(controller: _ctrl, onSend: _send, onTypingChanged: _onTypingChanged, onAttach: () => _showAttachSheet(context)),
+        _Composer(
+          controller: _ctrl,
+          onSend: _send,
+          onTypingChanged: _onTypingChanged,
+          onAttach: () => _showAttachSheet(context),
+          onVoice: () => _unsupported('Voice messages are coming soon.'),
+        ),
       ],
     );
   }
@@ -1133,7 +1304,13 @@ class _ChatScreenState extends State<ChatScreen> {
                 _TypingIndicator(
                   label: _peerTyping != null ? '${_peer?.label ?? 'Someone'} is typing…' : 'Typing…',
                 ),
-              _Composer(controller: _ctrl, onSend: _send, onTypingChanged: _onTypingChanged, onAttach: () => _showAttachSheet(context)),
+              _Composer(
+                controller: _ctrl,
+                onSend: _send,
+                onTypingChanged: _onTypingChanged,
+                onAttach: () => _showAttachSheet(context),
+                onVoice: () => _unsupported('Voice messages are coming soon.'),
+              ),
             ],
           ),
         ),
@@ -1185,59 +1362,6 @@ class _ErrorState extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _OnlineStatus extends StatefulWidget {
-  const _OnlineStatus();
-
-  @override
-  State<_OnlineStatus> createState() => _OnlineStatusState();
-}
-
-class _OnlineStatusState extends State<_OnlineStatus>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1100),
-  )..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _pulse.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        AnimatedBuilder(
-          animation: _pulse,
-          builder: (context, child) {
-            final glow = 0.2 + _pulse.value * 0.45;
-            return Container(
-              width: 7,
-              height: 7,
-              decoration: BoxDecoration(
-                color: _P.success,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: _P.success.withValues(alpha: glow),
-                    blurRadius: 3 + _pulse.value * 5,
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-        const SizedBox(width: 6),
-        const Text('Active now',
-            style: TextStyle(fontSize: 12, color: _P.muted)),
-      ],
     );
   }
 }
@@ -1425,11 +1549,18 @@ class _Bubble extends StatelessWidget {
 }
 
 class _Composer extends StatelessWidget {
-  const _Composer({required this.controller, required this.onSend, this.onTypingChanged, this.onAttach});
+  const _Composer({
+    required this.controller,
+    required this.onSend,
+    this.onTypingChanged,
+    this.onAttach,
+    this.onVoice,
+  });
   final TextEditingController controller;
   final VoidCallback onSend;
   final ValueChanged<String>? onTypingChanged;
   final VoidCallback? onAttach;
+  final VoidCallback? onVoice;
 
   @override
   Widget build(BuildContext context) {
@@ -1481,7 +1612,7 @@ class _Composer extends StatelessWidget {
                         )
                       : IconButton(
                           key: const ValueKey('mic'),
-                          onPressed: onAttach,
+                          onPressed: onVoice,
                           icon: const Icon(Icons.mic_none, color: _P.muted),
                         ),
                 );

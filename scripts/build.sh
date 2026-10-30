@@ -10,9 +10,8 @@
 #   ./scripts/build.sh web        # web build
 #   ./scripts/build.sh --help
 #
-# .env.local format (one KEY=VALUE per line, gitignored):
-#   SUPABASE_URL=https://your-project.supabase.co
-#   SUPABASE_ANON_KEY=***
+# .env.local must define SUPABASE_URL and SUPABASE_ANON_KEY with the
+# values from the Supabase project settings. Do not commit this file.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
