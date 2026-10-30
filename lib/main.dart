@@ -205,20 +205,11 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
+                Image.asset(
+                  'assets/images/bro_logo.png',
                   width: 80,
                   height: 80,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [_indigo, _indigoDeep],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Center(
-                    child: Text('N', style: TextStyle(fontSize: 40, fontWeight: FontWeight.w700, color: Colors.white)),
-                  ),
+                  gaplessPlayback: true,
                 ),
                 const SizedBox(height: 24),
                 Text(_isSignUp ? 'Create Account' : 'Welcome Back',
@@ -1262,14 +1253,7 @@ class _NavSidebar extends StatelessWidget {
         border: Border(right: BorderSide(color: _P.border, width: 1)),
       ),
       child: Column(children: [
-        Container(
-          width: 56, height: 56, margin: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [_indigo, _indigoDeep], begin: Alignment.topLeft, end: Alignment.bottomRight),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: const Center(child: Text('N', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: Colors.white))),
-        ),
+        Image.asset('assets/images/bro_logo.png', width: 56, height: 56, gaplessPlayback: true),
         _NavItem(icon: Icons.forum_outlined, label: 'Chats', onTap: () => context.go('/conversations')),
         _NavItem(icon: Icons.search, label: 'Discover', onTap: () {}),
         _NavItem(icon: Icons.settings_outlined, label: 'Settings', onTap: () {}),

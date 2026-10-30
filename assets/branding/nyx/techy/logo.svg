@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B0F19"/>
+      <stop offset="0.55" stop-color="#0E1526"/>
+      <stop offset="1" stop-color="#070A12"/>
+    </linearGradient>
+    <linearGradient id="neon" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22D3EE"/>
+      <stop offset="0.55" stop-color="#06B6D4"/>
+      <stop offset="1" stop-color="#0EA5E9"/>
+    </linearGradient>
+    <linearGradient id="glyph" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E0FBFF"/>
+      <stop offset="1" stop-color="#67E8F9"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#1E293B" stroke-width="1.5"/>
+    </pattern>
+  </defs>
+
+  <!-- base -->
+  <rect width="1024" height="1024" rx="232" fill="url(#bg)"/>
+  <rect x="24" y="24" width="976" height="976" rx="212" fill="none" stroke="#1E293B" stroke-width="4"/>
+
+  <!-- circuit grid -->
+  <g opacity="0.5">
+    <rect x="64" y="64" width="896" height="896" rx="120" fill="url(#grid)"/>
+  </g>
+
+  <!-- corner tech nodes -->
+  <g fill="none" stroke="#22D3EE" stroke-width="4" opacity="0.85">
+    <path d="M150 230 V150 H230"/>
+    <path d="M874 230 V150 H794"/>
+    <path d="M150 794 V874 H230"/>
+    <path d="M874 794 V874 H794"/>
+  </g>
+  <g fill="#22D3EE">
+    <circle cx="150" cy="150" r="9"/><circle cx="874" cy="150" r="9"/>
+    <circle cx="150" cy="874" r="9"/><circle cx="874" cy="874" r="9"/>
+  </g>
+
+  <!-- scanline accent -->
+  <rect x="120" y="300" width="784" height="2" fill="#22D3EE" opacity="0.25"/>
+  <rect x="120" y="722" width="784" height="2" fill="#22D3EE" opacity="0.25"/>
+
+  <!-- glyph: geometric N with circuit terminals -->
+  <g filter="url(#glow)">
+    <path d="M336 700 V324 H416 L608 560 V324 H688 V700 H608 L416 464 V700 Z"
+          fill="url(#glyph)"/>
+  </g>
+
+  <!-- terminal dots on glyph corners -->
+  <g fill="#22D3EE" filter="url(#glow)">
+    <circle cx="336" cy="324" r="14"/>
+    <circle cx="688" cy="700" r="14"/>
+  </g>
+
+  <!-- bottom tech label -->
+  <text x="512" y="838" text-anchor="middle" font-family="monospace"
+        font-size="58" font-weight="700" letter-spacing="18" fill="#5EEAD4">NYX</text>
+</svg>
