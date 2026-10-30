@@ -17,25 +17,32 @@ void main() async {
   runApp(const BroApp());
 }
 
-const _indigo = Color(0xFF6366F1);
-const _indigoDeep = Color(0xFF3B3E8F);
-const _bg = Color(0xFF0E0F13);
-const _surface = Color(0xFF17181D);
-const _border = Color(0xFF26272E);
-const _text = Color(0xFFE8EAED);
-const _muted = Color(0xFF8A8C94);
+const _bg = Color(0xFF121318);
+const _surface = Color(0xFF1E1F25);
+const _surfaceHigh = Color(0xFF292A2F);
+const _surfaceLow = Color(0xFF0D0E13);
+const _border = Color(0xFF444932);
+const _text = Color(0xFFE3E1E9);
+const _muted = Color(0xFFC5C9AC);
 const _success = Color(0xFF22C55E);
+
+// Electric Street accents
+const _volt = Color(0xFFD4FF00); // primary accent (lime)
+const _darkOnVolt = Color(0xFF0C0D12); // text on lime accents
 
 const _adaptiveBreakpoint = 600.0;
 
 class _P {
   static const bg = _bg;
   static const surface = _surface;
+  static const surfaceHigh = _surfaceHigh;
+  static const surfaceLow = _surfaceLow;
   static const border = _border;
   static const text = _text;
   static const muted = _muted;
-  static const primary = _indigo;
   static const success = _success;
+  static const primary = _volt;
+  static const darkOnAccent = _darkOnVolt;
 }
 
 final _router = GoRouter(
@@ -79,6 +86,7 @@ class BroApp extends StatelessWidget {
           backgroundColor: _P.bg,
           surfaceTintColor: Colors.transparent,
           elevation: 0,
+          titleTextStyle: TextStyle(color: _P.text, fontSize: 18, fontWeight: FontWeight.w600),
         ),
         textTheme: const TextTheme(
           bodyMedium: TextStyle(color: _P.text),
@@ -196,144 +204,288 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final accent = _P.primary;
+    final darkOnAccent = _P.darkOnAccent;
     return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Image.asset(
-                  'assets/images/bro_logo.png',
-                  width: 80,
-                  height: 80,
-                  gaplessPlayback: true,
-                ),
-                const SizedBox(height: 24),
-                Text(_isSignUp ? 'Create Account' : 'Welcome Back',
-                    style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: _P.text)),
-                const SizedBox(height: 8),
-                Text(_isSignUp ? 'Start messaging with BRO' : 'Sign in to continue',
-                    style: const TextStyle(fontSize: 16, color: _P.muted)),
-                const SizedBox(height: 32),
-                if (_error != null)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withValues(alpha: 0.1),
-                      border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-                      borderRadius: BorderRadius.circular(12),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            colors: [Color(0x14CAF300), Color(0x0A8A2BE2), _bg],
+            stops: [0.0, 0.45, 1.0],
+            center: Alignment.topCenter,
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Brand emblem
+                    const SizedBox(height: 24),
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Container(
+                          width: 96,
+                          height: 96,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: accent.withValues(alpha: 0.14),
+                            boxShadow: [
+                              BoxShadow(
+                                color: accent.withValues(alpha: 0.35),
+                                blurRadius: 40,
+                                spreadRadius: 2,
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            color: _P.surfaceLow,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: _P.border, width: 1.5),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Image.asset(
+                            'assets/images/bro_logo.png',
+                            width: 80,
+                            height: 80,
+                            gaplessPlayback: true,
+                          ),
+                        ),
+                      ],
                     ),
-                    child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 14)),
-                  ),
-                if (_isSignUp) ...[
-                  TextField(
-                    controller: _username,
-                    style: const TextStyle(color: _P.text),
-                    decoration: InputDecoration(
-                      labelText: 'Username',
-                      labelStyle: TextStyle(color: _P.muted),
-                      prefixIcon: Icon(Icons.person_outline, color: _P.muted),
-                      filled: true,
-                      fillColor: _P.surface,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: _P.border),
+                    const SizedBox(height: 24),
+                    Text(_isSignUp ? 'Join the Squad' : 'Enter Network',
+                        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: _P.text, letterSpacing: -0.5)),
+                    const SizedBox(height: 8),
+                    Text(_isSignUp ? 'Establish your verified handle on Bro.' : 'Synchronize with high-speed direct messaging.',
+                        style: const TextStyle(fontSize: 15, color: _P.muted),
+                        textAlign: TextAlign.center),
+                    const SizedBox(height: 28),
+
+                    // Segmented Sign In / Create toggle
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: _P.surfaceLow,
+                        borderRadius: BorderRadius.circular(40),
+                        border: Border.all(color: _P.border, width: 1),
                       ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: _P.border),
+                      child: Row(
+                        children: [
+                          for (final entry in [
+                            (_isSignUp ? 'Sign In' : 'Sign In', false),
+                            (_isSignUp ? 'Create Account' : 'Create Account', true),
+                          ])
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () => setState(() => _isSignUp = entry.$2),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 180),
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: _isSignUp == entry.$2
+                                        ? accent
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(36),
+                                    boxShadow: _isSignUp == entry.$2
+                                        ? [BoxShadow(color: accent.withValues(alpha: 0.3), blurRadius: 16)]
+                                        : null,
+                                  ),
+                                  child: Center(
+                                    child: Text(entry.$1,
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                          color: _isSignUp == entry.$2 ? darkOnAccent : _P.muted,
+                                        )),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: _P.primary, width: 2),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Error banner
+                    if (_error != null)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.12),
+                          border: Border.all(color: Colors.red.withValues(alpha: 0.35)),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13, height: 1.3))),
+                          ],
+                        ),
+                      ),
+
+                    // Fields
+                    if (_isSignUp) ...[
+                      _AuthField(
+                        controller: _username,
+                        label: 'What They Call You',
+                        prefix: Icons.badge_outlined,
+                        suffix: Icons.check_circle,
+                        suffixColor: accent,
+                        placeholder: 'Alex Vance',
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    _AuthField(
+                      controller: _email,
+                      label: 'Email',
+                      prefix: Icons.alternate_email_outlined,
+                      placeholder: 'you@bro.network',
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 16),
+                    _AuthField(
+                      controller: _password,
+                      label: 'Secret Code',
+                      prefix: Icons.lock_outline,
+                      placeholder: '••••••••',
+                      obscureText: true,
+                    ),
+                    const SizedBox(height: 24),
+
+                    // CTA
+                    SizedBox(
+                      width: double.infinity,
+                      height: 54,
+                      child: GestureDetector(
+                        onTap: _loading ? null : _submit,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: accent,
+                            borderRadius: BorderRadius.circular(28),
+                            boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.35), blurRadius: 22, spreadRadius: 1)],
+                          ),
+                          alignment: Alignment.center,
+                          child: _loading
+                              ? SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(strokeWidth: 2.5, color: darkOnAccent),
+                                )
+                              : Text(_isSignUp ? 'Create Account' : 'Sign In',
+                                  style: TextStyle(
+                                      fontSize: 16, fontWeight: FontWeight.w700, color: darkOnAccent, letterSpacing: 0.3)),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                TextField(
-                  controller: _email,
-                  style: const TextStyle(color: _P.text),
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: InputDecoration(
-                    labelText: 'Email',
-                    labelStyle: TextStyle(color: _P.muted),
-                    prefixIcon: Icon(Icons.email_outlined, color: _P.muted),
-                    filled: true,
-                    fillColor: _P.surface,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: _P.border),
+                    const SizedBox(height: 20),
+                    GestureDetector(
+                      onTap: () => setState(() => _isSignUp = !_isSignUp),
+                      child: RichText(
+                        text: TextSpan(
+                          style: const TextStyle(fontSize: 14, color: _P.muted),
+                          children: [
+                            TextSpan(text: _isSignUp ? 'Already in the crew? ' : 'Need an account? ',
+                                style: const TextStyle(color: _P.muted)),
+                            TextSpan(text: _isSignUp ? 'Sign In, Bro' : 'Claim Your Tag',
+                                style: TextStyle(color: accent, fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                      ),
                     ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: _P.border),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: _P.primary, width: 2),
-                    ),
-                  ),
+                    const SizedBox(height: 16),
+                    const Text('By stepping in, you rep the Bro Code. E2E Encrypted.',
+                        style: TextStyle(fontSize: 11, color: _P.muted)),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _password,
-                  style: const TextStyle(color: _P.text),
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    labelText: 'Password',
-                    labelStyle: TextStyle(color: _P.muted),
-                    prefixIcon: Icon(Icons.lock_outline, color: _P.muted),
-                    filled: true,
-                    fillColor: _P.surface,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: _P.border),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: _P.border),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: _P.primary, width: 2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: FilledButton(
-                    onPressed: _loading ? null : _submit,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _P.primary,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: _loading
-                        ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : Text(_isSignUp ? 'Create Account' : 'Sign In',
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextButton(
-                  onPressed: () => setState(() => _isSignUp = !_isSignUp),
-                  child: Text(_isSignUp
-                      ? 'Already have an account? Sign In'
-                      : 'Need an account? Sign Up',
-                      style: TextStyle(color: _P.primary)),
-                ),
-              ],
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Pill-shaped auth input matching the Electric Street design.
+class _AuthField extends StatelessWidget {
+  const _AuthField({
+    required this.controller,
+    required this.label,
+    required this.prefix,
+    required this.placeholder,
+    this.obscureText = false,
+    this.keyboardType,
+    this.suffix,
+    this.suffixColor,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final IconData prefix;
+  final String placeholder;
+  final bool obscureText;
+  final TextInputType? keyboardType;
+  final IconData? suffix;
+  final Color? suffixColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+          child: Text(label.toUpperCase(),
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _P.muted, letterSpacing: 0.08)),
+        ),
+        Container(
+          height: 54,
+          decoration: BoxDecoration(
+            color: _P.surfaceLow,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: _P.border),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: TextField(
+            controller: controller,
+            obscureText: obscureText,
+            keyboardType: keyboardType,
+            style: const TextStyle(color: _P.text, fontSize: 15),
+            decoration: InputDecoration(
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+              prefixIcon: Icon(prefix, color: _P.muted, size: 20),
+              prefixIconConstraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              hintText: placeholder,
+              hintStyle: TextStyle(color: _P.muted.withValues(alpha: 0.6)),
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(28),
+                borderSide: BorderSide(color: _P.primary, width: 1.5),
+              ),
+              suffixIconConstraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              suffixIcon: suffix != null
+                  ? Icon(suffix, color: suffixColor ?? _P.muted, size: 20)
+                  : null,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -380,15 +532,12 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
                   width: 80,
                   height: 80,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [_indigo, _indigoDeep],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
+                    color: _P.surfaceHigh,
                     borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: _P.border),
                   ),
                   child: const Center(
-                    child: Icon(Icons.mark_email_unread_outlined, color: Colors.white, size: 40),
+                    child: Icon(Icons.mark_email_unread_outlined, color: _P.primary, size: 40),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -1091,18 +1240,18 @@ class _Bubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(msg.content, style: TextStyle(fontSize: 15, height: 1.3, color: mine ? Colors.white : _P.text)),
+            Text(msg.content, style: TextStyle(fontSize: 15, height: 1.3, color: mine ? _P.darkOnAccent : _P.text)),
             const SizedBox(height: 2),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(_fmtTime(msg.createdAt), style: TextStyle(fontSize: 11, color: mine ? Colors.white70 : _P.muted)),
+                Text(_fmtTime(msg.createdAt), style: TextStyle(fontSize: 11, color: mine ? _P.darkOnAccent.withValues(alpha: 0.7) : _P.muted)),
                 if (mine) ...[
                   const SizedBox(width: 3),
                   Icon(
                     msg.readAt != null ? Icons.done_all : Icons.done,
                     size: 13,
-                    color: msg.readAt != null ? _P.success : Colors.white70,
+                    color: msg.readAt != null ? _P.success : _P.darkOnAccent.withValues(alpha: 0.7),
                   ),
                 ],
               ],
@@ -1174,7 +1323,7 @@ class _Composer extends StatelessWidget {
                           key: const ValueKey('send'),
                           onPressed: onSend,
                           style: IconButton.styleFrom(backgroundColor: _P.primary),
-                          icon: const Icon(Icons.arrow_upward_rounded, color: Colors.white),
+                          icon: const Icon(Icons.arrow_upward_rounded, color: _P.darkOnAccent),
                         )
                       : IconButton(
                           key: const ValueKey('mic'),
@@ -1203,7 +1352,7 @@ class _Avatar extends StatelessWidget {
       height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [_indigo, _indigoDeep], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        gradient: const LinearGradient(colors: [_bg, _surfaceHigh], begin: Alignment.topLeft, end: Alignment.bottomRight),
         shape: BoxShape.circle,
         border: Border.all(color: Colors.white24, width: 1),
       ),
