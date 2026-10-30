@@ -224,51 +224,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Brand emblem
-                    const SizedBox(height: 24),
-                    Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Container(
-                          width: 96,
-                          height: 96,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: accent.withValues(alpha: 0.14),
-                            boxShadow: [
-                              BoxShadow(
-                                color: accent.withValues(alpha: 0.35),
-                                blurRadius: 40,
-                                spreadRadius: 2,
-                              ),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          width: 80,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            color: _P.surfaceLow,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: _P.border, width: 1.5),
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: Image.asset(
-                            'assets/images/bro_logo.png',
-                            width: 80,
-                            height: 80,
-                            gaplessPlayback: true,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    Text(_isSignUp ? 'Join the Squad' : 'Enter Network',
-                        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: _P.text, letterSpacing: -0.5)),
-                    const SizedBox(height: 8),
-                    Text(_isSignUp ? 'Establish your verified handle on Bro.' : 'Synchronize with high-speed direct messaging.',
-                        style: const TextStyle(fontSize: 15, color: _P.muted),
-                        textAlign: TextAlign.center),
+                    _WelcomeHero(isSignUp: _isSignUp),
                     const SizedBox(height: 28),
 
                     // Segmented Sign In / Create toggle
@@ -417,6 +373,353 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
+}
+
+/// A small, animated 3D welcome scene for the BRO sign-in screen.
+class _WelcomeHero extends StatefulWidget {
+  const _WelcomeHero({required this.isSignUp});
+  final bool isSignUp;
+
+  @override
+  State<_WelcomeHero> createState() => _WelcomeHeroState();
+}
+
+class _WelcomeHeroState extends State<_WelcomeHero>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _motion = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 4400),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _motion.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = _P.primary;
+    final cardScale = MediaQuery.sizeOf(context).width < 360 ? 0.72 : 1.0;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          height: 240,
+          width: double.infinity,
+          child: AnimatedBuilder(
+            animation: _motion,
+            builder: (context, child) {
+              final t = Curves.easeInOut.transform(_motion.value);
+              return Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  Container(
+                    width: 178,
+                    height: 178,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(colors: [
+                        accent.withValues(alpha: 0.15),
+                        accent.withValues(alpha: 0.035),
+                        Colors.transparent,
+                      ]),
+                    ),
+                  ),
+                  Transform.rotate(
+                    angle: -0.18 + t * 0.08,
+                    child: Container(
+                      width: 150,
+                      height: 150,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: accent.withValues(alpha: 0.12), width: 1),
+                      ),
+                    ),
+                  ),
+                  Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.identity()
+                      ..setEntry(3, 2, 0.0018)
+                      ..rotateX(-0.08 + t * 0.06)
+                      ..rotateY(0.12 - t * 0.12)
+                      ..translate(0.0, 15 + t * 6, 0.0),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      clipBehavior: Clip.none,
+                      children: [
+                        Transform.translate(
+                          offset: const Offset(0, 12),
+                          child: Container(
+                            width: 102,
+                            height: 102,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF3A4319),
+                              borderRadius: BorderRadius.circular(28),
+                              border: Border.all(
+                                  color: accent.withValues(alpha: 0.22)),
+                            ),
+                          ),
+                        ),
+                        Transform.translate(
+                          offset: const Offset(0, 6),
+                          child: Container(
+                            width: 108,
+                            height: 108,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF23261A),
+                              borderRadius: BorderRadius.circular(30),
+                              border: Border.all(
+                                  color: accent.withValues(alpha: 0.28)),
+                            ),
+                          ),
+                        ),
+                        Container(
+                          width: 116,
+                          height: 116,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [Color(0xFF292C2A), Color(0xFF141519)],
+                            ),
+                            borderRadius: BorderRadius.circular(32),
+                            border: Border.all(
+                                color: accent.withValues(alpha: 0.62),
+                                width: 1.25),
+                            boxShadow: [
+                              BoxShadow(
+                                color: accent.withValues(alpha: 0.2),
+                                blurRadius: 34,
+                                spreadRadius: 2,
+                                offset: const Offset(0, 14),
+                              ),
+                              const BoxShadow(
+                                color: Colors.black54,
+                                blurRadius: 24,
+                                offset: Offset(0, 18),
+                              ),
+                            ],
+                          ),
+                          padding: const EdgeInsets.all(9),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(23),
+                            child: Image.asset(
+                              'assets/images/bro_logo.png',
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Positioned(
+                    left: 4,
+                    top: 8 + t * 2,
+                    child: Transform.scale(
+                      scale: cardScale,
+                      child: Transform(
+                        alignment: Alignment.center,
+                        transform: Matrix4.identity()
+                          ..setEntry(3, 2, 0.0015)
+                          ..rotateY(-0.12)
+                          ..rotateZ(-0.07),
+                        child: const _FloatingMessageCard(
+                          name: 'Maya',
+                          message: 'you up? 👀',
+                          time: 'now',
+                          initials: 'M',
+                          width: 160,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 0,
+                    top: 8 + (1 - t) * 3,
+                    child: Transform.scale(
+                      scale: cardScale,
+                      child: Transform(
+                        alignment: Alignment.center,
+                        transform: Matrix4.identity()
+                          ..setEntry(3, 2, 0.0015)
+                          ..rotateY(0.12)
+                          ..rotateZ(0.06),
+                        child: const _FloatingMessageCard(
+                          name: 'the weekend crew',
+                          message: 'Plans tonight? ✨',
+                          time: '3',
+                          initials: '✦',
+                          width: 182,
+                          isGroup: true,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 15,
+                    right: 53,
+                    child: _GlowingDot(color: accent, size: 7),
+                  ),
+                  Positioned(
+                    bottom: 23,
+                    left: 58,
+                    child: _GlowingDot(
+                        color: const Color(0xFF9B7BFF), size: 5),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 2),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.035),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.lock_outline_rounded, size: 11, color: _P.primary),
+              SizedBox(width: 6),
+              Text(
+                'PRIVATE BY DESIGN',
+                style: TextStyle(
+                  color: _P.muted,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.05,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 11),
+        Text(
+          widget.isSignUp ? 'Your people. Your place.' : 'Good to see you, Bro.',
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 27,
+            height: 1.12,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.8,
+            color: _P.text,
+          ),
+        ),
+        const SizedBox(height: 9),
+        Text(
+          widget.isSignUp
+              ? 'Make a space for the conversations that matter.'
+              : 'Your conversations, all in one place.',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 14, color: _P.muted),
+        ),
+      ],
+    );
+  }
+}
+
+class _FloatingMessageCard extends StatelessWidget {
+  const _FloatingMessageCard({
+    required this.name,
+    required this.message,
+    required this.time,
+    required this.initials,
+    required this.width,
+    this.isGroup = false,
+  });
+
+  final String name;
+  final String message;
+  final String time;
+  final String initials;
+  final double width;
+  final bool isGroup;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      padding: const EdgeInsets.fromLTRB(11, 11, 11, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF202228),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
+        boxShadow: const [
+          BoxShadow(color: Colors.black38, blurRadius: 20, offset: Offset(0, 10)),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isGroup ? const Color(0xFF37304B) : const Color(0xFF34402A),
+            ),
+            child: Text(initials,
+                style: TextStyle(
+                    color: isGroup ? const Color(0xFFBBA7FF) : _P.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800)),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: _P.text,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                    Text(time,
+                        style: const TextStyle(color: _P.muted, fontSize: 9)),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(message,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: _P.muted, fontSize: 10)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GlowingDot extends StatelessWidget {
+  const _GlowingDot({required this.color, required this.size});
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          boxShadow: [BoxShadow(color: color.withValues(alpha: 0.7), blurRadius: 9)],
+        ),
+      );
 }
 
 /// Pill-shaped auth input matching the Electric Street design.
@@ -961,7 +1264,7 @@ class _ChatScreenState extends State<ChatScreen> {
               _peer?.label ?? 'Chat',
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _P.text),
             ),
-            const Text('Active now', style: TextStyle(fontSize: 12, color: _P.muted)),
+            const _OnlineStatus(),
           ],
         ),
         actions: [
@@ -1131,6 +1434,59 @@ class _ErrorState extends StatelessWidget {
   }
 }
 
+class _OnlineStatus extends StatefulWidget {
+  const _OnlineStatus();
+
+  @override
+  State<_OnlineStatus> createState() => _OnlineStatusState();
+}
+
+class _OnlineStatusState extends State<_OnlineStatus>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AnimatedBuilder(
+          animation: _pulse,
+          builder: (context, child) {
+            final glow = 0.2 + _pulse.value * 0.45;
+            return Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(
+                color: _P.success,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: _P.success.withValues(alpha: glow),
+                    blurRadius: 3 + _pulse.value * 5,
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        const SizedBox(width: 6),
+        const Text('Active now',
+            style: TextStyle(fontSize: 12, color: _P.muted)),
+      ],
+    );
+  }
+}
+
 class _TypingIndicator extends StatelessWidget {
   const _TypingIndicator({required this.label});
   final String label;
@@ -1167,7 +1523,27 @@ class _MessageRow extends StatelessWidget {
       crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
         if (_nowDateLine) _DateLine(ts: msg.createdAt),
-        _Bubble(msg: msg, groupedTop: _groupPrev, groupedBottom: _groupNext, mine: mine),
+        TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: 0, end: 1),
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeOutCubic,
+          builder: (context, progress, child) => Opacity(
+            opacity: progress,
+            child: Transform.translate(
+              offset: Offset(
+                (mine ? 1 : -1) * 10 * (1 - progress),
+                7 * (1 - progress),
+              ),
+              child: child,
+            ),
+          ),
+          child: _Bubble(
+            msg: msg,
+            groupedTop: _groupPrev,
+            groupedBottom: _groupNext,
+            mine: mine,
+          ),
+        ),
       ],
     );
   }
@@ -1216,10 +1592,10 @@ class _Bubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final adjusted = BorderRadius.only(
-      topLeft: Radius.circular(mine || !groupedTop ? 18 : 6),
-      topRight: Radius.circular(18),
-      bottomLeft: Radius.circular(mine ? (groupedBottom ? 6 : 18) : 18),
-      bottomRight: Radius.circular(mine ? 18 : (groupedBottom ? 6 : 18)),
+      topLeft: Radius.circular(!mine && groupedTop ? 7 : 18),
+      topRight: Radius.circular(mine && groupedTop ? 7 : 18),
+      bottomLeft: Radius.circular(!mine && groupedBottom ? 7 : 18),
+      bottomRight: Radius.circular(mine && groupedBottom ? 7 : 18),
     );
     return Padding(
       padding: EdgeInsets.only(
@@ -1232,9 +1608,32 @@ class _Bubble extends StatelessWidget {
         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.68),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: mine ? _P.primary : _P.surface,
+          gradient: mine
+              ? const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [_P.primary, Color(0xFFC7EF00)],
+                )
+              : const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF292B32), Color(0xFF202127)],
+                ),
           borderRadius: adjusted,
-          border: mine ? null : Border.all(color: _P.border),
+          border: Border.all(
+            color: mine
+                ? Colors.white.withValues(alpha: 0.2)
+                : Colors.white.withValues(alpha: 0.07),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: mine
+                  ? _P.primary.withValues(alpha: 0.13)
+                  : Colors.black.withValues(alpha: 0.16),
+              blurRadius: mine ? 18 : 12,
+              offset: const Offset(0, 5),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
