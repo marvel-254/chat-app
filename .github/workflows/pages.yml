@@ -40,9 +40,11 @@ jobs:
             --dart-define=SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}"
 
       - name: Add SPA fallback for client-side routing
-        # Flutter uses hash-free routing (e.g. /chat/<id>). Without a fallback,
-        # refreshing or opening a deep link on GitHub Pages returns 404.
-        run: cp build/web/index.html build/web/200.html
+        # Flutter uses hash-free routing (e.g. /chat/<id>). GitHub Pages does NOT
+        # support the Netlify-style 200.html fallback; it serves a custom 404.html
+        # for unknown paths. Copy index.html to 404.html so a deep link or refresh
+        # loads the app, whose router then redirects to a valid route.
+        run: cp build/web/index.html build/web/404.html
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
