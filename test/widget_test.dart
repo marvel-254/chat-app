@@ -36,7 +36,7 @@ void main() {
     await tester.pumpWidget(const BroApp());
     await tester.pump(); // let the auth stream resolve to "no session"
     // With the dummy config there is no session, so AuthGate shows LoginScreen,
-    // whose heading proves the app tree rendered without a live backend.
-    expect(find.text('Enter Network'), findsOneWidget);
+    // whose welcome heading proves the app tree rendered without a live backend.
+    expect(find.text('Good to see you, Bro.'), findsOneWidget);
   });
 }
