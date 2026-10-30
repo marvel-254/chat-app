@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
@@ -160,6 +161,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _password = TextEditingController();
   final _username = TextEditingController();
   bool _isSignUp = false;
+  String _guideTarget = 'email';
   bool _loading = false;
   String? _error;
 
@@ -208,13 +210,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final darkOnAccent = _P.darkOnAccent;
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            colors: [Color(0x14CAF300), Color(0x0A8A2BE2), _bg],
-            stops: [0.0, 0.45, 1.0],
-            center: Alignment.topCenter,
-          ),
-        ),
+        decoration: const BoxDecoration(color: _bg),
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -243,7 +239,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           ])
                             Expanded(
                               child: GestureDetector(
-                                onTap: () => setState(() => _isSignUp = entry.$2),
+                                onTap: () => setState(() {
+                                  _isSignUp = entry.$2;
+                                  _guideTarget = entry.$2 ? 'username' : 'email';
+                                }),
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 180),
                                   padding: const EdgeInsets.symmetric(vertical: 12),
@@ -301,6 +300,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         suffix: Icons.check_circle,
                         suffixColor: accent,
                         placeholder: 'Alex Vance',
+                        isGuideTarget: _guideTarget == 'username',
+                        onFocus: () => setState(() => _guideTarget = 'username'),
                       ),
                       const SizedBox(height: 16),
                     ],
@@ -310,6 +311,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       prefix: Icons.alternate_email_outlined,
                       placeholder: 'you@bro.network',
                       keyboardType: TextInputType.emailAddress,
+                      isGuideTarget: _guideTarget == 'email',
+                      onFocus: () => setState(() => _guideTarget = 'email'),
                     ),
                     const SizedBox(height: 16),
                     _AuthField(
@@ -318,6 +321,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       prefix: Icons.lock_outline,
                       placeholder: '••••••••',
                       obscureText: true,
+                      isGuideTarget: _guideTarget == 'password',
+                      onFocus: () => setState(() => _guideTarget = 'password'),
                     ),
                     const SizedBox(height: 24),
 
@@ -348,7 +353,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 20),
                     GestureDetector(
-                      onTap: () => setState(() => _isSignUp = !_isSignUp),
+                      onTap: () => setState(() {
+                        _isSignUp = !_isSignUp;
+                        _guideTarget = _isSignUp ? 'username' : 'email';
+                      }),
                       child: RichText(
                         text: TextSpan(
                           style: const TextStyle(fontSize: 14, color: _P.muted),
@@ -375,351 +383,82 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-/// A small, animated 3D welcome scene for the BRO sign-in screen.
-class _WelcomeHero extends StatefulWidget {
+/// Full-body welcome artwork alongside the sign-in copy.
+class _WelcomeHero extends StatelessWidget {
   const _WelcomeHero({required this.isSignUp});
   final bool isSignUp;
 
   @override
-  State<_WelcomeHero> createState() => _WelcomeHeroState();
-}
-
-class _WelcomeHeroState extends State<_WelcomeHero>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _motion = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 4400),
-  )..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _motion.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final accent = _P.primary;
-    final cardScale = MediaQuery.sizeOf(context).width < 360 ? 0.72 : 1.0;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          height: 240,
-          width: double.infinity,
-          child: AnimatedBuilder(
-            animation: _motion,
-            builder: (context, child) {
-              final t = Curves.easeInOut.transform(_motion.value);
-              return Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.center,
-                children: [
-                  Container(
-                    width: 178,
-                    height: 178,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(colors: [
-                        accent.withValues(alpha: 0.15),
-                        accent.withValues(alpha: 0.035),
-                        Colors.transparent,
-                      ]),
-                    ),
-                  ),
-                  Transform.rotate(
-                    angle: -0.18 + t * 0.08,
-                    child: Container(
-                      width: 150,
-                      height: 150,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                            color: accent.withValues(alpha: 0.12), width: 1),
-                      ),
-                    ),
-                  ),
-                  Transform(
-                    alignment: Alignment.center,
-                    transform: Matrix4.identity()
-                      ..setEntry(3, 2, 0.0018)
-                      ..rotateX(-0.08 + t * 0.06)
-                      ..rotateY(0.12 - t * 0.12)
-                      ..translate(0.0, 15 + t * 6, 0.0),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      clipBehavior: Clip.none,
-                      children: [
-                        Transform.translate(
-                          offset: const Offset(0, 12),
-                          child: Container(
-                            width: 102,
-                            height: 102,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF3A4319),
-                              borderRadius: BorderRadius.circular(28),
-                              border: Border.all(
-                                  color: accent.withValues(alpha: 0.22)),
-                            ),
-                          ),
-                        ),
-                        Transform.translate(
-                          offset: const Offset(0, 6),
-                          child: Container(
-                            width: 108,
-                            height: 108,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF23261A),
-                              borderRadius: BorderRadius.circular(30),
-                              border: Border.all(
-                                  color: accent.withValues(alpha: 0.28)),
-                            ),
-                          ),
-                        ),
-                        Container(
-                          width: 116,
-                          height: 116,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [Color(0xFF292C2A), Color(0xFF141519)],
-                            ),
-                            borderRadius: BorderRadius.circular(32),
-                            border: Border.all(
-                                color: accent.withValues(alpha: 0.62),
-                                width: 1.25),
-                            boxShadow: [
-                              BoxShadow(
-                                color: accent.withValues(alpha: 0.2),
-                                blurRadius: 34,
-                                spreadRadius: 2,
-                                offset: const Offset(0, 14),
-                              ),
-                              const BoxShadow(
-                                color: Colors.black54,
-                                blurRadius: 24,
-                                offset: Offset(0, 18),
-                              ),
-                            ],
-                          ),
-                          padding: const EdgeInsets.all(9),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(23),
-                            child: Image.asset(
-                              'assets/images/bro_logo.png',
-                              fit: BoxFit.cover,
-                              gaplessPlayback: true,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Positioned(
-                    left: 4,
-                    top: 8 + t * 2,
-                    child: Transform.scale(
-                      scale: cardScale,
-                      child: Transform(
-                        alignment: Alignment.center,
-                        transform: Matrix4.identity()
-                          ..setEntry(3, 2, 0.0015)
-                          ..rotateY(-0.12)
-                          ..rotateZ(-0.07),
-                        child: const _FloatingMessageCard(
-                          name: 'Maya',
-                          message: 'you up? 👀',
-                          time: 'now',
-                          initials: 'M',
-                          width: 160,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    right: 0,
-                    top: 8 + (1 - t) * 3,
-                    child: Transform.scale(
-                      scale: cardScale,
-                      child: Transform(
-                        alignment: Alignment.center,
-                        transform: Matrix4.identity()
-                          ..setEntry(3, 2, 0.0015)
-                          ..rotateY(0.12)
-                          ..rotateZ(0.06),
-                        child: const _FloatingMessageCard(
-                          name: 'the weekend crew',
-                          message: 'Plans tonight? ✨',
-                          time: '3',
-                          initials: '✦',
-                          width: 182,
-                          isGroup: true,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    top: 15,
-                    right: 53,
-                    child: _GlowingDot(color: accent, size: 7),
-                  ),
-                  Positioned(
-                    bottom: 23,
-                    left: 58,
-                    child: _GlowingDot(
-                        color: const Color(0xFF9B7BFF), size: 5),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 2),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.035),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
+    return SizedBox(
+      height: 312,
+      width: double.infinity,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 330;
+          final avatarWidth = compact ? 108.0 : 132.0;
+          final gap = compact ? 8.0 : 12.0;
+          final headingSize = compact ? 22.0 : 25.0;
+          final taglineSize = compact ? 12.5 : 14.0;
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Icon(Icons.lock_outline_rounded, size: 11, color: _P.primary),
-              SizedBox(width: 6),
-              Text(
-                'PRIVATE BY DESIGN',
-                style: TextStyle(
-                  color: _P.muted,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.05,
+              SizedBox(
+                width: avatarWidth,
+                height: 300,
+                child: Semantics(
+                  image: true,
+                  label: 'BRO character waving and pointing toward the sign-in fields',
+                  child: Image.asset(
+                    'assets/images/welcome_avatar_fullbody.png',
+                    width: avatarWidth,
+                    height: 300,
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
+                  ),
+                ),
+              ),
+              SizedBox(width: gap),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      isSignUp
+                          ? 'Your people. Your place.'
+                          : 'Good to see you, Bro.',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontSize: headingSize,
+                        height: 1.08,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.7,
+                        color: _P.text,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      isSignUp
+                          ? 'Make a space for the conversations that matter.'
+                          : 'All your convos, right here.',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontSize: taglineSize,
+                        height: 1.35,
+                        color: _P.muted,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
-          ),
-        ),
-        const SizedBox(height: 11),
-        Text(
-          widget.isSignUp ? 'Your people. Your place.' : 'Good to see you, Bro.',
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 27,
-            height: 1.12,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.8,
-            color: _P.text,
-          ),
-        ),
-        const SizedBox(height: 9),
-        Text(
-          widget.isSignUp
-              ? 'Make a space for the conversations that matter.'
-              : 'Your conversations, all in one place.',
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 14, color: _P.muted),
-        ),
-      ],
-    );
-  }
-}
-
-class _FloatingMessageCard extends StatelessWidget {
-  const _FloatingMessageCard({
-    required this.name,
-    required this.message,
-    required this.time,
-    required this.initials,
-    required this.width,
-    this.isGroup = false,
-  });
-
-  final String name;
-  final String message;
-  final String time;
-  final String initials;
-  final double width;
-  final bool isGroup;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      padding: const EdgeInsets.fromLTRB(11, 11, 11, 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF202228),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
-        boxShadow: const [
-          BoxShadow(color: Colors.black38, blurRadius: 20, offset: Offset(0, 10)),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 30,
-            height: 30,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isGroup ? const Color(0xFF37304B) : const Color(0xFF34402A),
-            ),
-            child: Text(initials,
-                style: TextStyle(
-                    color: isGroup ? const Color(0xFFBBA7FF) : _P.primary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800)),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: _P.text,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700)),
-                    ),
-                    Text(time,
-                        style: const TextStyle(color: _P.muted, fontSize: 9)),
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Text(message,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: _P.muted, fontSize: 10)),
-              ],
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
-}
-
-class _GlowingDot extends StatelessWidget {
-  const _GlowingDot({required this.color, required this.size});
-  final Color color;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          boxShadow: [BoxShadow(color: color.withValues(alpha: 0.7), blurRadius: 9)],
-        ),
-      );
 }
 
 /// Pill-shaped auth input matching the Electric Street design.
@@ -733,6 +472,8 @@ class _AuthField extends StatelessWidget {
     this.keyboardType,
     this.suffix,
     this.suffixColor,
+    this.isGuideTarget = false,
+    this.onFocus,
   });
 
   final TextEditingController controller;
@@ -743,6 +484,8 @@ class _AuthField extends StatelessWidget {
   final TextInputType? keyboardType;
   final IconData? suffix;
   final Color? suffixColor;
+  final bool isGuideTarget;
+  final VoidCallback? onFocus;
 
   @override
   Widget build(BuildContext context) {
@@ -760,13 +503,25 @@ class _AuthField extends StatelessWidget {
           decoration: BoxDecoration(
             color: _P.surfaceLow,
             borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: _P.border),
+            border: Border.all(
+              color: isGuideTarget ? _P.primary : _P.border,
+              width: isGuideTarget ? 1.5 : 1,
+            ),
+            boxShadow: isGuideTarget
+                ? [
+                    BoxShadow(
+                      color: _P.primary.withValues(alpha: 0.12),
+                      blurRadius: 16,
+                    ),
+                  ]
+                : null,
           ),
           clipBehavior: Clip.antiAlias,
           child: TextField(
             controller: controller,
             obscureText: obscureText,
             keyboardType: keyboardType,
+            onTap: onFocus,
             style: const TextStyle(color: _P.text, fontSize: 15),
             decoration: InputDecoration(
               isDense: true,
