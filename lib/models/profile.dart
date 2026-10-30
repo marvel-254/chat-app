@@ -53,6 +53,8 @@ class Conversation {
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<Message>? messages;
+  final String? lastMessage;
+  final DateTime? lastMessageAt;
   final String? peerId;
   final String? peerUsername;
   final String? peerDisplayName;
@@ -63,6 +65,8 @@ class Conversation {
     required this.createdAt,
     required this.updatedAt,
     this.messages,
+    this.lastMessage,
+    this.lastMessageAt,
     this.peerId,
     this.peerUsername,
     this.peerDisplayName,
@@ -76,6 +80,10 @@ class Conversation {
         messages: (json['messages'] as List?)
             ?.map((m) => Message.fromJson(m as Map<String, dynamic>))
             .toList(),
+        lastMessage: json['last_message'] as String?,
+        lastMessageAt: json['last_message_at'] == null
+            ? null
+            : DateTime.parse(json['last_message_at'] as String),
         peerUsername: json['peer_username'] as String?,
         peerDisplayName: json['peer_display_name'] as String?,
         unreadCount: (json['unread_count'] as num?)?.toInt() ?? 0,

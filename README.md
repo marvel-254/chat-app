@@ -4,7 +4,9 @@ A beautifully dark messaging app built with Flutter.
 
 ## Getting Started
 
-This project is a starting point for a NYX messaging application.
+Before running the app, configure its Supabase project. Create a local `.env.local` file (it is gitignored) with `SUPABASE_URL` and `SUPABASE_ANON_KEY`, using the Project URL and publishable/anon key from your Supabase project settings. Build with `./scripts/build.sh` (or `./scripts/build.sh web`). The app shows a setup message instead of starting with a fake backend endpoint when either value is missing.
+
+For GitHub Actions builds, configure repository secrets named `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
 
 - [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
 - [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)

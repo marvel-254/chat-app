@@ -77,6 +77,10 @@ class Supa {
                 peerId: r['peer_id'] as String?,
                 peerUsername: r['peer_username'] as String?,
                 peerDisplayName: r['peer_display_name'] as String?,
+                lastMessage: r['last_message'] as String?,
+                lastMessageAt: r['last_message_at'] == null
+                    ? null
+                    : DateTime.parse(r['last_message_at'] as String),
                 unreadCount: (r['unread_count'] as num?)?.toInt() ?? 0,
               )).toList();
         })
@@ -128,10 +132,13 @@ class Supa {
   // see "Typing…". Uses a short-lived broadcast event (no persistence).
   static const _typingEvent = 'typing';
 
-  static String _typingChannel(String conversationId) => 'typing:$conversationId';
+  static String _typingTopic(String conversationId) => 'typing:$conversationId';
+  static final Map<String, RealtimeChannel> _typingChannels = {};
 
   static Future<void> broadcastTyping(String conversationId, bool isTyping) async {
-    await client.channel(_typingChannel(conversationId))
+    final channel = _typingChannels[conversationId];
+    if (channel == null) return;
+    await channel
         .httpSend(
           event: _typingEvent,
           payload: {
@@ -145,7 +152,12 @@ class Supa {
   /// Subscribe to typing broadcasts for a conversation. Invokes [onTyping]
   /// with the sender's user id and whether they are typing.
   static void onTyping(String conversationId, void Function(String userId, bool isTyping) onTyping) {
-    client.channel(_typingChannel(conversationId))
+    final previous = _typingChannels.remove(conversationId);
+    if (previous != null) client.removeChannel(previous);
+
+    final channel = client.channel(_typingTopic(conversationId));
+    _typingChannels[conversationId] = channel;
+    channel
         .onBroadcast(
           event: _typingEvent,
           callback: (payload) {
@@ -158,6 +170,7 @@ class Supa {
   }
 
   static void unsubscribeTyping(String conversationId) {
-    client.removeChannel(client.channel(_typingChannel(conversationId)));
+    final channel = _typingChannels.remove(conversationId);
+    if (channel != null) client.removeChannel(channel);
   }
 }
