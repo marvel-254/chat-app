@@ -14,7 +14,7 @@ void main() async {
     publishableKey: String.fromEnvironment('SUPABASE_ANON_KEY',
         defaultValue: 'your-anon-key-here'),
   );
-  runApp(const NYXApp());
+  runApp(const BroApp());
 }
 
 const _indigo = Color(0xFF6366F1);
@@ -59,12 +59,12 @@ final _router = GoRouter(
   },
 );
 
-class NYXApp extends StatelessWidget {
-  const NYXApp({super.key});
+class BroApp extends StatelessWidget {
+  const BroApp({super.key});
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'NYX',
+      title: 'BRO',
       debugShowCheckedModeBanner: false,
       routerConfig: _router,
       theme: ThemeData(
@@ -130,7 +130,7 @@ class _AuthErrorState extends StatelessWidget {
               Text(error, style: TextStyle(color: _P.muted, fontSize: 14), textAlign: TextAlign.center),
               const SizedBox(height: 24),
               FilledButton(
-                onPressed: () => runApp(const NYXApp()),
+                onPressed: () => runApp(const BroApp()),
                 child: const Text('Retry'),
               ),
             ],
@@ -224,7 +224,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 Text(_isSignUp ? 'Create Account' : 'Welcome Back',
                     style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: _P.text)),
                 const SizedBox(height: 8),
-                Text(_isSignUp ? 'Start messaging with NYX' : 'Sign in to continue',
+                Text(_isSignUp ? 'Start messaging with BRO' : 'Sign in to continue',
                     style: const TextStyle(fontSize: 16, color: _P.muted)),
                 const SizedBox(height: 32),
                 if (_error != null)
@@ -478,7 +478,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('NYX', style: TextStyle(fontWeight: FontWeight.w600)),
+        title: const Text('BRO', style: TextStyle(fontWeight: FontWeight.w600)),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),

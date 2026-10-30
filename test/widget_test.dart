@@ -33,7 +33,7 @@ void main() {
   });
 
   testWidgets('App boots to the login screen', (WidgetTester tester) async {
-    await tester.pumpWidget(const NYXApp());
+    await tester.pumpWidget(const BroApp());
     await tester.pump(); // let the auth stream resolve to "no session"
     // With the dummy config there is no session, so AuthGate shows LoginScreen,
     // whose heading proves the app tree rendered without a live backend.
