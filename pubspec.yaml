@@ -65,6 +65,7 @@ flutter:
 
   assets:
     - assets/images/bro_logo.png
+    - assets/images/welcome_avatar_fullbody.png
     - assets/branding/bro/logo.svg
 
   # To add assets to your application, add an assets section, like this:
