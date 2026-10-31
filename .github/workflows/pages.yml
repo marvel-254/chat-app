@@ -37,7 +37,8 @@ jobs:
         run: |
           flutter build web --release \
             --dart-define=SUPABASE_URL="${SUPABASE_URL}" \
-            --dart-define=SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}"
+            --dart-define=SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}" \
+            --dart-define=BUILD_NUMBER="${{ github.run_number }}"
 
       - name: Add SPA fallback for client-side routing
         # Flutter uses hash-free routing (e.g. /chat/<id>). GitHub Pages does NOT

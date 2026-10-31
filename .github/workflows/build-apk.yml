@@ -25,7 +25,8 @@ jobs:
         run: |
           flutter build apk --release --split-per-abi \
             --dart-define=SUPABASE_URL="${SUPABASE_URL}" \
-            --dart-define=SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}"
+            --dart-define=SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}" \
+            --dart-define=BUILD_NUMBER="${{ github.run_number }}"
       - uses: actions/upload-artifact@v4
         with:
           name: chat-app-apk
@@ -35,7 +36,7 @@ jobs:
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
           tag_name: v${{ github.run_number }}
-          name: NYX v${{ github.run_number }}
+          name: BRO v${{ github.run_number }}
           body: |
             Release build #${{ github.run_number }}
             - app-arm64-v8a-release.apk

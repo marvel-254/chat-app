@@ -14,6 +14,7 @@ void main() async {
   if (uri == null ||
       !uri.hasAuthority ||
       uri.host.isEmpty ||
+      uri.host == 'your-project.supabase.co' || // stale placeholder build (#48)
       !const {'https', 'http'}.contains(uri.scheme) ||
       supabaseKey.isEmpty) {
     runApp(const BackendConfigurationApp());
@@ -23,6 +24,10 @@ void main() async {
   await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
   runApp(const BroApp());
 }
+
+/// CI stamps every build with its release number via --dart-define
+/// (build-apk.yml / pages.yml). Empty in local/debug builds.
+const buildNumber = String.fromEnvironment('BUILD_NUMBER');
 
 const _bg = Color(0xFF121318);
 const _surface = Color(0xFF1E1F25);
@@ -67,12 +72,12 @@ class BackendConfigurationApp extends StatelessWidget {
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480),
-              child: const Column(
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.settings_ethernet, color: _P.primary, size: 48),
-                  SizedBox(height: 20),
-                  Text(
+                  const Icon(Icons.settings_ethernet, color: _P.primary, size: 48),
+                  const SizedBox(height: 20),
+                  const Text(
                     'BRO needs backend configuration',
                     textAlign: TextAlign.center,
                     style: TextStyle(
@@ -81,12 +86,20 @@ class BackendConfigurationApp extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  SizedBox(height: 10),
-                  Text(
+                  const SizedBox(height: 10),
+                  const Text(
                     'Set SUPABASE_URL and SUPABASE_ANON_KEY for this build, then restart the app.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: _P.muted, height: 1.5),
                   ),
+                  if (buildNumber.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      'build $buildNumber',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: _P.muted, fontSize: 12),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -249,6 +262,20 @@ class _LoginScreenState extends State<LoginScreen> {
         context.go('/conversations');
       }
     } catch (e) {
+      if (e is AuthApiException && e.code == 'email_not_confirmed') {
+        // The account exists but the email hasn't been confirmed yet (#49).
+        // Route to the confirmation screen (which can resend the email)
+        // instead of surfacing a raw exception.
+        if (mounted) context.go('/confirm', extra: _email.text.trim());
+        return;
+      }
+      if (e is AuthRetryableFetchException) {
+        if (mounted) {
+          setState(() => _error =
+              "Can't reach the server. Check your internet connection and try again.");
+        }
+        return;
+      }
       if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -431,6 +458,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 16),
                     const Text('By stepping in, you rep the Bro Code.',
                         style: TextStyle(fontSize: 11, color: _P.muted)),
+                    if (buildNumber.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text('BRO · build $buildNumber',
+                          style: const TextStyle(fontSize: 11, color: _P.muted)),
+                    ],
                   ],
                 ),
               ),
