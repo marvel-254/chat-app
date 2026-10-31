@@ -7,19 +7,16 @@ class Supa {
 
   // Auth
   static Future<AuthResponse> signUp(String email, String password, String username) async {
-    final res = await client.auth.signUp(
+    // The profile row is created by the on_auth_user_created database
+    // trigger (migration 20261031000000_profile_creation_trigger.sql), which
+    // also runs for confirmation-required sign-ups where no session exists
+    // yet (#43). Do NOT insert from the client: with a null session the
+    // INSERT is rejected by RLS (42501) and aborts the whole sign-up flow.
+    return client.auth.signUp(
       email: email,
       password: password,
       data: {'username': username},
     );
-    if (res.user != null) {
-      await client.from('profiles').insert({
-        'id': res.user!.id,
-        'username': username,
-        'display_name': username,
-      });
-    }
-    return res;
   }
 
   static Future<AuthResponse> signIn(String email, String password) =>
