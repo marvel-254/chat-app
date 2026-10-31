@@ -98,3 +98,15 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/icon/app_icon.png
+  adaptive_icon_foreground: assets/icon/app_icon.png
+  adaptive_icon_background: "#121318"
+  web:
+    generate: true
+    image_path: assets/icon/app_icon.png
+    background_color: "#121318"
+    theme_color: "#121318"
