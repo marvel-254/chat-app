@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>458479471215-a9s95g6qkq9213e9e2ukic3pcfvebgsr.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.458479471215-a9s95g6qkq9213e9e2ukic3pcfvebgsr</string>
+	<key>API_KEY</key>
+	<string>AIzaSyB0W_sx7z4kCOllAss_cLC4flo3JKkVzkc</string>
+	<key>GCM_SENDER_ID</key>
+	<string>458479471215</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.omixsystems.chatApp</string>
+	<key>PROJECT_ID</key>
+	<string>omix-systems-cd1af</string>
+	<key>STORAGE_BUCKET</key>
+	<string>omix-systems-cd1af.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:458479471215:ios:1d292372bd36a818ff5b9a</string>
+	<key>DATABASE_URL</key>
+	<string>https://omix-systems-cd1af-default-rtdb.firebaseio.com</string>
+</dict>
+</plist>

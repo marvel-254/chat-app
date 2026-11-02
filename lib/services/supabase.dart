@@ -60,6 +60,31 @@ class Supa {
   static Stream<AuthState> get authStateChanges =>
       client.auth.onAuthStateChange;
 
+  static Future<void> savePushToken(
+      String firebaseInstallationId, String platform) async {
+    final user = currentUser;
+    if (user == null) return;
+    await client.from('push_tokens').upsert(
+      {
+        'user_id': user.id,
+        'firebase_installation_id': firebaseInstallationId,
+        'platform': platform,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      onConflict: 'firebase_installation_id',
+    );
+  }
+
+  static Future<void> removePushToken(String firebaseInstallationId) async {
+    final user = currentUser;
+    if (user == null) return;
+    await client
+        .from('push_tokens')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('firebase_installation_id', firebaseInstallationId);
+  }
+
   // Re-send the email confirmation link for an unconfirmed account.
   static Future<void> resendConfirmation(String email) =>
       client.auth.resend(type: OtpType.signup, email: email);

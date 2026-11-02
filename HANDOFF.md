@@ -4,10 +4,10 @@ This guide describes the app, its backend, local development, and release proces
 
 ## Architecture
 
-- **Client:** Flutter 3.47.7. `lib/main.dart` contains the app routes and screens; `lib/services/supabase.dart` wraps authentication, profiles, conversations, messaging, and storage; `lib/screens/call_screen.dart` implements the call experience.
+- **Client:** Flutter 3.47.7. `lib/main.dart` contains the app routes and screens; `lib/services/supabase.dart` wraps authentication, profiles, conversations, messaging, and storage; `lib/services/push_notifications.dart` handles Firebase Messaging registration and received notifications; `lib/screens/call_screen.dart` implements the call experience.
 - **Authentication and data:** Supabase Auth, Postgres, and Realtime. User and conversation data are protected by row-level security and database functions/policies.
 - **Object storage:** Avatars remain in Supabase Storage. Chat files and custom chat backgrounds use a private Cloudflare R2 bucket through a Cloudflare Worker. Supabase hosted Storage cannot be directly redirected to R2, so the Worker is the authenticated bridge.
-- **Platforms:** Android, iOS, web, Linux, macOS, and Windows project targets exist. The repository’s automated release workflow builds Android APKs; Pages builds the web app.
+- **Platforms:** Android, iOS, and Web. The repository’s automated release workflow builds Android APKs; Pages builds the web app.
 
 ## User-facing features
 
@@ -16,6 +16,10 @@ This guide describes the app, its backend, local development, and release proces
 - Direct messages use Supabase Postgres and Realtime. Attachments include images, videos, and documents.
 - Settings offer built-in chat backgrounds and user-uploaded images.
 - Voice and video calls use WebRTC for peer-to-peer media and private Supabase Realtime broadcasts for offer, answer, ICE, and call invitations. The recipient needs the conversation open to receive an incoming call. The current connection setup uses public STUN; networks that block direct peer connections need a TURN service configured in the call implementation for dependable production calls.
+- Android message notifications use Firebase Cloud Messaging (FCM). The Flutter client registers a Firebase Installation ID for the signed-in user, and the `push_tokens` table stores those IDs. An insert trigger on `messages` calls the `push-new-message` Supabase Edge Function, which resolves the other conversation participant and sends the notification through FCM. Notification taps open that conversation; foreground notifications appear as an in-app banner.
+- Firebase project `omix-systems-cd1af` already belonged to the Omix Systems account and had the related Omixsystems web app. The BRO Android (`com.omixsystems.pulsechat`) and iOS (`com.omixsystems.chatApp`) apps are registered there. `android/app/google-services.json` and `ios/Runner/GoogleService-Info.plist` contain Firebase client configuration and are not private keys. A new Firebase project could not be created because the Google account has reached its project quota.
+- Supabase Edge Function secrets `FIREBASE_SERVICE_ACCOUNT_B64` and `PUSH_WEBHOOK_SECRET` are configured remotely. The database trigger reads its function URL and webhook secret from Supabase Vault. The service account has the Firebase Cloud Messaging API Admin role. Never commit its key or copy it into handoff notes.
+- iOS delivery still requires an APNs authentication key to be uploaded in Firebase and Push Notifications capability configured for the Apple app. Web push is not enabled yet; it needs a Firebase Web app, a VAPID key, and the Firebase messaging service worker. Android delivery has not been physically tested because this machine has no Android SDK/device; install a release APK on two Android devices to verify end-to-end delivery.
 
 ## Supabase database
 
@@ -84,3 +88,4 @@ After pushing, check the repository’s Actions page for all three runs. The rel
 - The Supabase avatar bucket is public by design; chat-file and chat-background buckets are private.
 - WebRTC calls currently have no TURN relay. Configure one before relying on calls across restrictive mobile, office, or carrier networks.
 - The app uses an expiring download URL, so a shared link can be opened by its holder until it expires. Keep the expiry short if the threat model changes.
+- Message notification behavior is platform-specific: Android push is wired; iOS depends on APNs setup; the Flutter web client currently skips FCM until its Web Push VAPID key and service worker are configured.

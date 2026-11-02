@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "458479471215",
+    "firebase_url": "https://omix-systems-cd1af-default-rtdb.firebaseio.com",
+    "project_id": "omix-systems-cd1af",
+    "storage_bucket": "omix-systems-cd1af.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:458479471215:android:e162b6b323badea6ff5b9a",
+        "android_client_info": {
+          "package_name": "com.omixsystems.pulsechat"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "458479471215-tt0s5tt21ik3g5c1v2ps5ek27v6kkaid.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDrPgXZCDgbqR3oRIIYf0Q1Pvf1SCdGLGg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "458479471215-tt0s5tt21ik3g5c1v2ps5ek27v6kkaid.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

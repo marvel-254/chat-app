@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -11,6 +13,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import 'screens/call_screen.dart';
 import 'services/supabase.dart';
+import 'services/push_notifications.dart';
 import 'models/profile.dart';
 
 void main() async {
@@ -29,7 +32,13 @@ void main() async {
   }
 
   await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
+  if (!kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS)) {
+    await Firebase.initializeApp();
+  }
   runApp(const BroApp());
+  unawaited(PushNotifications.initialize());
 }
 
 /// CI stamps every build with its release number via --dart-define
@@ -183,13 +192,28 @@ final _router = GoRouter(
   },
 );
 
-class BroApp extends StatelessWidget {
+class BroApp extends StatefulWidget {
   const BroApp({super.key});
+
+  @override
+  State<BroApp> createState() => _BroAppState();
+}
+
+class _BroAppState extends State<BroApp> {
+  @override
+  void initState() {
+    super.initState();
+    PushNotifications.setOpenHandler(
+      (conversationId) => _router.go('/chat/$conversationId'),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
       title: 'BRO',
       debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: appScaffoldMessengerKey,
       routerConfig: _router,
       theme: ThemeData(
         useMaterial3: true,
@@ -197,7 +221,9 @@ class BroApp extends StatelessWidget {
         scaffoldBackgroundColor: _P.bg,
         colorScheme: ColorScheme.dark(
           primary: _P.primary,
+          onPrimary: _P.darkOnAccent,
           surface: _P.surface,
+          onSurface: _P.text,
         ),
         appBarTheme: const AppBarTheme(
           backgroundColor: _P.bg,
@@ -465,6 +491,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         suffix: Icons.check_circle,
                         suffixColor: accent,
                         placeholder: 'Alex Vance',
+                        textInputAction: TextInputAction.next,
                         isGuideTarget: _guideTarget == 'username',
                         onFocus: () =>
                             setState(() => _guideTarget = 'username'),
@@ -477,6 +504,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       prefix: Icons.alternate_email_outlined,
                       placeholder: 'you@bro.network',
                       keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
                       isGuideTarget: _guideTarget == 'email',
                       onFocus: () => setState(() => _guideTarget = 'email'),
                     ),
@@ -487,6 +515,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       prefix: Icons.lock_outline,
                       placeholder: '••••••••',
                       obscureText: true,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _submit(),
                       isGuideTarget: _guideTarget == 'password',
                       onFocus: () => setState(() => _guideTarget = 'password'),
                     ),
@@ -652,7 +682,7 @@ class _WelcomeHero extends StatelessWidget {
 }
 
 /// Pill-shaped auth input matching the Electric Street design.
-class _AuthField extends StatelessWidget {
+class _AuthField extends StatefulWidget {
   const _AuthField({
     required this.controller,
     required this.label,
@@ -664,6 +694,8 @@ class _AuthField extends StatelessWidget {
     this.suffixColor,
     this.isGuideTarget = false,
     this.onFocus,
+    this.textInputAction,
+    this.onSubmitted,
   });
 
   final TextEditingController controller;
@@ -676,6 +708,23 @@ class _AuthField extends StatelessWidget {
   final Color? suffixColor;
   final bool isGuideTarget;
   final VoidCallback? onFocus;
+  final TextInputAction? textInputAction;
+  final ValueChanged<String>? onSubmitted;
+
+  @override
+  State<_AuthField> createState() => _AuthFieldState();
+}
+
+class _AuthFieldState extends State<_AuthField> {
+  late bool _obscured = widget.obscureText;
+
+  @override
+  void didUpdateWidget(covariant _AuthField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.obscureText != widget.obscureText) {
+      _obscured = widget.obscureText;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -685,7 +734,7 @@ class _AuthField extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-          child: Text(label.toUpperCase(),
+          child: Text(widget.label.toUpperCase(),
               style: const TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
@@ -698,10 +747,10 @@ class _AuthField extends StatelessWidget {
             color: _P.surfaceLow,
             borderRadius: BorderRadius.circular(28),
             border: Border.all(
-              color: isGuideTarget ? _P.primary : _P.border,
-              width: isGuideTarget ? 1.5 : 1,
+              color: widget.isGuideTarget ? _P.primary : _P.border,
+              width: widget.isGuideTarget ? 1.5 : 1,
             ),
-            boxShadow: isGuideTarget
+            boxShadow: widget.isGuideTarget
                 ? [
                     BoxShadow(
                       color: _P.primary.withValues(alpha: 0.12),
@@ -712,31 +761,46 @@ class _AuthField extends StatelessWidget {
           ),
           clipBehavior: Clip.antiAlias,
           child: TextField(
-            controller: controller,
-            obscureText: obscureText,
-            keyboardType: keyboardType,
-            onTap: onFocus,
+            controller: widget.controller,
+            obscureText: _obscured,
+            keyboardType: widget.keyboardType,
+            textInputAction: widget.textInputAction,
+            onSubmitted: widget.onSubmitted,
+            onTap: widget.onFocus,
             style: const TextStyle(color: _P.text, fontSize: 15),
             decoration: InputDecoration(
               isDense: true,
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-              prefixIcon: Icon(prefix, color: _P.muted, size: 20),
+              prefixIcon: Icon(widget.prefix, color: _P.muted, size: 20),
               prefixIconConstraints:
                   const BoxConstraints(minWidth: 48, minHeight: 48),
-              hintText: placeholder,
+              hintText: widget.placeholder,
               hintStyle: TextStyle(color: _P.muted.withValues(alpha: 0.6)),
               border: InputBorder.none,
               enabledBorder: InputBorder.none,
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(28),
-                borderSide: BorderSide(color: _P.primary, width: 1.5),
+                borderSide: const BorderSide(color: _P.primary, width: 1.5),
               ),
               suffixIconConstraints:
                   const BoxConstraints(minWidth: 48, minHeight: 48),
-              suffixIcon: suffix != null
-                  ? Icon(suffix, color: suffixColor ?? _P.muted, size: 20)
-                  : null,
+              suffixIcon: widget.obscureText
+                  ? IconButton(
+                      icon: Icon(
+                        _obscured
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        color: _P.muted,
+                        size: 20,
+                      ),
+                      tooltip: _obscured ? 'Show password' : 'Hide password',
+                      onPressed: () => setState(() => _obscured = !_obscured),
+                    )
+                  : (widget.suffix != null
+                      ? Icon(widget.suffix,
+                          color: widget.suffixColor ?? _P.muted, size: 20)
+                      : null),
             ),
           ),
         ),
@@ -863,6 +927,29 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
   }
 }
 
+String _formatConversationTimestamp(DateTime dt) {
+  final now = DateTime.now();
+  final local = dt.toLocal();
+  if (now.year == local.year &&
+      now.month == local.month &&
+      now.day == local.day) {
+    return DateFormat('h:mm a').format(local);
+  }
+  final yesterday = now.subtract(const Duration(days: 1));
+  if (yesterday.year == local.year &&
+      yesterday.month == local.month &&
+      yesterday.day == local.day) {
+    return 'Yesterday';
+  }
+  if (now.difference(local).inDays < 7 && now.weekday != local.weekday) {
+    return DateFormat('EEE').format(local);
+  }
+  if (now.year == local.year) {
+    return DateFormat('MMM d').format(local);
+  }
+  return DateFormat('MM/dd/yy').format(local);
+}
+
 class ConversationListScreen extends StatefulWidget {
   const ConversationListScreen({super.key});
   @override
@@ -871,6 +958,7 @@ class ConversationListScreen extends StatefulWidget {
 
 class _ConversationListScreenState extends State<ConversationListScreen> {
   final _search = TextEditingController();
+  final _searchFocusNode = FocusNode();
   late final Future<List<Profile>> _suggestions = Supa.searchUsers('');
   List<Profile> _searchResults = [];
   Timer? _searchDebounce;
@@ -918,6 +1006,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     _searchRequestId++;
     _searchDebounce?.cancel();
     _search.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -939,7 +1028,22 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('BRO', style: TextStyle(fontWeight: FontWeight.w600)),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/images/bro_logo.png',
+              height: 26,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) =>
+                  const Icon(Icons.flash_on, color: _P.primary, size: 24),
+            ),
+            const SizedBox(width: 10),
+            const Text('BRO',
+                style:
+                    TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+          ],
+        ),
         actions: [
           IconButton(
               icon: const Icon(Icons.settings_outlined),
@@ -947,7 +1051,9 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
               onPressed: () => context.push('/settings')),
           IconButton(
             icon: const Icon(Icons.logout),
+            tooltip: 'Sign out',
             onPressed: () async {
+              await PushNotifications.unregisterCurrentToken();
               await Supa.signOut();
               if (context.mounted) context.go('/login');
             },
@@ -973,11 +1079,12 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
           padding: const EdgeInsets.all(16),
           child: TextField(
             controller: _search,
+            focusNode: _searchFocusNode,
             style: const TextStyle(color: _P.text),
             decoration: InputDecoration(
               hintText: 'Search users...',
-              hintStyle: TextStyle(color: _P.muted),
-              prefixIcon: Icon(Icons.search, color: _P.muted),
+              hintStyle: const TextStyle(color: _P.muted),
+              prefixIcon: const Icon(Icons.search, color: _P.muted),
               filled: true,
               fillColor: _P.surface,
               border: OutlineInputBorder(
@@ -986,7 +1093,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
               ),
               suffixIcon: _search.text.isNotEmpty
                   ? IconButton(
-                      icon: Icon(Icons.clear, color: _P.muted),
+                      icon: const Icon(Icons.clear, color: _P.muted),
                       onPressed: () {
                         _search.clear();
                         _onSearchChanged('');
@@ -1026,13 +1133,21 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                     fontSize: 12,
                     fontWeight: FontWeight.w600)),
           ),
-          ..._searchResults.map(
-            (u) => ListTile(
-              leading: _Avatar(name: u.peerInitial, url: u.avatarUrl, size: 44),
-              title: Text(u.label, style: const TextStyle(color: _P.text)),
-              subtitle: Text('@${u.username}',
-                  style: TextStyle(color: _P.muted, fontSize: 13)),
-              onTap: () => _startDM(u),
+          SizedBox(
+            height: (_searchResults.length * 72.0).clamp(72.0, 288.0),
+            child: ListView.builder(
+              itemCount: _searchResults.length,
+              itemBuilder: (context, index) {
+                final u = _searchResults[index];
+                return ListTile(
+                  leading:
+                      _Avatar(name: u.peerInitial, url: u.avatarUrl, size: 44),
+                  title: Text(u.label, style: const TextStyle(color: _P.text)),
+                  subtitle: Text('@${u.username}',
+                      style: TextStyle(color: _P.muted, fontSize: 13)),
+                  onTap: () => _startDM(u),
+                );
+              },
             ),
           ),
           const Divider(height: 1),
@@ -1131,17 +1246,50 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
               final conversations = snapshot.data ?? [];
               if (conversations.isEmpty) {
                 return Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.forum_outlined, color: _P.muted, size: 56),
-                      const SizedBox(height: 16),
-                      Text('No chats yet',
-                          style: TextStyle(color: _P.muted, fontSize: 15)),
-                      const SizedBox(height: 4),
-                      Text('Search a user above to start messaging',
-                          style: TextStyle(color: _P.muted, fontSize: 13)),
-                    ],
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 72,
+                          height: 72,
+                          decoration: BoxDecoration(
+                            color: _P.surfaceHigh,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: _P.border),
+                          ),
+                          child: const Center(
+                            child: Icon(Icons.forum_outlined,
+                                color: _P.primary, size: 36),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        const Text('No chats yet',
+                            style: TextStyle(
+                                color: _P.text,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 6),
+                        const Text(
+                            'Search for users or pick from suggestions above to start messaging.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                color: _P.muted, fontSize: 13, height: 1.4)),
+                        const SizedBox(height: 16),
+                        FilledButton.tonalIcon(
+                          onPressed: () => _searchFocusNode.requestFocus(),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _P.surface,
+                            foregroundColor: _P.primary,
+                          ),
+                          icon: const Icon(Icons.person_search_outlined,
+                              size: 18),
+                          label: const Text('Find someone',
+                              style: TextStyle(fontWeight: FontWeight.w600)),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               }
@@ -1160,7 +1308,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                         leading: _Avatar(
                             name: conv.peerInitial,
                             url: conv.peerAvatarUrl,
-                            size: 44),
+                            size: 46),
                         title: Text(
                           conv.peerLabel,
                           style: TextStyle(
@@ -1184,7 +1332,11 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                                         ? '📎 Attachment'
                                         : lastMessage,
                                     style: TextStyle(
-                                        color: _P.muted, fontSize: 13),
+                                        color: unread ? _P.text : _P.muted,
+                                        fontWeight: unread
+                                            ? FontWeight.w500
+                                            : FontWeight.normal,
+                                        fontSize: 13),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis),
                             ]),
@@ -1194,30 +1346,42 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                           children: [
                             if (unread)
                               Container(
-                                padding: const EdgeInsets.all(2),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
                                 constraints: const BoxConstraints(
                                     minWidth: 20, minHeight: 20),
-                                decoration: const BoxDecoration(
+                                decoration: BoxDecoration(
                                   color: _P.primary,
-                                  shape: BoxShape.circle,
+                                  borderRadius: BorderRadius.circular(10),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: _P.primary.withValues(alpha: 0.35),
+                                      blurRadius: 6,
+                                    ),
+                                  ],
                                 ),
                                 child: Text(
                                   conv.unreadCount > 99
                                       ? '99+'
                                       : '${conv.unreadCount}',
                                   style: const TextStyle(
-                                      color: Colors.white,
+                                      color: _P.darkOnAccent,
                                       fontSize: 11,
-                                      fontWeight: FontWeight.w700),
+                                      fontWeight: FontWeight.w800),
                                   textAlign: TextAlign.center,
                                 ),
                               )
                             else if (lastMessageAt != null)
-                              Text(DateFormat('h:mm a').format(lastMessageAt),
+                              Text(_formatConversationTimestamp(lastMessageAt),
                                   style: const TextStyle(
                                       color: _P.muted, fontSize: 11)),
                           ],
                         ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 4),
                         onTap: () => context.go('/chat/${conv.id}'),
                       );
                     },
@@ -1470,11 +1634,6 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  void _closeSheetWithNotice(BuildContext context, String message) {
-    Navigator.pop(context);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _unsupported(message));
-  }
-
   void _showChatMenu(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -1486,15 +1645,25 @@ class _ChatScreenState extends State<ChatScreen> {
             _MenuTile(
               icon: Icons.info_outline,
               label: 'About this chat',
-              onTap: () => _closeSheetWithNotice(
-                  context, 'Chat details are coming soon.'),
-            ),
-            _MenuTile(
-              icon: Icons.block,
-              label: 'Block ${_peer?.label ?? 'user'}',
-              danger: true,
-              onTap: () =>
-                  _closeSheetWithNotice(context, 'Blocking is coming soon.'),
+              onTap: () {
+                Navigator.pop(context);
+                showDialog<void>(
+                  context: this.context,
+                  builder: (dialogContext) => AlertDialog(
+                    title: Text(_peer?.label ?? 'Chat details'),
+                    content: Text([
+                      if (_peer?.username case final username?) '@$username',
+                      'Conversation ID: ${widget.conversationId}',
+                    ].join('\n')),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: const Text('Close'),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 8),
           ],
@@ -1618,23 +1787,62 @@ class _ChatScreenState extends State<ChatScreen> {
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
-        leadingWidth: 64,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 16, top: 2),
-          child: _Avatar(
-              name: _peer?.peerInitial ?? '?', url: _peer?.avatarUrl, size: 40),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          tooltip: 'Back to chats',
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/conversations');
+            }
+          },
         ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _peer?.label ?? 'Chat',
-              style: const TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.w600, color: _P.text),
+        title: InkWell(
+          onTap: () => _showChatMenu(context),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+            child: Row(
+              children: [
+                _Avatar(
+                  name: _peer?.peerInitial ?? '?',
+                  url: _peer?.avatarUrl,
+                  size: 38,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _peer?.label ?? 'Chat',
+                        style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: _P.text),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        _peerTyping != null
+                            ? 'typing…'
+                            : (_peer == null
+                                ? 'Direct message'
+                                : '@${_peer!.username}'),
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: _peerTyping != null ? _P.primary : _P.muted),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            Text(_peer == null ? 'Direct message' : '@${_peer!.username}',
-                style: const TextStyle(fontSize: 12, color: _P.muted)),
-          ],
+          ),
         ),
         actions: [
           _ActionBtn(Icons.videocam_rounded,
@@ -1642,7 +1850,7 @@ class _ChatScreenState extends State<ChatScreen> {
           _ActionBtn(Icons.phone_rounded,
               onTap: () => _startCall(video: false)),
           _ActionBtn(Icons.more_vert, onTap: () => _showChatMenu(context)),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
         ],
       ),
       body: LayoutBuilder(
@@ -1672,12 +1880,19 @@ class _ChatScreenState extends State<ChatScreen> {
                 }
                 if (snapshot.hasError) {
                   return _ErrorState(
-                      message: 'Failed to load messages', onRetry: () {});
+                      message: 'Failed to load messages',
+                      onRetry: () => setState(() {}));
                 }
                 final messages = snapshot.data ?? [];
                 if (messages.isEmpty) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {});
-                  return const _EmptyState();
+                  return _EmptyState(
+                    peerName: _peer?.label,
+                    onSayHello: () {
+                      _ctrl.text = 'Hey! 👋';
+                      _send();
+                    },
+                  );
                 }
                 _markUnreadAsRead(messages);
                 return Center(
@@ -1737,11 +1952,18 @@ class _ChatScreenState extends State<ChatScreen> {
                       }
                       if (snapshot.hasError) {
                         return _ErrorState(
-                            message: 'Failed to load messages', onRetry: () {});
+                            message: 'Failed to load messages',
+                            onRetry: () => setState(() {}));
                       }
                       final messages = snapshot.data ?? [];
                       if (messages.isEmpty) {
-                        return const _EmptyState();
+                        return _EmptyState(
+                          peerName: _peer?.label,
+                          onSayHello: () {
+                            _ctrl.text = 'Hey! 👋';
+                            _send();
+                          },
+                        );
                       }
                       _markUnreadAsRead(messages);
                       return Center(
@@ -1789,21 +2011,62 @@ class _ChatScreenState extends State<ChatScreen> {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  const _EmptyState({this.peerName, this.onSayHello});
+  final String? peerName;
+  final VoidCallback? onSayHello;
+
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: const [
-          Icon(Icons.forum_outlined, color: _P.muted, size: 56),
-          SizedBox(height: 16),
-          Text('No messages yet',
-              style: TextStyle(color: _P.muted, fontSize: 15)),
-          SizedBox(height: 4),
-          Text('Say hello to get started.',
-              style: TextStyle(color: _P.muted, fontSize: 13)),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: _P.surface,
+                shape: BoxShape.circle,
+                border: Border.all(color: _P.border),
+              ),
+              child: const Center(
+                child: Icon(Icons.waving_hand_outlined,
+                    color: _P.primary, size: 36),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              peerName != null ? 'Say hello to $peerName!' : 'No messages yet',
+              style: const TextStyle(
+                color: _P.text,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Break the ice with a message or a quick wave.',
+              style: TextStyle(color: _P.muted, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+            if (onSayHello != null) ...[
+              const SizedBox(height: 18),
+              FilledButton.tonalIcon(
+                onPressed: onSayHello,
+                style: FilledButton.styleFrom(
+                  backgroundColor: _P.surfaceHigh,
+                  foregroundColor: _P.text,
+                ),
+                icon: const Text('👋', style: TextStyle(fontSize: 16)),
+                label: const Text('Wave hello',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -1991,73 +2254,87 @@ class _Bubble extends StatelessWidget {
         left: mine ? 64 : 4,
         right: mine ? 4 : 64,
       ),
-      child: Container(
-        constraints:
-            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.68),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          gradient: mine
-              ? const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [_P.primary, Color(0xFFC7EF00)],
-                )
-              : const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF292B32), Color(0xFF202127)],
-                ),
-          borderRadius: adjusted,
-          border: Border.all(
-            color: mine
-                ? Colors.white.withValues(alpha: 0.2)
-                : Colors.white.withValues(alpha: 0.07),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: mine
-                  ? _P.primary.withValues(alpha: 0.13)
-                  : Colors.black.withValues(alpha: 0.16),
-              blurRadius: mine ? 18 : 12,
-              offset: const Offset(0, 5),
+      child: GestureDetector(
+        onLongPress: () {
+          if (attachment != null) return;
+          Clipboard.setData(ClipboardData(text: msg.content));
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Message copied to clipboard'),
+              duration: Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
             ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (attachment != null)
-              _AttachmentContent(attachment: attachment, mine: mine)
-            else
-              Text(msg.content,
-                  style: TextStyle(
-                      fontSize: 15,
-                      height: 1.3,
-                      color: mine ? _P.darkOnAccent : _P.text)),
-            const SizedBox(height: 2),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(_fmtTime(msg.createdAt),
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: mine
-                            ? _P.darkOnAccent.withValues(alpha: 0.7)
-                            : _P.muted)),
-                if (mine) ...[
-                  const SizedBox(width: 3),
-                  Icon(
-                    msg.readAt != null ? Icons.done_all : Icons.done,
-                    size: 13,
-                    color: msg.readAt != null
-                        ? _P.success
-                        : _P.darkOnAccent.withValues(alpha: 0.7),
+          );
+        },
+        child: Container(
+          constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.68),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            gradient: mine
+                ? const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [_P.primary, Color(0xFFC7EF00)],
+                  )
+                : const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF292B32), Color(0xFF202127)],
                   ),
-                ],
-              ],
+            borderRadius: adjusted,
+            border: Border.all(
+              color: mine
+                  ? Colors.white.withValues(alpha: 0.2)
+                  : Colors.white.withValues(alpha: 0.07),
             ),
-          ],
+            boxShadow: [
+              BoxShadow(
+                color: mine
+                    ? _P.primary.withValues(alpha: 0.13)
+                    : Colors.black.withValues(alpha: 0.16),
+                blurRadius: mine ? 18 : 12,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (attachment != null)
+                _AttachmentContent(attachment: attachment, mine: mine)
+              else
+                Text(msg.content,
+                    style: TextStyle(
+                        fontSize: 15,
+                        height: 1.3,
+                        color: mine ? _P.darkOnAccent : _P.text)),
+              const SizedBox(height: 2),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(_fmtTime(msg.createdAt),
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: mine
+                              ? _P.darkOnAccent.withValues(alpha: 0.7)
+                              : _P.muted)),
+                  if (mine) ...[
+                    const SizedBox(width: 3),
+                    Icon(
+                      msg.readAt != null ? Icons.done_all : Icons.done,
+                      size: 13,
+                      color: msg.readAt != null
+                          ? _P.success
+                          : _P.darkOnAccent.withValues(alpha: 0.7),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2087,6 +2364,29 @@ class _AttachmentContent extends StatelessWidget {
     return FutureBuilder<String>(
       future: Supa.attachmentUrl(objectPath),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return SizedBox(
+            width: 220,
+            child: TextButton.icon(
+              onPressed: () async {
+                try {
+                  final url = await Supa.attachmentUrl(objectPath);
+                  await launchUrl(Uri.parse(url),
+                      mode: LaunchMode.externalApplication);
+                } catch (_) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('Attachment is still unavailable.')),
+                    );
+                  }
+                }
+              },
+              icon: const Icon(Icons.refresh),
+              label: const Text('Could not load attachment'),
+            ),
+          );
+        }
         if (!snapshot.hasData) {
           return const SizedBox(
               width: 180,
@@ -2098,16 +2398,46 @@ class _AttachmentContent extends StatelessWidget {
           return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.network(url.toString(),
-                        width: previewWidth,
-                        height: 190,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => SizedBox(
-                            width: previewWidth,
-                            height: 100,
-                            child: const Icon(Icons.broken_image_outlined)))),
+                GestureDetector(
+                  onTap: () {
+                    showDialog<void>(
+                      context: context,
+                      builder: (dialogContext) => Dialog.fullscreen(
+                        backgroundColor: Colors.black.withValues(alpha: 0.95),
+                        child: Stack(
+                          children: [
+                            InteractiveViewer(
+                              maxScale: 4.0,
+                              child: Center(
+                                child: Image.network(url.toString(),
+                                    fit: BoxFit.contain),
+                              ),
+                            ),
+                            Positioned(
+                              top: 24,
+                              right: 20,
+                              child: IconButton(
+                                icon: const Icon(Icons.close,
+                                    color: Colors.white, size: 28),
+                                onPressed: () => Navigator.pop(dialogContext),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                  child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.network(url.toString(),
+                          width: previewWidth,
+                          height: 190,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => SizedBox(
+                              width: previewWidth,
+                              height: 100,
+                              child: const Icon(Icons.broken_image_outlined)))),
+                ),
                 const SizedBox(height: 5),
                 Text(name,
                     maxLines: 1,
@@ -2281,21 +2611,16 @@ class _ActionBtn extends StatelessWidget {
 
 class _MenuTile extends StatelessWidget {
   const _MenuTile(
-      {required this.icon,
-      required this.label,
-      this.danger = false,
-      required this.onTap});
+      {required this.icon, required this.label, required this.onTap});
   final IconData icon;
   final String label;
-  final bool danger;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: danger ? Colors.red : _P.muted, size: 22),
-      title: Text(label,
-          style: TextStyle(color: danger ? Colors.red : _P.text, fontSize: 15)),
+      leading: Icon(icon, color: _P.muted, size: 22),
+      title: Text(label, style: const TextStyle(color: _P.text, fontSize: 15)),
       onTap: onTap,
     );
   }
@@ -2527,9 +2852,20 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                                       borderRadius: BorderRadius.circular(8),
                                     )),
                                 const SizedBox(height: 6),
-                                Text(option.$2,
-                                    style: const TextStyle(
-                                        color: _P.text, fontSize: 12)),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(option.$2,
+                                        style: const TextStyle(
+                                            color: _P.text,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500)),
+                                    if (_chatBackground == option.$1)
+                                      const Icon(Icons.check_circle_rounded,
+                                          color: _P.primary, size: 14),
+                                  ],
+                                ),
                               ]),
                         ),
                       ),
@@ -2571,12 +2907,23 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                                     : null,
                               ),
                               const SizedBox(height: 6),
-                              Text(
-                                  _chatBackgroundImagePath == null
-                                      ? 'Upload image'
-                                      : 'My image',
-                                  style: const TextStyle(
-                                      color: _P.text, fontSize: 12)),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                      _chatBackgroundImagePath == null
+                                          ? 'Upload image'
+                                          : 'My image',
+                                      style: const TextStyle(
+                                          color: _P.text,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500)),
+                                  if (_chatBackground == 'custom')
+                                    const Icon(Icons.check_circle_rounded,
+                                        color: _P.primary, size: 14),
+                                ],
+                              ),
                             ]),
                       ),
                     ),
@@ -2605,11 +2952,21 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   const SizedBox(height: 22),
                   FilledButton(
                       onPressed: _saving ? null : _save,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _P.primary,
+                        foregroundColor: _P.darkOnAccent,
+                        minimumSize: const Size.fromHeight(50),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                        textStyle: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w700),
+                      ),
                       child: _saving
                           ? const SizedBox(
                               height: 20,
                               width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2))
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: _P.darkOnAccent))
                           : const Text('Save changes')),
                   const SizedBox(height: 12),
                   Center(
@@ -2620,29 +2977,55 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       );
 }
 
-class _SettingsField extends StatelessWidget {
-  const _SettingsField(
-      {required this.controller,
-      required this.label,
-      required this.icon,
-      this.obscure = false});
+class _SettingsField extends StatefulWidget {
+  const _SettingsField({
+    required this.controller,
+    required this.label,
+    required this.icon,
+    this.obscure = false,
+  });
   final TextEditingController controller;
   final String label;
   final IconData icon;
   final bool obscure;
+
+  @override
+  State<_SettingsField> createState() => _SettingsFieldState();
+}
+
+class _SettingsFieldState extends State<_SettingsField> {
+  late bool _obscured = widget.obscure;
+
   @override
   Widget build(BuildContext context) => TextField(
-        controller: controller,
-        obscureText: obscure,
+        controller: widget.controller,
+        obscureText: _obscured,
         style: const TextStyle(color: _P.text),
         decoration: InputDecoration(
-            labelText: label,
-            prefixIcon: Icon(icon),
-            filled: true,
-            fillColor: _P.surface,
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide.none)),
+          labelText: widget.label,
+          labelStyle: const TextStyle(color: _P.muted),
+          prefixIcon: Icon(widget.icon, color: _P.muted),
+          suffixIcon: widget.obscure
+              ? IconButton(
+                  icon: Icon(
+                    _obscured
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                    color: _P.muted,
+                  ),
+                  tooltip: _obscured ? 'Show password' : 'Hide password',
+                  onPressed: () => setState(() => _obscured = !_obscured),
+                )
+              : null,
+          filled: true,
+          fillColor: _P.surface,
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: _P.primary, width: 1.5)),
+        ),
       );
 }
 

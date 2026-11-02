@@ -45,6 +45,8 @@ dependencies:
   flutter_webrtc: ^1.6.3
   url_launcher: ^6.3.2
   http: ^1.6.0
+  firebase_core: ^5.1.0
+  firebase_messaging: ^17.0.1
 
 dev_dependencies:
   flutter_test:
