@@ -3,6 +3,8 @@ class Profile {
   final String username;
   final String? displayName;
   final String? avatarUrl;
+  final String chatBackground;
+  final String? chatBackgroundImagePath;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -11,6 +13,8 @@ class Profile {
     required this.username,
     this.displayName,
     this.avatarUrl,
+    this.chatBackground = 'default',
+    this.chatBackgroundImagePath,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -20,6 +24,8 @@ class Profile {
         username: json['username'] as String,
         displayName: json['display_name'] as String?,
         avatarUrl: json['avatar_url'] as String?,
+        chatBackground: json['chat_background'] as String? ?? 'default',
+        chatBackgroundImagePath: json['chat_background_image_path'] as String?,
         createdAt: DateTime.parse(json['created_at'] as String),
         updatedAt: DateTime.parse(json['updated_at'] as String),
       );
@@ -29,6 +35,8 @@ class Profile {
         'username': username,
         'display_name': displayName,
         'avatar_url': avatarUrl,
+        'chat_background': chatBackground,
+        'chat_background_image_path': chatBackgroundImagePath,
         'created_at': createdAt.toIso8601String(),
         'updated_at': updatedAt.toIso8601String(),
       };
@@ -58,6 +66,7 @@ class Conversation {
   final String? peerId;
   final String? peerUsername;
   final String? peerDisplayName;
+  final String? peerAvatarUrl;
   final int unreadCount;
 
   Conversation({
@@ -70,6 +79,7 @@ class Conversation {
     this.peerId,
     this.peerUsername,
     this.peerDisplayName,
+    this.peerAvatarUrl,
     this.unreadCount = 0,
   });
 
@@ -86,6 +96,7 @@ class Conversation {
             : DateTime.parse(json['last_message_at'] as String),
         peerUsername: json['peer_username'] as String?,
         peerDisplayName: json['peer_display_name'] as String?,
+        peerAvatarUrl: json['peer_avatar_url'] as String?,
         unreadCount: (json['unread_count'] as num?)?.toInt() ?? 0,
       );
 

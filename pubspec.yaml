@@ -39,6 +39,12 @@ dependencies:
   go_router: ^14.0.0
   uuid: ^4.4.0
   intl: ^0.19.0
+  path: ^1.9.1
+  file_picker: ^13.3.1
+  image_picker: ^1.2.4
+  flutter_webrtc: ^1.6.3
+  url_launcher: ^6.3.2
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:

@@ -1,8 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:uuid/uuid.dart';
+import 'screens/call_screen.dart';
 import 'services/supabase.dart';
 import 'models/profile.dart';
 
@@ -44,6 +51,33 @@ const _darkOnVolt = Color(0xFF0C0D12); // text on lime accents
 
 const _adaptiveBreakpoint = 600.0;
 
+const _chatBackgroundOptions = <(String, String, List<Color>)>[
+  ('default', 'Night', [_bg, _surfaceLow]),
+  ('ocean', 'Ocean', [Color(0xFF102438), Color(0xFF0D1724)]),
+  ('forest', 'Forest', [Color(0xFF142A24), Color(0xFF0E1B19)]),
+  ('plum', 'Plum', [Color(0xFF2A1D35), Color(0xFF191521)]),
+  ('ember', 'Ember', [Color(0xFF34221B), Color(0xFF1D1715)]),
+];
+
+BoxDecoration _chatCanvas(String name, {String? imageUrl}) {
+  if (imageUrl != null) {
+    return BoxDecoration(
+        image: DecorationImage(
+      image: NetworkImage(imageUrl),
+      fit: BoxFit.cover,
+      colorFilter: ColorFilter.mode(
+          Colors.black.withValues(alpha: 0.28), BlendMode.darken),
+    ));
+  }
+  final option = _chatBackgroundOptions.firstWhere((entry) => entry.$1 == name,
+      orElse: () => _chatBackgroundOptions.first);
+  return BoxDecoration(
+      gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: option.$3));
+}
+
 class _P {
   static const bg = _bg;
   static const surface = _surface;
@@ -75,7 +109,8 @@ class BackendConfigurationApp extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.settings_ethernet, color: _P.primary, size: 48),
+                  const Icon(Icons.settings_ethernet,
+                      color: _P.primary, size: 48),
                   const SizedBox(height: 20),
                   const Text(
                     'BRO needs backend configuration',
@@ -115,11 +150,28 @@ final _router = GoRouter(
   routes: [
     GoRoute(path: '/', builder: (_, __) => const AuthGate()),
     GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
-    GoRoute(path: '/confirm', builder: (_, state) => ConfirmationScreen(email: state.extra as String? ?? '')),
-    GoRoute(path: '/conversations', builder: (_, __) => const ConversationListScreen()),
+    GoRoute(
+        path: '/confirm',
+        builder: (_, state) =>
+            ConfirmationScreen(email: state.extra as String? ?? '')),
+    GoRoute(
+        path: '/conversations',
+        builder: (_, __) => const ConversationListScreen()),
+    GoRoute(
+        path: '/settings', builder: (_, __) => const AccountSettingsScreen()),
+    GoRoute(
+        path: '/call/:conversationId',
+        builder: (_, state) => CallScreen(
+              conversationId: state.pathParameters['conversationId']!,
+              peer: state.extra as Profile,
+              callId: state.uri.queryParameters['id']!,
+              video: state.uri.queryParameters['video'] == 'true',
+              outgoing: state.uri.queryParameters['outgoing'] == 'true',
+            )),
     GoRoute(
       path: '/chat/:conversationId',
-      builder: (_, state) => ChatScreen(conversationId: state.pathParameters['conversationId']!),
+      builder: (_, state) =>
+          ChatScreen(conversationId: state.pathParameters['conversationId']!),
     ),
   ],
   redirect: (context, state) {
@@ -151,7 +203,8 @@ class BroApp extends StatelessWidget {
           backgroundColor: _P.bg,
           surfaceTintColor: Colors.transparent,
           elevation: 0,
-          titleTextStyle: TextStyle(color: _P.text, fontSize: 18, fontWeight: FontWeight.w600),
+          titleTextStyle: TextStyle(
+              color: _P.text, fontSize: 18, fontWeight: FontWeight.w600),
         ),
         textTheme: const TextTheme(
           bodyMedium: TextStyle(color: _P.text),
@@ -169,7 +222,8 @@ class AuthGate extends StatelessWidget {
       stream: Supa.authStateChanges,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+              body: Center(child: CircularProgressIndicator()));
         }
         if (snapshot.hasError) {
           return _AuthErrorState(error: snapshot.error.toString());
@@ -198,9 +252,15 @@ class _AuthErrorState extends StatelessWidget {
             children: [
               Icon(Icons.error_outline, color: Colors.red, size: 48),
               const SizedBox(height: 16),
-              Text('Connection Error', style: TextStyle(color: _P.text, fontSize: 20, fontWeight: FontWeight.w600)),
+              Text('Connection Error',
+                  style: TextStyle(
+                      color: _P.text,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
-              Text(error, style: TextStyle(color: _P.muted, fontSize: 14), textAlign: TextAlign.center),
+              Text(error,
+                  style: TextStyle(color: _P.muted, fontSize: 14),
+                  textAlign: TextAlign.center),
               const SizedBox(height: 24),
               FilledButton(
                 onPressed: () => runApp(const BroApp()),
@@ -321,24 +381,34 @@ class _LoginScreenState extends State<LoginScreen> {
                         children: [
                           for (final entry in [
                             (_isSignUp ? 'Sign In' : 'Sign In', false),
-                            (_isSignUp ? 'Create Account' : 'Create Account', true),
+                            (
+                              _isSignUp ? 'Create Account' : 'Create Account',
+                              true
+                            ),
                           ])
                             Expanded(
                               child: GestureDetector(
                                 onTap: () => setState(() {
                                   _isSignUp = entry.$2;
-                                  _guideTarget = entry.$2 ? 'username' : 'email';
+                                  _guideTarget =
+                                      entry.$2 ? 'username' : 'email';
                                 }),
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 180),
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12),
                                   decoration: BoxDecoration(
                                     color: _isSignUp == entry.$2
                                         ? accent
                                         : Colors.transparent,
                                     borderRadius: BorderRadius.circular(36),
                                     boxShadow: _isSignUp == entry.$2
-                                        ? [BoxShadow(color: accent.withValues(alpha: 0.3), blurRadius: 16)]
+                                        ? [
+                                            BoxShadow(
+                                                color: accent.withValues(
+                                                    alpha: 0.3),
+                                                blurRadius: 16)
+                                          ]
                                         : null,
                                   ),
                                   child: Center(
@@ -346,7 +416,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                         style: TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w700,
-                                          color: _isSignUp == entry.$2 ? darkOnAccent : _P.muted,
+                                          color: _isSignUp == entry.$2
+                                              ? darkOnAccent
+                                              : _P.muted,
                                         )),
                                   ),
                                 ),
@@ -365,14 +437,21 @@ class _LoginScreenState extends State<LoginScreen> {
                         margin: const EdgeInsets.only(bottom: 16),
                         decoration: BoxDecoration(
                           color: Colors.red.withValues(alpha: 0.12),
-                          border: Border.all(color: Colors.red.withValues(alpha: 0.35)),
+                          border: Border.all(
+                              color: Colors.red.withValues(alpha: 0.35)),
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                            const Icon(Icons.error_outline,
+                                color: Colors.red, size: 20),
                             const SizedBox(width: 10),
-                            Expanded(child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13, height: 1.3))),
+                            Expanded(
+                                child: Text(_error!,
+                                    style: const TextStyle(
+                                        color: Colors.red,
+                                        fontSize: 13,
+                                        height: 1.3))),
                           ],
                         ),
                       ),
@@ -387,7 +466,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         suffixColor: accent,
                         placeholder: 'Alex Vance',
                         isGuideTarget: _guideTarget == 'username',
-                        onFocus: () => setState(() => _guideTarget = 'username'),
+                        onFocus: () =>
+                            setState(() => _guideTarget = 'username'),
                       ),
                       const SizedBox(height: 16),
                     ],
@@ -422,18 +502,27 @@ class _LoginScreenState extends State<LoginScreen> {
                           decoration: BoxDecoration(
                             color: accent,
                             borderRadius: BorderRadius.circular(28),
-                            boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.35), blurRadius: 22, spreadRadius: 1)],
+                            boxShadow: [
+                              BoxShadow(
+                                  color: accent.withValues(alpha: 0.35),
+                                  blurRadius: 22,
+                                  spreadRadius: 1)
+                            ],
                           ),
                           alignment: Alignment.center,
                           child: _loading
                               ? SizedBox(
                                   width: 22,
                                   height: 22,
-                                  child: CircularProgressIndicator(strokeWidth: 2.5, color: darkOnAccent),
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2.5, color: darkOnAccent),
                                 )
                               : Text(_isSignUp ? 'Create Account' : 'Sign In',
                                   style: TextStyle(
-                                      fontSize: 16, fontWeight: FontWeight.w700, color: darkOnAccent, letterSpacing: 0.3)),
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                      color: darkOnAccent,
+                                      letterSpacing: 0.3)),
                         ),
                       ),
                     ),
@@ -447,10 +536,18 @@ class _LoginScreenState extends State<LoginScreen> {
                         text: TextSpan(
                           style: const TextStyle(fontSize: 14, color: _P.muted),
                           children: [
-                            TextSpan(text: _isSignUp ? 'Already in the crew? ' : 'Need an account? ',
+                            TextSpan(
+                                text: _isSignUp
+                                    ? 'Already in the crew? '
+                                    : 'Need an account? ',
                                 style: const TextStyle(color: _P.muted)),
-                            TextSpan(text: _isSignUp ? 'Sign In, Bro' : 'Claim Your Tag',
-                                style: TextStyle(color: accent, fontWeight: FontWeight.w700)),
+                            TextSpan(
+                                text: _isSignUp
+                                    ? 'Sign In, Bro'
+                                    : 'Claim Your Tag',
+                                style: TextStyle(
+                                    color: accent,
+                                    fontWeight: FontWeight.w700)),
                           ],
                         ),
                       ),
@@ -461,7 +558,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     if (buildNumber.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Text('BRO · build $buildNumber',
-                          style: const TextStyle(fontSize: 11, color: _P.muted)),
+                          style:
+                              const TextStyle(fontSize: 11, color: _P.muted)),
                     ],
                   ],
                 ),
@@ -500,7 +598,8 @@ class _WelcomeHero extends StatelessWidget {
                 height: 300,
                 child: Semantics(
                   image: true,
-                  label: 'BRO character waving and pointing toward the sign-in fields',
+                  label:
+                      'BRO character waving and pointing toward the sign-in fields',
                   child: Image.asset(
                     'assets/images/welcome_avatar_fullbody.png',
                     width: avatarWidth,
@@ -587,7 +686,11 @@ class _AuthField extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
           child: Text(label.toUpperCase(),
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _P.muted, letterSpacing: 0.08)),
+              style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: _P.muted,
+                  letterSpacing: 0.08)),
         ),
         Container(
           height: 54,
@@ -616,9 +719,11 @@ class _AuthField extends StatelessWidget {
             style: const TextStyle(color: _P.text, fontSize: 15),
             decoration: InputDecoration(
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
               prefixIcon: Icon(prefix, color: _P.muted, size: 20),
-              prefixIconConstraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              prefixIconConstraints:
+                  const BoxConstraints(minWidth: 48, minHeight: 48),
               hintText: placeholder,
               hintStyle: TextStyle(color: _P.muted.withValues(alpha: 0.6)),
               border: InputBorder.none,
@@ -627,7 +732,8 @@ class _AuthField extends StatelessWidget {
                 borderRadius: BorderRadius.circular(28),
                 borderSide: BorderSide(color: _P.primary, width: 1.5),
               ),
-              suffixIconConstraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              suffixIconConstraints:
+                  const BoxConstraints(minWidth: 48, minHeight: 48),
               suffixIcon: suffix != null
                   ? Icon(suffix, color: suffixColor ?? _P.muted, size: 20)
                   : null,
@@ -686,12 +792,16 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
                     border: Border.all(color: _P.border),
                   ),
                   child: const Center(
-                    child: Icon(Icons.mark_email_unread_outlined, color: _P.primary, size: 40),
+                    child: Icon(Icons.mark_email_unread_outlined,
+                        color: _P.primary, size: 40),
                   ),
                 ),
                 const SizedBox(height: 24),
                 const Text('Check Your Email',
-                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: _P.text)),
+                    style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        color: _P.text)),
                 const SizedBox(height: 8),
                 Text(
                   'We sent a confirmation link to\n${widget.email}. Click it to activate your account, then sign in.',
@@ -706,10 +816,13 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
                     margin: const EdgeInsets.only(bottom: 16),
                     decoration: BoxDecoration(
                       color: Colors.red.withValues(alpha: 0.1),
-                      border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                      border:
+                          Border.all(color: Colors.red.withValues(alpha: 0.3)),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 14)),
+                    child: Text(_error!,
+                        style:
+                            const TextStyle(color: Colors.red, fontSize: 14)),
                   ),
                 SizedBox(
                   width: double.infinity,
@@ -717,21 +830,29 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
                   child: OutlinedButton.icon(
                     onPressed: _resending ? null : _resend,
                     icon: _resending
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: _P.text))
-                        : const Icon(Icons.mark_email_read_outlined, color: _P.text),
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: _P.text))
+                        : const Icon(Icons.mark_email_read_outlined,
+                            color: _P.text),
                     label: Text(_resending ? 'Sending…' : 'Resend Confirmation',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w600)),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: _P.text,
                       side: const BorderSide(color: _P.border),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
                 ),
                 const SizedBox(height: 16),
                 TextButton(
                   onPressed: () => context.go('/login'),
-                  child: const Text('Back to Sign In', style: TextStyle(color: _P.primary)),
+                  child: const Text('Back to Sign In',
+                      style: TextStyle(color: _P.primary)),
                 ),
               ],
             ),
@@ -750,6 +871,7 @@ class ConversationListScreen extends StatefulWidget {
 
 class _ConversationListScreenState extends State<ConversationListScreen> {
   final _search = TextEditingController();
+  late final Future<List<Profile>> _suggestions = Supa.searchUsers('');
   List<Profile> _searchResults = [];
   Timer? _searchDebounce;
   int _searchRequestId = 0;
@@ -806,7 +928,9 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open this conversation. Please try again.')),
+        const SnackBar(
+            content:
+                Text('Could not open this conversation. Please try again.')),
       );
     }
   }
@@ -817,6 +941,10 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
       appBar: AppBar(
         title: const Text('BRO', style: TextStyle(fontWeight: FontWeight.w600)),
         actions: [
+          IconButton(
+              icon: const Icon(Icons.settings_outlined),
+              tooltip: 'Settings',
+              onPressed: () => context.push('/settings')),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
@@ -877,7 +1005,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
         if (_search.text.trim().isNotEmpty && _searchError != null)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(_searchError!, style: const TextStyle(color: Colors.redAccent)),
+            child: Text(_searchError!,
+                style: const TextStyle(color: Colors.redAccent)),
           ),
         if (_search.text.trim().isNotEmpty &&
             _searchCompleted &&
@@ -891,21 +1020,93 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text('Users', style: TextStyle(color: _P.muted, fontSize: 12, fontWeight: FontWeight.w600)),
+            child: Text('Users',
+                style: TextStyle(
+                    color: _P.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600)),
           ),
-          ..._searchResults.map((u) => ListTile(
-            leading: _Avatar(name: u.username[0].toUpperCase(), size: 44),
-            title: Text(u.username, style: const TextStyle(color: _P.text)),
-            subtitle: Text(u.displayName ?? '', style: TextStyle(color: _P.muted, fontSize: 13)),
-            onTap: () => _startDM(u),
-          ),),
+          ..._searchResults.map(
+            (u) => ListTile(
+              leading: _Avatar(name: u.peerInitial, url: u.avatarUrl, size: 44),
+              title: Text(u.label, style: const TextStyle(color: _P.text)),
+              subtitle: Text('@${u.username}',
+                  style: TextStyle(color: _P.muted, fontSize: 13)),
+              onTap: () => _startDM(u),
+            ),
+          ),
           const Divider(height: 1),
         ],
+        if (_search.text.trim().isEmpty)
+          FutureBuilder<List<Profile>>(
+            future: _suggestions,
+            builder: (context, snapshot) {
+              final people = snapshot.data ?? const <Profile>[];
+              if (people.isEmpty) return const SizedBox.shrink();
+              return SizedBox(
+                height: 116,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
+                      child: Text(
+                        'People you may know',
+                        style: TextStyle(
+                          color: _P.muted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        children: [
+                          for (final user in people.take(8))
+                            InkWell(
+                              onTap: () => _startDM(user),
+                              child: SizedBox(
+                                width: 80,
+                                child: Column(
+                                  children: [
+                                    _Avatar(
+                                      name: user.peerInitial,
+                                      url: user.avatarUrl,
+                                      size: 48,
+                                    ),
+                                    const SizedBox(height: 5),
+                                    Text(
+                                      '@${user.username}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: _P.text,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             children: [
-              Text('Chats', style: TextStyle(color: _P.muted, fontSize: 12, fontWeight: FontWeight.w600)),
+              Text('Chats',
+                  style: TextStyle(
+                      color: _P.muted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600)),
               const Spacer(),
               StreamBuilder<AuthState>(
                 stream: Supa.authStateChanges,
@@ -923,7 +1124,9 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                 return const Center(child: CircularProgressIndicator());
               }
               if (snapshot.hasError) {
-                return _ErrorState(message: 'Failed to load conversations', onRetry: () => setState(() {}));
+                return _ErrorState(
+                    message: 'Failed to load conversations',
+                    onRetry: () => setState(() {}));
               }
               final conversations = snapshot.data ?? [];
               if (conversations.isEmpty) {
@@ -933,9 +1136,11 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                     children: [
                       Icon(Icons.forum_outlined, color: _P.muted, size: 56),
                       const SizedBox(height: 16),
-                      Text('No chats yet', style: TextStyle(color: _P.muted, fontSize: 15)),
+                      Text('No chats yet',
+                          style: TextStyle(color: _P.muted, fontSize: 15)),
                       const SizedBox(height: 4),
-                      Text('Search a user above to start messaging', style: TextStyle(color: _P.muted, fontSize: 13)),
+                      Text('Search a user above to start messaging',
+                          style: TextStyle(color: _P.muted, fontSize: 13)),
                     ],
                   ),
                 );
@@ -952,17 +1157,37 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                       final lastMessageAt = conv.lastMessageAt;
                       final unread = conv.unreadCount > 0;
                       return ListTile(
-                        leading: _Avatar(name: conv.peerInitial, size: 44),
+                        leading: _Avatar(
+                            name: conv.peerInitial,
+                            url: conv.peerAvatarUrl,
+                            size: 44),
                         title: Text(
                           conv.peerLabel,
                           style: TextStyle(
                             color: _P.text,
-                            fontWeight: unread ? FontWeight.w700 : FontWeight.w600,
+                            fontWeight:
+                                unread ? FontWeight.w700 : FontWeight.w600,
                           ),
                         ),
-                        subtitle: lastMessage != null
-                            ? Text(lastMessage, style: TextStyle(color: _P.muted, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis)
-                            : null,
+                        subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (conv.peerUsername != null)
+                                Text('@${conv.peerUsername}',
+                                    style: TextStyle(
+                                        color: _P.muted.withValues(alpha: 0.8),
+                                        fontSize: 11)),
+                              if (lastMessage != null)
+                                Text(
+                                    lastMessage.startsWith('attachment:')
+                                        ? '📎 Attachment'
+                                        : lastMessage,
+                                    style: TextStyle(
+                                        color: _P.muted, fontSize: 13),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                            ]),
                         trailing: Column(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.end,
@@ -970,19 +1195,27 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                             if (unread)
                               Container(
                                 padding: const EdgeInsets.all(2),
-                                constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                                constraints: const BoxConstraints(
+                                    minWidth: 20, minHeight: 20),
                                 decoration: const BoxDecoration(
                                   color: _P.primary,
                                   shape: BoxShape.circle,
                                 ),
                                 child: Text(
-                                  conv.unreadCount > 99 ? '99+' : '${conv.unreadCount}',
-                                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
+                                  conv.unreadCount > 99
+                                      ? '99+'
+                                      : '${conv.unreadCount}',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700),
                                   textAlign: TextAlign.center,
                                 ),
                               )
                             else if (lastMessageAt != null)
-                              Text(DateFormat('h:mm a').format(lastMessageAt), style: const TextStyle(color: _P.muted, fontSize: 11)),
+                              Text(DateFormat('h:mm a').format(lastMessageAt),
+                                  style: const TextStyle(
+                                      color: _P.muted, fontSize: 11)),
                           ],
                         ),
                         onTap: () => context.go('/chat/${conv.id}'),
@@ -1026,12 +1259,110 @@ class _ChatScreenState extends State<ChatScreen> {
   Profile? _peer;
   String? _peerTyping;
   Timer? _peerTypingTimer;
+  RealtimeChannel? _callChannel;
+  bool _incomingPrompt = false;
+  String _chatBackground = 'default';
+  String? _chatBackgroundImageUrl;
 
   @override
   void initState() {
     super.initState();
     _loadPeer();
+    _loadChatBackground();
     Supa.onTyping(widget.conversationId, _onPeerTyping);
+    _listenForCalls();
+  }
+
+  Future<void> _loadChatBackground() async {
+    final profile = await Supa.getProfile(Supa.currentUser!.id);
+    if (profile == null) return;
+    final imagePath = profile.chatBackgroundImagePath;
+    final imageUrl = profile.chatBackground == 'custom' && imagePath != null
+        ? await Supa.chatBackgroundUrl(imagePath)
+        : null;
+    if (mounted) {
+      setState(() {
+        _chatBackground = profile.chatBackground;
+        _chatBackgroundImageUrl = imageUrl;
+      });
+    }
+  }
+
+  void _listenForCalls() {
+    final channel = Supa.client.channel('call:${widget.conversationId}',
+        opts: const RealtimeChannelConfig(private: true));
+    _callChannel = channel;
+    channel
+        .onBroadcast(
+            event: 'signal',
+            callback: (payload) {
+              if (payload['to'] != Supa.currentUser?.id ||
+                  payload['kind'] != 'invite' ||
+                  _incomingPrompt) {
+                return;
+              }
+              final callId = payload['call_id'] as String?;
+              if (callId != null) {
+                _showIncomingCall(callId, payload['data'] as Map?,
+                    payload['from'] as String?);
+              }
+            })
+        .subscribe();
+  }
+
+  Future<void> _showIncomingCall(
+      String callId, Map? details, String? callerId) async {
+    final peer =
+        _peer ?? (callerId == null ? null : await Supa.getProfile(callerId));
+    if (peer == null || !mounted) return;
+    _incomingPrompt = true;
+    final video = details?['video'] == true;
+    final answer = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+              backgroundColor: _P.surface,
+              title: Text(video ? 'Incoming video call' : 'Incoming voice call',
+                  style: const TextStyle(color: _P.text)),
+              content: Text('${peer.label} (@${peer.username}) is calling.',
+                  style: const TextStyle(color: _P.muted)),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(dialogContext, false),
+                    child: const Text('Decline')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(dialogContext, true),
+                    child: const Text('Answer')),
+              ],
+            ));
+    _incomingPrompt = false;
+    if (!mounted) return;
+    if (answer == true) {
+      context.push(
+          '/call/${widget.conversationId}?id=$callId&video=$video&outgoing=false',
+          extra: peer);
+    } else {
+      await _callChannel?.httpSend(event: 'signal', payload: {
+        'call_id': callId,
+        'from': Supa.currentUser!.id,
+        'to': peer.id,
+        'kind': 'hangup',
+        'data': const {},
+      });
+    }
+  }
+
+  void _startCall({required bool video}) {
+    final peer = _peer;
+    if (peer == null) {
+      _unsupported(
+          'The other person’s profile is still loading. Try again in a moment.');
+      return;
+    }
+    final callId = const Uuid().v4();
+    context.push(
+        '/call/${widget.conversationId}?id=$callId&video=$video&outgoing=true',
+        extra: peer);
   }
 
   void _onPeerTyping(String userId, bool isTyping) {
@@ -1058,7 +1389,9 @@ class _ChatScreenState extends State<ChatScreen> {
         .not('user_id', 'eq', Supa.currentUser!.id)
         .limit(1);
     if (!mounted) return;
-    final uid = (ids as List).cast<Map<String, dynamic>>().firstOrNull?['user_id'] as String?;
+    final uid = (ids as List)
+        .cast<Map<String, dynamic>>()
+        .firstOrNull?['user_id'] as String?;
     if (uid == null) return;
     final profile = await Supa.getProfile(uid);
     if (mounted) setState(() => _peer = profile);
@@ -1071,6 +1404,8 @@ class _ChatScreenState extends State<ChatScreen> {
     _scroll.dispose();
     _typingTimer?.cancel();
     _peerTypingTimer?.cancel();
+    final callChannel = _callChannel;
+    if (callChannel != null) Supa.client.removeChannel(callChannel);
     super.dispose();
   }
 
@@ -1151,13 +1486,15 @@ class _ChatScreenState extends State<ChatScreen> {
             _MenuTile(
               icon: Icons.info_outline,
               label: 'About this chat',
-              onTap: () => _closeSheetWithNotice(context, 'Chat details are coming soon.'),
+              onTap: () => _closeSheetWithNotice(
+                  context, 'Chat details are coming soon.'),
             ),
             _MenuTile(
               icon: Icons.block,
               label: 'Block ${_peer?.label ?? 'user'}',
               danger: true,
-              onTap: () => _closeSheetWithNotice(context, 'Blocking is coming soon.'),
+              onTap: () =>
+                  _closeSheetWithNotice(context, 'Blocking is coming soon.'),
             ),
             const SizedBox(height: 8),
           ],
@@ -1177,23 +1514,103 @@ class _ChatScreenState extends State<ChatScreen> {
             _MenuTile(
               icon: Icons.image_outlined,
               label: 'Photo or video',
-              onTap: () => _closeSheetWithNotice(context, 'Photo sharing is coming soon.'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickPhoto();
+              },
             ),
             _MenuTile(
               icon: Icons.insert_drive_file_outlined,
               label: 'Document',
-              onTap: () => _closeSheetWithNotice(context, 'Document sharing is coming soon.'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickDocument();
+              },
             ),
             _MenuTile(
               icon: Icons.camera_alt_outlined,
               label: 'Camera',
-              onTap: () => _closeSheetWithNotice(context, 'Camera sharing is coming soon.'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickPhoto(camera: true);
+              },
             ),
             const SizedBox(height: 8),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _sendAttachment(
+      Uint8List bytes, String name, String mimeType) async {
+    if (_sendingMessage) return;
+    if (bytes.length > 20 * 1024 * 1024) {
+      _unsupported('Files must be 20 MB or smaller.');
+      return;
+    }
+    setState(() => _sendingMessage = true);
+    try {
+      final attachment = await Supa.uploadAttachment(
+          widget.conversationId, bytes, name, mimeType);
+      await Supa.sendMessage(
+          widget.conversationId, 'attachment:${jsonEncode(attachment)}');
+      _rollToBottom();
+    } catch (_) {
+      _unsupported('Upload failed. Check your connection and try again.');
+    } finally {
+      if (mounted) setState(() => _sendingMessage = false);
+    }
+  }
+
+  String _mimeType(String filename) {
+    final ext = filename.split('.').last.toLowerCase();
+    return switch (ext) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'gif' => 'image/gif',
+      'webp' => 'image/webp',
+      'mp4' || 'mov' => 'video/$ext',
+      'pdf' => 'application/pdf',
+      'doc' => 'application/msword',
+      'docx' =>
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'txt' => 'text/plain',
+      'zip' => 'application/zip',
+      _ => 'application/octet-stream',
+    };
+  }
+
+  Future<void> _pickPhoto({bool camera = false}) async {
+    try {
+      final picker = ImagePicker();
+      final file = camera
+          ? await picker.pickImage(
+              source: ImageSource.camera, imageQuality: 85, maxWidth: 1920)
+          : await picker.pickMedia(imageQuality: 85, maxWidth: 1920);
+      if (file == null) return;
+      await _sendAttachment(
+          await file.readAsBytes(), file.name, _mimeType(file.name));
+    } catch (_) {
+      _unsupported('Could not open the photo picker.');
+    }
+  }
+
+  Future<void> _pickDocument() async {
+    try {
+      final files = await FilePicker.pickFiles(type: FileType.any);
+      if (files.isEmpty) return;
+      final file = files.first;
+      final knownLength = file.lengthSync();
+      if (knownLength != null && knownLength > 20 * 1024 * 1024) {
+        _unsupported('Files must be 20 MB or smaller.');
+        return;
+      }
+      final bytes = await file.readAsBytes();
+      await _sendAttachment(bytes, file.name, _mimeType(file.name));
+    } catch (_) {
+      _unsupported('Could not open that document.');
+    }
   }
 
   @override
@@ -1204,24 +1621,26 @@ class _ChatScreenState extends State<ChatScreen> {
         leadingWidth: 64,
         leading: Padding(
           padding: const EdgeInsets.only(left: 16, top: 2),
-          child: _Avatar(name: _peer?.peerInitial ?? '?', size: 40),
+          child: _Avatar(
+              name: _peer?.peerInitial ?? '?', url: _peer?.avatarUrl, size: 40),
         ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               _peer?.label ?? 'Chat',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _P.text),
+              style: const TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.w600, color: _P.text),
             ),
-            const Text(
-              'Direct message',
-              style: TextStyle(fontSize: 12, color: _P.muted),
-            ),
+            Text(_peer == null ? 'Direct message' : '@${_peer!.username}',
+                style: const TextStyle(fontSize: 12, color: _P.muted)),
           ],
         ),
         actions: [
-          _ActionBtn(Icons.videocam_rounded, onTap: () => _unsupported('Video calls coming soon')),
-          _ActionBtn(Icons.phone_rounded, onTap: () => _unsupported('Voice calls coming soon')),
+          _ActionBtn(Icons.videocam_rounded,
+              onTap: () => _startCall(video: true)),
+          _ActionBtn(Icons.phone_rounded,
+              onTap: () => _startCall(video: false)),
           _ActionBtn(Icons.more_vert, onTap: () => _showChatMenu(context)),
           const SizedBox(width: 8),
         ],
@@ -1242,43 +1661,51 @@ class _ChatScreenState extends State<ChatScreen> {
     return Column(
       children: [
         Expanded(
-          child: StreamBuilder<List<Message>>(
-            stream: Supa.watchMessages(widget.conversationId),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (snapshot.hasError) {
-                return _ErrorState(message: 'Failed to load messages', onRetry: () {});
-              }
-              final messages = snapshot.data ?? [];
-              if (messages.isEmpty) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {});
-                return const _EmptyState();
-              }
-              _markUnreadAsRead(messages);
-              return Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 600),
-                  child: ListView.builder(
-                    controller: _scroll,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                    itemCount: messages.length,
-                    itemBuilder: (_, i) => _MessageRow(
-                      msg: messages[i],
-                      prev: i > 0 ? messages[i - 1] : null,
-                      next: i + 1 < messages.length ? messages[i + 1] : null,
-                      me: Supa.currentUser!.id,
+          child: Container(
+            decoration:
+                _chatCanvas(_chatBackground, imageUrl: _chatBackgroundImageUrl),
+            child: StreamBuilder<List<Message>>(
+              stream: Supa.watchMessages(widget.conversationId),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return _ErrorState(
+                      message: 'Failed to load messages', onRetry: () {});
+                }
+                final messages = snapshot.data ?? [];
+                if (messages.isEmpty) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {});
+                  return const _EmptyState();
+                }
+                _markUnreadAsRead(messages);
+                return Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 600),
+                    child: ListView.builder(
+                      controller: _scroll,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
+                      itemCount: messages.length,
+                      itemBuilder: (_, i) => _MessageRow(
+                        msg: messages[i],
+                        prev: i > 0 ? messages[i - 1] : null,
+                        next: i + 1 < messages.length ? messages[i + 1] : null,
+                        me: Supa.currentUser!.id,
+                      ),
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
         if (_typing || _peerTyping != null)
           _TypingIndicator(
-            label: _peerTyping != null ? '${_peer?.label ?? 'Someone'} is typing…' : 'Typing…',
+            label: _peerTyping != null
+                ? '${_peer?.label ?? 'Someone'} is typing…'
+                : 'Typing…',
           ),
         _Composer(
           controller: _ctrl,
@@ -1299,42 +1726,52 @@ class _ChatScreenState extends State<ChatScreen> {
           child: Column(
             children: [
               Expanded(
-                child: StreamBuilder<List<Message>>(
-                  stream: Supa.watchMessages(widget.conversationId),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    if (snapshot.hasError) {
-                      return _ErrorState(message: 'Failed to load messages', onRetry: () {});
-                    }
-                    final messages = snapshot.data ?? [];
-                    if (messages.isEmpty) {
-                      return const _EmptyState();
-                    }
-                    _markUnreadAsRead(messages);
-                    return Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 600),
-                        child: ListView.builder(
-                          controller: _scroll,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                          itemCount: messages.length,
-                          itemBuilder: (_, i) => _MessageRow(
-                            msg: messages[i],
-                            prev: i > 0 ? messages[i - 1] : null,
-                            next: i + 1 < messages.length ? messages[i + 1] : null,
-                            me: Supa.currentUser!.id,
+                child: Container(
+                  decoration: _chatCanvas(_chatBackground,
+                      imageUrl: _chatBackgroundImageUrl),
+                  child: StreamBuilder<List<Message>>(
+                    stream: Supa.watchMessages(widget.conversationId),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (snapshot.hasError) {
+                        return _ErrorState(
+                            message: 'Failed to load messages', onRetry: () {});
+                      }
+                      final messages = snapshot.data ?? [];
+                      if (messages.isEmpty) {
+                        return const _EmptyState();
+                      }
+                      _markUnreadAsRead(messages);
+                      return Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 600),
+                          child: ListView.builder(
+                            controller: _scroll,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 12),
+                            itemCount: messages.length,
+                            itemBuilder: (_, i) => _MessageRow(
+                              msg: messages[i],
+                              prev: i > 0 ? messages[i - 1] : null,
+                              next: i + 1 < messages.length
+                                  ? messages[i + 1]
+                                  : null,
+                              me: Supa.currentUser!.id,
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
               ),
               if (_typing || _peerTyping != null)
                 _TypingIndicator(
-                  label: _peerTyping != null ? '${_peer?.label ?? 'Someone'} is typing…' : 'Typing…',
+                  label: _peerTyping != null
+                      ? '${_peer?.label ?? 'Someone'} is typing…'
+                      : 'Typing…',
                 ),
               _Composer(
                 controller: _ctrl,
@@ -1361,9 +1798,11 @@ class _EmptyState extends StatelessWidget {
         children: const [
           Icon(Icons.forum_outlined, color: _P.muted, size: 56),
           SizedBox(height: 16),
-          Text('No messages yet', style: TextStyle(color: _P.muted, fontSize: 15)),
+          Text('No messages yet',
+              style: TextStyle(color: _P.muted, fontSize: 15)),
           SizedBox(height: 4),
-          Text('Say hello to get started.', style: TextStyle(color: _P.muted, fontSize: 13)),
+          Text('Say hello to get started.',
+              style: TextStyle(color: _P.muted, fontSize: 13)),
         ],
       ),
     );
@@ -1384,7 +1823,9 @@ class _ErrorState extends StatelessWidget {
           children: [
             Icon(Icons.cloud_off, color: _P.muted, size: 48),
             const SizedBox(height: 12),
-            Text(message, style: TextStyle(color: _P.text, fontSize: 16, fontWeight: FontWeight.w600)),
+            Text(message,
+                style: TextStyle(
+                    color: _P.text, fontSize: 16, fontWeight: FontWeight.w600)),
             const SizedBox(height: 20),
             OutlinedButton.icon(
               onPressed: onRetry,
@@ -1407,22 +1848,30 @@ class _TypingIndicator extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Align(
         alignment: Alignment.centerLeft,
-        child: Text(label, style: const TextStyle(color: _P.muted, fontSize: 12, fontStyle: FontStyle.italic)),
+        child: Text(label,
+            style: const TextStyle(
+                color: _P.muted, fontSize: 12, fontStyle: FontStyle.italic)),
       ),
     );
   }
 }
 
 class _MessageRow extends StatelessWidget {
-  const _MessageRow({required this.msg, this.prev, this.next, required this.me});
+  const _MessageRow(
+      {required this.msg, this.prev, this.next, required this.me});
   final Message msg;
   final Message? prev;
   final Message? next;
   final String me;
 
-  bool get _nowDateLine => prev == null || !_sameDay(prev!.createdAt, msg.createdAt);
-  bool get _groupPrev => prev != null && prev!.senderId == msg.senderId && !_nowDateLine;
-  bool get _groupNext => next != null && next!.senderId == msg.senderId && _sameDay(msg.createdAt, next!.createdAt);
+  bool get _nowDateLine =>
+      prev == null || !_sameDay(prev!.createdAt, msg.createdAt);
+  bool get _groupPrev =>
+      prev != null && prev!.senderId == msg.senderId && !_nowDateLine;
+  bool get _groupNext =>
+      next != null &&
+      next!.senderId == msg.senderId &&
+      _sameDay(msg.createdAt, next!.createdAt);
   bool get mine => msg.senderId == me;
 
   static bool _sameDay(DateTime a, DateTime b) =>
@@ -1431,7 +1880,8 @@ class _MessageRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment:
+          mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
         if (_nowDateLine) _DateLine(ts: msg.createdAt),
         TweenAnimationBuilder<double>(
@@ -1469,7 +1919,8 @@ class _DateLine extends StatelessWidget {
     String label;
     if (_MessageRow._sameDay(now, ts)) {
       label = 'Today';
-    } else if (_MessageRow._sameDay(now.subtract(const Duration(days: 1)), ts)) {
+    } else if (_MessageRow._sameDay(
+        now.subtract(const Duration(days: 1)), ts)) {
       label = 'Yesterday';
     } else {
       label = '${ts.day} ${_months[ts.month - 1]}';
@@ -1484,17 +1935,35 @@ class _DateLine extends StatelessWidget {
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: _P.border),
           ),
-          child: Text(label, style: const TextStyle(color: _P.muted, fontSize: 12)),
+          child: Text(label,
+              style: const TextStyle(color: _P.muted, fontSize: 12)),
         ),
       ),
     );
   }
 }
 
-const _months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const _months = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec'
+];
 
 class _Bubble extends StatelessWidget {
-  const _Bubble({required this.msg, this.groupedTop = false, this.groupedBottom = false, required this.mine});
+  const _Bubble(
+      {required this.msg,
+      this.groupedTop = false,
+      this.groupedBottom = false,
+      required this.mine});
   final Message msg;
   final bool groupedTop;
   final bool groupedBottom;
@@ -1502,6 +1971,13 @@ class _Bubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Map<String, dynamic>? attachment;
+    if (msg.content.startsWith('attachment:')) {
+      try {
+        attachment = Map<String, dynamic>.from(
+            jsonDecode(msg.content.substring(11)) as Map);
+      } catch (_) {}
+    }
     final adjusted = BorderRadius.only(
       topLeft: Radius.circular(!mine && groupedTop ? 7 : 18),
       topRight: Radius.circular(mine && groupedTop ? 7 : 18),
@@ -1516,7 +1992,8 @@ class _Bubble extends StatelessWidget {
         right: mine ? 4 : 64,
       ),
       child: Container(
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.68),
+        constraints:
+            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.68),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           gradient: mine
@@ -1550,18 +2027,32 @@ class _Bubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(msg.content, style: TextStyle(fontSize: 15, height: 1.3, color: mine ? _P.darkOnAccent : _P.text)),
+            if (attachment != null)
+              _AttachmentContent(attachment: attachment, mine: mine)
+            else
+              Text(msg.content,
+                  style: TextStyle(
+                      fontSize: 15,
+                      height: 1.3,
+                      color: mine ? _P.darkOnAccent : _P.text)),
             const SizedBox(height: 2),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(_fmtTime(msg.createdAt), style: TextStyle(fontSize: 11, color: mine ? _P.darkOnAccent.withValues(alpha: 0.7) : _P.muted)),
+                Text(_fmtTime(msg.createdAt),
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: mine
+                            ? _P.darkOnAccent.withValues(alpha: 0.7)
+                            : _P.muted)),
                 if (mine) ...[
                   const SizedBox(width: 3),
                   Icon(
                     msg.readAt != null ? Icons.done_all : Icons.done,
                     size: 13,
-                    color: msg.readAt != null ? _P.success : _P.darkOnAccent.withValues(alpha: 0.7),
+                    color: msg.readAt != null
+                        ? _P.success
+                        : _P.darkOnAccent.withValues(alpha: 0.7),
                   ),
                 ],
               ],
@@ -1577,6 +2068,83 @@ class _Bubble extends StatelessWidget {
     final m = t.minute.toString().padLeft(2, '0');
     final ap = t.hour >= 12 ? 'PM' : 'AM';
     return '$h:$m $ap';
+  }
+}
+
+class _AttachmentContent extends StatelessWidget {
+  const _AttachmentContent({required this.attachment, required this.mine});
+  final Map<String, dynamic> attachment;
+  final bool mine;
+  @override
+  Widget build(BuildContext context) {
+    final previewWidth =
+        (MediaQuery.sizeOf(context).width * 0.58).clamp(120.0, 220.0);
+    final objectPath = attachment['path'] as String?;
+    final name = attachment['name'] as String? ?? 'Shared file';
+    if (objectPath == null) {
+      return Text(name, style: const TextStyle(color: _P.text));
+    }
+    return FutureBuilder<String>(
+      future: Supa.attachmentUrl(objectPath),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const SizedBox(
+              width: 180,
+              height: 54,
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+        }
+        final url = Uri.parse(snapshot.data!);
+        if (attachment['kind'] == 'image') {
+          return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(url.toString(),
+                        width: previewWidth,
+                        height: 190,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => SizedBox(
+                            width: previewWidth,
+                            height: 100,
+                            child: const Icon(Icons.broken_image_outlined)))),
+                const SizedBox(height: 5),
+                Text(name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 12, color: mine ? _P.darkOnAccent : _P.text)),
+              ]);
+        }
+        return InkWell(
+            onTap: () => launchUrl(url, mode: LaunchMode.externalApplication),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(
+                  attachment['kind'] == 'video'
+                      ? Icons.video_file_outlined
+                      : Icons.insert_drive_file_outlined,
+                  color: mine ? _P.darkOnAccent : _P.primary),
+              const SizedBox(width: 8),
+              Flexible(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text(name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: mine ? _P.darkOnAccent : _P.text,
+                            fontWeight: FontWeight.w600)),
+                    Text('Tap to open',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: mine
+                                ? _P.darkOnAccent.withValues(alpha: 0.7)
+                                : _P.muted)),
+                  ])),
+            ]));
+      },
+    );
   }
 }
 
@@ -1639,8 +2207,10 @@ class _Composer extends StatelessWidget {
                       ? IconButton.filled(
                           key: const ValueKey('send'),
                           onPressed: onSend,
-                          style: IconButton.styleFrom(backgroundColor: _P.primary),
-                          icon: const Icon(Icons.arrow_upward_rounded, color: _P.darkOnAccent),
+                          style:
+                              IconButton.styleFrom(backgroundColor: _P.primary),
+                          icon: const Icon(Icons.arrow_upward_rounded,
+                              color: _P.darkOnAccent),
                         )
                       : IconButton(
                           key: const ValueKey('mic'),
@@ -1658,9 +2228,10 @@ class _Composer extends StatelessWidget {
 }
 
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.name, this.size = 44});
+  const _Avatar({required this.name, this.size = 44, this.url});
   final String name;
   final double size;
+  final String? url;
 
   @override
   Widget build(BuildContext context) {
@@ -1669,14 +2240,30 @@ class _Avatar extends StatelessWidget {
       height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [_bg, _surfaceHigh], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        gradient: const LinearGradient(
+            colors: [_bg, _surfaceHigh],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight),
         shape: BoxShape.circle,
         border: Border.all(color: Colors.white24, width: 1),
       ),
-      child: Text(
-        name.toUpperCase(),
-        style: TextStyle(color: Colors.white, fontSize: size * 0.4, fontWeight: FontWeight.w600),
-      ),
+      child: url == null || url!.isEmpty
+          ? Text(name.toUpperCase(),
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: size * 0.4,
+                  fontWeight: FontWeight.w600))
+          : ClipOval(
+              child: Image.network(url!,
+                  width: size,
+                  height: size,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Center(
+                      child: Text(name.toUpperCase(),
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: size * 0.4,
+                              fontWeight: FontWeight.w600))))),
     );
   }
 }
@@ -1687,12 +2274,17 @@ class _ActionBtn extends StatelessWidget {
   final VoidCallback? onTap;
   @override
   Widget build(BuildContext context) {
-    return IconButton(icon: Icon(icon, color: _P.muted, size: 22), onPressed: onTap ?? () {});
+    return IconButton(
+        icon: Icon(icon, color: _P.muted, size: 22), onPressed: onTap ?? () {});
   }
 }
 
 class _MenuTile extends StatelessWidget {
-  const _MenuTile({required this.icon, required this.label, this.danger = false, required this.onTap});
+  const _MenuTile(
+      {required this.icon,
+      required this.label,
+      this.danger = false,
+      required this.onTap});
   final IconData icon;
   final String label;
   final bool danger;
@@ -1702,10 +2294,356 @@ class _MenuTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       leading: Icon(icon, color: danger ? Colors.red : _P.muted, size: 22),
-      title: Text(label, style: TextStyle(color: danger ? Colors.red : _P.text, fontSize: 15)),
+      title: Text(label,
+          style: TextStyle(color: danger ? Colors.red : _P.text, fontSize: 15)),
       onTap: onTap,
     );
   }
+}
+
+class AccountSettingsScreen extends StatefulWidget {
+  const AccountSettingsScreen({super.key});
+  @override
+  State<AccountSettingsScreen> createState() => _AccountSettingsScreenState();
+}
+
+class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
+  final _username = TextEditingController();
+  final _displayName = TextEditingController();
+  final _password = TextEditingController();
+  final _confirmPassword = TextEditingController();
+  Profile? _profile;
+  XFile? _avatarFile;
+  String _chatBackground = 'default';
+  String? _chatBackgroundImagePath;
+  String? _chatBackgroundImageUrl;
+  bool _loading = true;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final profile = await Supa.getProfile(Supa.currentUser!.id);
+      if (!mounted) return;
+      _profile = profile;
+      _username.text = profile?.username ?? '';
+      _displayName.text = profile?.displayName ?? '';
+      _chatBackground = profile?.chatBackground ?? 'default';
+      _chatBackgroundImagePath = profile?.chatBackgroundImagePath;
+      if (_chatBackgroundImagePath != null) {
+        _chatBackgroundImageUrl =
+            await Supa.chatBackgroundUrl(_chatBackgroundImagePath!);
+      }
+      if (!mounted) return;
+      setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Could not load your profile.';
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _pickAvatar() async {
+    final file = await ImagePicker().pickImage(
+        source: ImageSource.gallery, imageQuality: 85, maxWidth: 1200);
+    if (file != null && mounted) setState(() => _avatarFile = file);
+  }
+
+  Future<void> _pickChatBackground() async {
+    try {
+      final file = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 1920,
+        maxHeight: 1920,
+      );
+      if (file == null) return;
+      final path =
+          await Supa.uploadChatBackground(await file.readAsBytes(), file.name);
+      final url = await Supa.chatBackgroundUrl(path);
+      if (mounted) {
+        setState(() {
+          _error = null;
+          _chatBackground = 'custom';
+          _chatBackgroundImagePath = path;
+          _chatBackgroundImageUrl = url;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error =
+            'Could not upload that image. Choose a JPEG, PNG, WebP, or GIF under 10 MB.');
+      }
+    }
+  }
+
+  Future<void> _save() async {
+    final username = _username.text.trim();
+    if (username.length < 3 ||
+        !RegExp(r'^[a-zA-Z0-9_.-]+$').hasMatch(username)) {
+      setState(() => _error =
+          'Use at least 3 letters, numbers, dots, dashes, or underscores for your username.');
+      return;
+    }
+    if (_password.text.isNotEmpty && _password.text.length < 6) {
+      setState(() => _error = 'Password must be at least 6 characters.');
+      return;
+    }
+    if (_password.text != _confirmPassword.text) {
+      setState(() => _error = 'The passwords do not match.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await Supa.updateProfile(
+          username: username, displayName: _displayName.text);
+      await Supa.updateChatBackground(
+        _chatBackground,
+        imagePath:
+            _chatBackground == 'custom' ? _chatBackgroundImagePath : null,
+      );
+      if (_avatarFile != null) {
+        await Supa.uploadAvatar(
+            await _avatarFile!.readAsBytes(), _avatarFile!.name);
+      }
+      if (_password.text.isNotEmpty) {
+        await Supa.client.auth
+            .updateUser(UserAttributes(password: _password.text));
+      }
+      _password.clear();
+      _confirmPassword.clear();
+      _avatarFile = null;
+      await _loadProfile();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Settings saved.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error =
+            'Could not save changes. Check whether that username is already taken.');
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _username.dispose();
+    _displayName.dispose();
+    _password.dispose();
+    _confirmPassword.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(
+            title: const Text('Settings'),
+            leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.pop())),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : Center(
+                child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: ListView(padding: const EdgeInsets.all(24), children: [
+                  Center(
+                      child: Column(children: [
+                    FutureBuilder<List<int>>(
+                      future: _avatarFile?.readAsBytes(),
+                      builder: (_, snap) => _avatarFile != null && snap.hasData
+                          ? CircleAvatar(
+                              radius: 48,
+                              backgroundImage:
+                                  MemoryImage(Uint8List.fromList(snap.data!)))
+                          : _Avatar(
+                              name: _profile?.peerInitial ?? '?',
+                              url: _profile?.avatarUrl,
+                              size: 96),
+                    ),
+                    TextButton.icon(
+                        onPressed: _pickAvatar,
+                        icon: const Icon(Icons.photo_camera_outlined),
+                        label: const Text('Change profile picture')),
+                  ])),
+                  const SizedBox(height: 16),
+                  _SettingsField(
+                      controller: _displayName,
+                      label: 'Display name',
+                      icon: Icons.badge_outlined),
+                  const SizedBox(height: 14),
+                  _SettingsField(
+                      controller: _username,
+                      label: 'Username',
+                      icon: Icons.alternate_email),
+                  const SizedBox(height: 24),
+                  Text('Chat background',
+                      style: TextStyle(
+                          color: _P.muted, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 10),
+                  Wrap(spacing: 10, runSpacing: 10, children: [
+                    for (final option in _chatBackgroundOptions)
+                      InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () =>
+                            setState(() => _chatBackground = option.$1),
+                        child: Container(
+                          width: 112,
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: _P.surface,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                                color: _chatBackground == option.$1
+                                    ? _P.primary
+                                    : _P.border,
+                                width: _chatBackground == option.$1 ? 2 : 1),
+                          ),
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                    height: 48,
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                          colors: option.$3),
+                                      borderRadius: BorderRadius.circular(8),
+                                    )),
+                                const SizedBox(height: 6),
+                                Text(option.$2,
+                                    style: const TextStyle(
+                                        color: _P.text, fontSize: 12)),
+                              ]),
+                        ),
+                      ),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: _pickChatBackground,
+                      child: Container(
+                        width: 112,
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: _P.surface,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                              color: _chatBackground == 'custom'
+                                  ? _P.primary
+                                  : _P.border,
+                              width: _chatBackground == 'custom' ? 2 : 1),
+                        ),
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: _P.surfaceHigh,
+                                  borderRadius: BorderRadius.circular(8),
+                                  image: _chatBackgroundImageUrl == null
+                                      ? null
+                                      : DecorationImage(
+                                          image: NetworkImage(
+                                              _chatBackgroundImageUrl!),
+                                          fit: BoxFit.cover),
+                                ),
+                                child: _chatBackgroundImageUrl == null
+                                    ? const Center(
+                                        child: Icon(
+                                            Icons.add_photo_alternate_outlined,
+                                            color: _P.muted))
+                                    : null,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                  _chatBackgroundImagePath == null
+                                      ? 'Upload image'
+                                      : 'My image',
+                                  style: const TextStyle(
+                                      color: _P.text, fontSize: 12)),
+                            ]),
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: 24),
+                  Text('Change password',
+                      style: TextStyle(
+                          color: _P.muted, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 10),
+                  _SettingsField(
+                      controller: _password,
+                      label: 'New password',
+                      icon: Icons.lock_outline,
+                      obscure: true),
+                  const SizedBox(height: 14),
+                  _SettingsField(
+                      controller: _confirmPassword,
+                      label: 'Confirm new password',
+                      icon: Icons.lock_outline,
+                      obscure: true),
+                  if (_error != null)
+                    Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: Text(_error!,
+                            style: const TextStyle(color: Colors.redAccent))),
+                  const SizedBox(height: 22),
+                  FilledButton(
+                      onPressed: _saving ? null : _save,
+                      child: _saving
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Text('Save changes')),
+                  const SizedBox(height: 12),
+                  Center(
+                      child: Text(Supa.currentUser?.email ?? '',
+                          style: TextStyle(color: _P.muted, fontSize: 12))),
+                ]),
+              )),
+      );
+}
+
+class _SettingsField extends StatelessWidget {
+  const _SettingsField(
+      {required this.controller,
+      required this.label,
+      required this.icon,
+      this.obscure = false});
+  final TextEditingController controller;
+  final String label;
+  final IconData icon;
+  final bool obscure;
+  @override
+  Widget build(BuildContext context) => TextField(
+        controller: controller,
+        obscureText: obscure,
+        style: const TextStyle(color: _P.text),
+        decoration: InputDecoration(
+            labelText: label,
+            prefixIcon: Icon(icon),
+            filled: true,
+            fillColor: _P.surface,
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide.none)),
+      );
 }
 
 class _NavSidebar extends StatelessWidget {
@@ -1719,14 +2657,22 @@ class _NavSidebar extends StatelessWidget {
         border: Border(right: BorderSide(color: _P.border, width: 1)),
       ),
       child: Column(children: [
-        Image.asset('assets/images/bro_logo.png', width: 56, height: 56, gaplessPlayback: true),
-        _NavItem(icon: Icons.forum_outlined, label: 'Chats', onTap: () => context.go('/conversations')),
+        Image.asset('assets/images/bro_logo.png',
+            width: 56, height: 56, gaplessPlayback: true),
+        _NavItem(
+            icon: Icons.forum_outlined,
+            label: 'Chats',
+            onTap: () => context.go('/conversations')),
         _NavItem(icon: Icons.search, label: 'Discover', onTap: () {}),
-        _NavItem(icon: Icons.settings_outlined, label: 'Settings', onTap: () {}),
+        _NavItem(
+            icon: Icons.settings_outlined,
+            label: 'Settings',
+            onTap: () => context.go('/settings')),
         const Spacer(),
         Padding(
           padding: const EdgeInsets.all(16),
-          child: Text(Supa.currentUser?.email ?? '', style: const TextStyle(color: _P.muted, fontSize: 12)),
+          child: Text(Supa.currentUser?.email ?? '',
+              style: const TextStyle(color: _P.muted, fontSize: 12)),
         ),
       ]),
     );
@@ -1734,20 +2680,25 @@ class _NavSidebar extends StatelessWidget {
 }
 
 class _NavItem extends StatelessWidget {
-  const _NavItem({required this.icon, required this.label, required this.onTap});
-  final IconData icon; final String label; final VoidCallback onTap;
+  const _NavItem(
+      {required this.icon, required this.label, required this.onTap});
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
   @override
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
-      child: InkWell(onTap: onTap, child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(children: [
-          Icon(icon, size: 22, color: _P.muted),
-          const SizedBox(width: 12),
-          Text(label, style: TextStyle(color: _P.muted, fontSize: 15)),
-        ]),
-      )),
+      child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(children: [
+              Icon(icon, size: 22, color: _P.muted),
+              const SizedBox(width: 12),
+              Text(label, style: TextStyle(color: _P.muted, fontSize: 15)),
+            ]),
+          )),
     );
   }
 }

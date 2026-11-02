@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bro-chat-storage",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-02",
+  "workers_dev": true,
+  "vars": {
+    "SUPABASE_URL": "https://dbfgyehzgrmsajpwydps.supabase.co"
+  },
+  "r2_buckets": [
+    {
+      "binding": "CHAT_STORAGE",
+      "bucket_name": "chat-app-storage"
+    }
+  ]
+}

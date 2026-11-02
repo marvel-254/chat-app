@@ -26,6 +26,12 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>BRO uses the camera for video calls and sharing photos.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>BRO uses the microphone for voice and video calls.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>BRO lets you choose a profile picture and share photos in chats.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
