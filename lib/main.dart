@@ -13,8 +13,10 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import 'screens/call_screen.dart';
 import 'services/supabase.dart';
+import 'services/connection_monitor.dart';
 import 'services/push_notifications.dart';
 import 'models/profile.dart';
+import 'ui/states.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -182,6 +184,12 @@ final _router = GoRouter(
       builder: (_, state) =>
           ChatScreen(conversationId: state.pathParameters['conversationId']!),
     ),
+    GoRoute(
+      path: '/profile/:userId',
+      builder: (_, state) => UserProfileScreen(
+        userId: state.pathParameters['userId']!,
+      ),
+    ),
   ],
   redirect: (context, state) {
     final authed = Supa.currentUser != null;
@@ -199,13 +207,29 @@ class BroApp extends StatefulWidget {
   State<BroApp> createState() => _BroAppState();
 }
 
-class _BroAppState extends State<BroApp> {
+class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    ConnectionMonitor.start();
     PushNotifications.setOpenHandler(
       (conversationId) => _router.go('/chat/$conversationId'),
     );
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(ConnectionMonitor.dispose());
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(Supa.recordLastSeen());
+    }
   }
 
   @override
@@ -215,6 +239,20 @@ class _BroAppState extends State<BroApp> {
       debugShowCheckedModeBanner: false,
       scaffoldMessengerKey: appScaffoldMessengerKey,
       routerConfig: _router,
+      builder: (context, child) {
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            if (child != null) child,
+            const Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: OfflineBanner(),
+            ),
+          ],
+        );
+      },
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
@@ -1140,11 +1178,20 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
               itemBuilder: (context, index) {
                 final u = _searchResults[index];
                 return ListTile(
-                  leading:
-                      _Avatar(name: u.peerInitial, url: u.avatarUrl, size: 44),
+                  leading: GestureDetector(
+                    onTap: () => context.push('/profile/${u.id}'),
+                    child: _Avatar(
+                        name: u.peerInitial, url: u.avatarUrl, size: 44),
+                  ),
                   title: Text(u.label, style: const TextStyle(color: _P.text)),
                   subtitle: Text('@${u.username}',
                       style: TextStyle(color: _P.muted, fontSize: 13)),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.person_outline, size: 20),
+                    color: _P.muted,
+                    tooltip: 'View profile',
+                    onPressed: () => context.push('/profile/${u.id}'),
+                  ),
                   onTap: () => _startDM(u),
                 );
               },
@@ -1182,6 +1229,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                           for (final user in people.take(8))
                             InkWell(
                               onTap: () => _startDM(user),
+                              onLongPress: () =>
+                                  context.push('/profile/${user.id}'),
                               child: SizedBox(
                                 width: 80,
                                 child: Column(
@@ -1305,10 +1354,15 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                       final lastMessageAt = conv.lastMessageAt;
                       final unread = conv.unreadCount > 0;
                       return ListTile(
-                        leading: _Avatar(
-                            name: conv.peerInitial,
-                            url: conv.peerAvatarUrl,
-                            size: 46),
+                        leading: GestureDetector(
+                          onTap: conv.peerId != null
+                              ? () => context.push('/profile/${conv.peerId}')
+                              : null,
+                          child: _Avatar(
+                              name: conv.peerInitial,
+                              url: conv.peerAvatarUrl,
+                              size: 46),
+                        ),
                         title: Text(
                           conv.peerLabel,
                           style: TextStyle(
@@ -1383,6 +1437,9 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 4),
                         onTap: () => context.go('/chat/${conv.id}'),
+                        onLongPress: conv.peerId != null
+                            ? () => context.push('/profile/${conv.peerId}')
+                            : null,
                       );
                     },
                   ),
@@ -1427,14 +1484,67 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _incomingPrompt = false;
   String _chatBackground = 'default';
   String? _chatBackgroundImageUrl;
+  Duration? _messageExpiry;
+  bool _pinnedBannerDismissed = false;
+  int _pinnedBannerIndex = 0;
+
+  String _expiryLabel(Duration value) => switch (value.inDays) {
+        1 => '24 hours',
+        7 => '7 days',
+        30 => '30 days',
+        _ => '${value.inDays} days',
+      };
 
   @override
   void initState() {
     super.initState();
     _loadPeer();
     _loadChatBackground();
+    _loadMessageExpiry();
     Supa.onTyping(widget.conversationId, _onPeerTyping);
     _listenForCalls();
+  }
+
+  Future<void> _loadMessageExpiry() async {
+    try {
+      final expiry = await Supa.getMessageExpiry(widget.conversationId);
+      if (mounted) setState(() => _messageExpiry = expiry);
+    } catch (_) {}
+  }
+
+  Future<void> _chooseMessageExpiry() async {
+    const choices = <String, Duration?>{
+      'Off': Duration.zero,
+      '24 hours': Duration(hours: 24),
+      '7 days': Duration(days: 7),
+      '30 days': Duration(days: 30),
+    };
+    final selected = await showModalBottomSheet<Duration?>(
+      context: context,
+      backgroundColor: _P.surface,
+      builder: (sheetContext) => SafeArea(
+          child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const ListTile(title: Text('Disappearing messages')),
+          for (final entry in choices.entries)
+            ListTile(
+                title: Text(entry.key),
+                onTap: () => Navigator.pop(sheetContext, entry.value)),
+          const SizedBox(height: 8),
+        ],
+      )),
+    );
+    if (selected == null) return;
+    try {
+      await Supa.setMessageExpiry(widget.conversationId, selected);
+      if (mounted) {
+        setState(
+            () => _messageExpiry = selected == Duration.zero ? null : selected);
+      }
+    } catch (_) {
+      _unsupported('Could not update the message timer.');
+    }
   }
 
   Future<void> _loadChatBackground() async {
@@ -1583,7 +1693,8 @@ class _ChatScreenState extends State<ChatScreen> {
     _typingTimer?.cancel();
     setState(() => _typing = false);
     try {
-      await Supa.sendMessage(widget.conversationId, content);
+      await Supa.sendMessage(widget.conversationId, content,
+          expiry: _messageExpiry);
       if (!mounted) return;
       if (_ctrl.text == draft) _ctrl.clear();
       _rollToBottom();
@@ -1627,6 +1738,19 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  /// Scroll to roughly the position of [messageIndex] out of [totalMessages].
+  void _scrollToMessage(int messageIndex, int totalMessages) {
+    if (!_scroll.hasClients || totalMessages == 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+      final max = _scroll.position.maxScrollExtent;
+      final target =
+          (messageIndex / (totalMessages - 1).clamp(1, 999999)) * max;
+      _scroll.animateTo(target.clamp(0.0, max),
+          duration: const Duration(milliseconds: 350), curve: Curves.easeInOut);
+    });
+  }
+
   void _unsupported(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1643,26 +1767,21 @@ class _ChatScreenState extends State<ChatScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             _MenuTile(
-              icon: Icons.info_outline,
-              label: 'About this chat',
+              icon: Icons.timer_outlined,
+              label:
+                  'Disappearing messages${_messageExpiry == null ? '' : ' · ${_expiryLabel(_messageExpiry!)}'}',
               onTap: () {
                 Navigator.pop(context);
-                showDialog<void>(
-                  context: this.context,
-                  builder: (dialogContext) => AlertDialog(
-                    title: Text(_peer?.label ?? 'Chat details'),
-                    content: Text([
-                      if (_peer?.username case final username?) '@$username',
-                      'Conversation ID: ${widget.conversationId}',
-                    ].join('\n')),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(dialogContext),
-                        child: const Text('Close'),
-                      ),
-                    ],
-                  ),
-                );
+                _chooseMessageExpiry();
+              },
+            ),
+            _MenuTile(
+              icon: Icons.person_outlined,
+              label: 'View profile',
+              onTap: () {
+                Navigator.pop(context);
+                final peer = _peer;
+                if (peer != null) context.push('/profile/${peer.id}');
               },
             ),
             const SizedBox(height: 8),
@@ -1670,6 +1789,83 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _showMessageActions(Message message) async {
+    final isMine = message.senderId == Supa.currentUser!.id;
+    final canEdit = isMine &&
+        DateTime.now().difference(message.createdAt) <=
+            const Duration(minutes: 15) &&
+        !message.content.startsWith('attachment:');
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: _P.surface,
+      builder: (sheetContext) => SafeArea(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+        ListTile(
+            leading: Icon(message.pinnedAt == null
+                ? Icons.push_pin_outlined
+                : Icons.push_pin),
+            title: Text(
+                message.pinnedAt == null ? 'Pin message' : 'Unpin message'),
+            onTap: () => Navigator.pop(sheetContext, 'pin')),
+        if (canEdit)
+          ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Edit message'),
+              onTap: () => Navigator.pop(sheetContext, 'edit')),
+        ListTile(
+            leading: const Icon(Icons.copy),
+            title: const Text('Copy'),
+            onTap: () => Navigator.pop(sheetContext, 'copy')),
+        const SizedBox(height: 8),
+      ])),
+    );
+    try {
+      if (action == 'pin') {
+        await Supa.setMessagePinned(message.id, message.pinnedAt == null,
+            conversationId: widget.conversationId);
+      }
+      if (action == 'copy') {
+        await Clipboard.setData(ClipboardData(text: message.content));
+      }
+      if (action == 'edit' && mounted) {
+        final controller = TextEditingController(text: message.content);
+        final updated = await showDialog<String>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+                  title: const Text('Edit message'),
+                  content: TextField(
+                      controller: controller, autofocus: true, maxLines: 4),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: const Text('Cancel')),
+                    FilledButton(
+                        onPressed: () => Navigator.pop(
+                            dialogContext, controller.text.trim()),
+                        child: const Text('Save'))
+                  ],
+                ));
+        controller.dispose();
+        if (updated != null &&
+            updated.isNotEmpty &&
+            updated != message.content) {
+          await Supa.updateMessage(message.id, updated);
+        }
+      }
+    } catch (e) {
+      if (e is StateError) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(e.message),
+            behavior: SnackBarBehavior.floating,
+          ));
+        }
+      } else {
+        _unsupported('Could not update this message.');
+      }
+    }
   }
 
   void _showAttachSheet(BuildContext context) {
@@ -1799,7 +1995,10 @@ class _ChatScreenState extends State<ChatScreen> {
           },
         ),
         title: InkWell(
-          onTap: () => _showChatMenu(context),
+          onTap: () {
+            final peer = _peer;
+            if (peer != null) context.push('/profile/${peer.id}');
+          },
           borderRadius: BorderRadius.circular(8),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
@@ -1866,70 +2065,127 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildSmallScreenChat(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: Container(
-            decoration:
-                _chatCanvas(_chatBackground, imageUrl: _chatBackgroundImageUrl),
-            child: StreamBuilder<List<Message>>(
-              stream: Supa.watchMessages(widget.conversationId),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return _ErrorState(
-                      message: 'Failed to load messages',
-                      onRetry: () => setState(() {}));
-                }
-                final messages = snapshot.data ?? [];
-                if (messages.isEmpty) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {});
-                  return _EmptyState(
-                    peerName: _peer?.label,
-                    onSayHello: () {
-                      _ctrl.text = 'Hey! 👋';
-                      _send();
-                    },
-                  );
-                }
-                _markUnreadAsRead(messages);
-                return Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 600),
-                    child: ListView.builder(
-                      controller: _scroll,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 12),
-                      itemCount: messages.length,
-                      itemBuilder: (_, i) => _MessageRow(
-                        msg: messages[i],
-                        prev: i > 0 ? messages[i - 1] : null,
-                        next: i + 1 < messages.length ? messages[i + 1] : null,
-                        me: Supa.currentUser!.id,
+    return StreamBuilder<List<Message>>(
+      stream: Supa.watchMessages(widget.conversationId),
+      builder: (context, snapshot) {
+        final messages = snapshot.data ?? [];
+        final pinnedMessages = messages
+            .where((m) => m.pinnedAt != null)
+            .toList()
+          ..sort((a, b) => (b.pinnedAt!).compareTo(a.pinnedAt!));
+        final showBanner = pinnedMessages.isNotEmpty && !_pinnedBannerDismissed;
+
+        return Column(
+          children: [
+            // Pinned message banner
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              transitionBuilder: (child, anim) => SizeTransition(
+                sizeFactor: anim,
+                alignment: Alignment.topCenter,
+                child: FadeTransition(opacity: anim, child: child),
+              ),
+              child: showBanner
+                  ? _PinnedMessagesBanner(
+                      key: const ValueKey('banner'),
+                      pinnedMessages: pinnedMessages,
+                      currentIndex: _pinnedBannerIndex.clamp(
+                          0, pinnedMessages.length - 1),
+                      onTap: () {
+                        final idx = _pinnedBannerIndex.clamp(
+                            0, pinnedMessages.length - 1);
+                        final msg = pinnedMessages[idx];
+                        final msgIdx = messages.indexOf(msg);
+                        if (msgIdx >= 0) {
+                          _scrollToMessage(msgIdx, messages.length);
+                        }
+                        setState(() {
+                          _pinnedBannerIndex =
+                              (_pinnedBannerIndex + 1) % pinnedMessages.length;
+                        });
+                      },
+                      onLongPress: () => _showPinnedMessagesSheet(
+                        context,
+                        pinnedMessages,
+                        (i, total) {
+                          final msg = pinnedMessages[
+                              i.clamp(0, pinnedMessages.length - 1)];
+                          final msgIdx = messages.indexOf(msg);
+                          if (msgIdx >= 0) {
+                            _scrollToMessage(msgIdx, messages.length);
+                          }
+                        },
+                        (msg) async {
+                          await Supa.setMessagePinned(msg.id, false);
+                        },
+                      ),
+                      onDismiss: () =>
+                          setState(() => _pinnedBannerDismissed = true),
+                    )
+                  : const SizedBox.shrink(key: ValueKey('no-banner')),
+            ),
+            Expanded(
+              child: Container(
+                decoration: _chatCanvas(_chatBackground,
+                    imageUrl: _chatBackgroundImageUrl),
+                child: Builder(builder: (context) {
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      messages.isEmpty) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return _ErrorState(
+                        message: 'Failed to load messages',
+                        onRetry: () => setState(() {}));
+                  }
+                  if (messages.isEmpty) {
+                    return _EmptyState(
+                      peerName: _peer?.label,
+                      onSayHello: () {
+                        _ctrl.text = 'Hey! 👋';
+                        _send();
+                      },
+                    );
+                  }
+                  _markUnreadAsRead(messages);
+                  return Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 600),
+                      child: ListView.builder(
+                        controller: _scroll,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 12),
+                        itemCount: messages.length,
+                        itemBuilder: (_, i) => _MessageRow(
+                          msg: messages[i],
+                          prev: i > 0 ? messages[i - 1] : null,
+                          next:
+                              i + 1 < messages.length ? messages[i + 1] : null,
+                          me: Supa.currentUser!.id,
+                          onLongPress: _showMessageActions,
+                        ),
                       ),
                     ),
-                  ),
-                );
-              },
+                  );
+                }),
+              ),
             ),
-          ),
-        ),
-        if (_typing || _peerTyping != null)
-          _TypingIndicator(
-            label: _peerTyping != null
-                ? '${_peer?.label ?? 'Someone'} is typing…'
-                : 'Typing…',
-          ),
-        _Composer(
-          controller: _ctrl,
-          onSend: _send,
-          onTypingChanged: _onTypingChanged,
-          onAttach: () => _showAttachSheet(context),
-          onVoice: () => _unsupported('Voice messages are coming soon.'),
-        ),
-      ],
+            if (_typing || _peerTyping != null)
+              _TypingIndicator(
+                label: _peerTyping != null
+                    ? '${_peer?.label ?? 'Someone'} is typing…'
+                    : 'Typing…',
+              ),
+            _Composer(
+              controller: _ctrl,
+              onSend: _send,
+              onTypingChanged: _onTypingChanged,
+              onAttach: () => _showAttachSheet(context),
+              onVoice: () => _unsupported('Voice messages are coming soon.'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1938,166 +2194,135 @@ class _ChatScreenState extends State<ChatScreen> {
       children: [
         const _NavSidebar(),
         Expanded(
-          child: Column(
-            children: [
-              Expanded(
-                child: Container(
-                  decoration: _chatCanvas(_chatBackground,
-                      imageUrl: _chatBackgroundImageUrl),
-                  child: StreamBuilder<List<Message>>(
-                    stream: Supa.watchMessages(widget.conversationId),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      if (snapshot.hasError) {
-                        return _ErrorState(
-                            message: 'Failed to load messages',
-                            onRetry: () => setState(() {}));
-                      }
-                      final messages = snapshot.data ?? [];
-                      if (messages.isEmpty) {
-                        return _EmptyState(
-                          peerName: _peer?.label,
-                          onSayHello: () {
-                            _ctrl.text = 'Hey! 👋';
-                            _send();
-                          },
-                        );
-                      }
-                      _markUnreadAsRead(messages);
-                      return Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 600),
-                          child: ListView.builder(
-                            controller: _scroll,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 12),
-                            itemCount: messages.length,
-                            itemBuilder: (_, i) => _MessageRow(
-                              msg: messages[i],
-                              prev: i > 0 ? messages[i - 1] : null,
-                              next: i + 1 < messages.length
-                                  ? messages[i + 1]
-                                  : null,
-                              me: Supa.currentUser!.id,
+          child: StreamBuilder<List<Message>>(
+            stream: Supa.watchMessages(widget.conversationId),
+            builder: (context, snapshot) {
+              final messages = snapshot.data ?? [];
+              final pinnedMessages = messages
+                  .where((m) => m.pinnedAt != null)
+                  .toList()
+                ..sort((a, b) => (b.pinnedAt!).compareTo(a.pinnedAt!));
+              final showBanner =
+                  pinnedMessages.isNotEmpty && !_pinnedBannerDismissed;
+
+              return Column(
+                children: [
+                  // Pinned message banner
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    transitionBuilder: (child, anim) => SizeTransition(
+                      sizeFactor: anim,
+                      alignment: Alignment.topCenter,
+                      child: FadeTransition(opacity: anim, child: child),
+                    ),
+                    child: showBanner
+                        ? _PinnedMessagesBanner(
+                            key: const ValueKey('banner'),
+                            pinnedMessages: pinnedMessages,
+                            currentIndex: _pinnedBannerIndex.clamp(
+                                0, pinnedMessages.length - 1),
+                            onTap: () {
+                              final idx = _pinnedBannerIndex.clamp(
+                                  0, pinnedMessages.length - 1);
+                              final msg = pinnedMessages[idx];
+                              final msgIdx = messages.indexOf(msg);
+                              if (msgIdx >= 0) {
+                                _scrollToMessage(msgIdx, messages.length);
+                              }
+                              setState(() {
+                                _pinnedBannerIndex = (_pinnedBannerIndex + 1) %
+                                    pinnedMessages.length;
+                              });
+                            },
+                            onLongPress: () => _showPinnedMessagesSheet(
+                              context,
+                              pinnedMessages,
+                              (i, total) {
+                                final msg = pinnedMessages[
+                                    i.clamp(0, pinnedMessages.length - 1)];
+                                final msgIdx = messages.indexOf(msg);
+                                if (msgIdx >= 0) {
+                                  _scrollToMessage(msgIdx, messages.length);
+                                }
+                              },
+                              (msg) async {
+                                await Supa.setMessagePinned(msg.id, false);
+                              },
+                            ),
+                            onDismiss: () =>
+                                setState(() => _pinnedBannerDismissed = true),
+                          )
+                        : const SizedBox.shrink(key: ValueKey('no-banner')),
+                  ),
+                  Expanded(
+                    child: Container(
+                      decoration: _chatCanvas(_chatBackground,
+                          imageUrl: _chatBackgroundImageUrl),
+                      child: Builder(builder: (context) {
+                        if (snapshot.connectionState ==
+                                ConnectionState.waiting &&
+                            messages.isEmpty) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
+                        if (snapshot.hasError) {
+                          return _ErrorState(
+                              message: 'Failed to load messages',
+                              onRetry: () => setState(() {}));
+                        }
+                        if (messages.isEmpty) {
+                          return _EmptyState(
+                            peerName: _peer?.label,
+                            onSayHello: () {
+                              _ctrl.text = 'Hey! 👋';
+                              _send();
+                            },
+                          );
+                        }
+                        _markUnreadAsRead(messages);
+                        return Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 600),
+                            child: ListView.builder(
+                              controller: _scroll,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 12),
+                              itemCount: messages.length,
+                              itemBuilder: (_, i) => _MessageRow(
+                                msg: messages[i],
+                                prev: i > 0 ? messages[i - 1] : null,
+                                next: i + 1 < messages.length
+                                    ? messages[i + 1]
+                                    : null,
+                                me: Supa.currentUser!.id,
+                                onLongPress: _showMessageActions,
+                              ),
                             ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      }),
+                    ),
                   ),
-                ),
-              ),
-              if (_typing || _peerTyping != null)
-                _TypingIndicator(
-                  label: _peerTyping != null
-                      ? '${_peer?.label ?? 'Someone'} is typing…'
-                      : 'Typing…',
-                ),
-              _Composer(
-                controller: _ctrl,
-                onSend: _send,
-                onTypingChanged: _onTypingChanged,
-                onAttach: () => _showAttachSheet(context),
-                onVoice: () => _unsupported('Voice messages are coming soon.'),
-              ),
-            ],
+                  if (_typing || _peerTyping != null)
+                    _TypingIndicator(
+                      label: _peerTyping != null
+                          ? '${_peer?.label ?? 'Someone'} is typing…'
+                          : 'Typing…',
+                    ),
+                  _Composer(
+                    controller: _ctrl,
+                    onSend: _send,
+                    onTypingChanged: _onTypingChanged,
+                    onAttach: () => _showAttachSheet(context),
+                    onVoice: () =>
+                        _unsupported('Voice messages are coming soon.'),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ],
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({this.peerName, this.onSayHello});
-  final String? peerName;
-  final VoidCallback? onSayHello;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                color: _P.surface,
-                shape: BoxShape.circle,
-                border: Border.all(color: _P.border),
-              ),
-              child: const Center(
-                child: Icon(Icons.waving_hand_outlined,
-                    color: _P.primary, size: 36),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              peerName != null ? 'Say hello to $peerName!' : 'No messages yet',
-              style: const TextStyle(
-                color: _P.text,
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Break the ice with a message or a quick wave.',
-              style: TextStyle(color: _P.muted, fontSize: 13),
-              textAlign: TextAlign.center,
-            ),
-            if (onSayHello != null) ...[
-              const SizedBox(height: 18),
-              FilledButton.tonalIcon(
-                onPressed: onSayHello,
-                style: FilledButton.styleFrom(
-                  backgroundColor: _P.surfaceHigh,
-                  foregroundColor: _P.text,
-                ),
-                icon: const Text('👋', style: TextStyle(fontSize: 16)),
-                label: const Text('Wave hello',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  const _ErrorState({required this.message, required this.onRetry});
-  final String message;
-  final VoidCallback onRetry;
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.cloud_off, color: _P.muted, size: 48),
-            const SizedBox(height: 12),
-            Text(message,
-                style: TextStyle(
-                    color: _P.text, fontSize: 16, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 20),
-            OutlinedButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -2121,11 +2346,16 @@ class _TypingIndicator extends StatelessWidget {
 
 class _MessageRow extends StatelessWidget {
   const _MessageRow(
-      {required this.msg, this.prev, this.next, required this.me});
+      {required this.msg,
+      this.prev,
+      this.next,
+      required this.me,
+      required this.onLongPress});
   final Message msg;
   final Message? prev;
   final Message? next;
   final String me;
+  final ValueChanged<Message> onLongPress;
 
   bool get _nowDateLine =>
       prev == null || !_sameDay(prev!.createdAt, msg.createdAt);
@@ -2166,6 +2396,7 @@ class _MessageRow extends StatelessWidget {
             groupedTop: _groupPrev,
             groupedBottom: _groupNext,
             mine: mine,
+            onLongPress: () => onLongPress(msg),
           ),
         ),
       ],
@@ -2226,11 +2457,13 @@ class _Bubble extends StatelessWidget {
       {required this.msg,
       this.groupedTop = false,
       this.groupedBottom = false,
-      required this.mine});
+      required this.mine,
+      required this.onLongPress});
   final Message msg;
   final bool groupedTop;
   final bool groupedBottom;
   final bool mine;
+  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -2257,15 +2490,7 @@ class _Bubble extends StatelessWidget {
       child: GestureDetector(
         onLongPress: () {
           if (attachment != null) return;
-          Clipboard.setData(ClipboardData(text: msg.content));
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Message copied to clipboard'),
-              duration: Duration(seconds: 2),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+          onLongPress();
         },
         child: Container(
           constraints: BoxConstraints(
@@ -2315,6 +2540,20 @@ class _Bubble extends StatelessWidget {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (msg.pinnedAt != null) ...[
+                    Icon(Icons.push_pin,
+                        size: 11, color: mine ? _P.darkOnAccent : _P.primary),
+                    const SizedBox(width: 3),
+                  ],
+                  if (msg.editedAt != null) ...[
+                    Text('edited',
+                        style: TextStyle(
+                            fontSize: 10,
+                            color: mine
+                                ? _P.darkOnAccent.withValues(alpha: 0.7)
+                                : _P.muted)),
+                    const SizedBox(width: 4),
+                  ],
                   Text(_fmtTime(msg.createdAt),
                       style: TextStyle(
                           fontSize: 11,
@@ -2324,9 +2563,9 @@ class _Bubble extends StatelessWidget {
                   if (mine) ...[
                     const SizedBox(width: 3),
                     Icon(
-                      msg.readAt != null ? Icons.done_all : Icons.done,
+                      msg.readByPeer ? Icons.done_all : Icons.done,
                       size: 13,
-                      color: msg.readAt != null
+                      color: msg.readByPeer
                           ? _P.success
                           : _P.darkOnAccent.withValues(alpha: 0.7),
                     ),
@@ -2637,6 +2876,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   final _displayName = TextEditingController();
   final _password = TextEditingController();
   final _confirmPassword = TextEditingController();
+  final _about = TextEditingController();
   Profile? _profile;
   XFile? _avatarFile;
   String _chatBackground = 'default';
@@ -2645,6 +2885,11 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   bool _loading = true;
   bool _saving = false;
   String? _error;
+  String _photoVisibility = 'everyone';
+  String _statusVisibility = 'everyone';
+  String _aboutVisibility = 'everyone';
+  bool _readReceiptsEnabled = true;
+  Duration? _defaultMessageExpiry;
 
   @override
   void initState() {
@@ -2659,6 +2904,12 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       _profile = profile;
       _username.text = profile?.username ?? '';
       _displayName.text = profile?.displayName ?? '';
+      _about.text = profile?.about ?? '';
+      _photoVisibility = profile?.photoVisibility ?? 'everyone';
+      _statusVisibility = profile?.statusVisibility ?? 'everyone';
+      _aboutVisibility = profile?.aboutVisibility ?? 'everyone';
+      _readReceiptsEnabled = profile?.readReceiptsEnabled ?? true;
+      _defaultMessageExpiry = profile?.defaultMessageExpiry;
       _chatBackground = profile?.chatBackground ?? 'default';
       _chatBackgroundImagePath = profile?.chatBackgroundImagePath;
       if (_chatBackgroundImagePath != null) {
@@ -2734,6 +2985,13 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     try {
       await Supa.updateProfile(
           username: username, displayName: _displayName.text);
+      await Supa.updateProfileDetails(
+          about: _about.text,
+          photoVisibility: _photoVisibility,
+          statusVisibility: _statusVisibility,
+          aboutVisibility: _aboutVisibility,
+          readReceiptsEnabled: _readReceiptsEnabled,
+          defaultMessageExpiry: _defaultMessageExpiry);
       await Supa.updateChatBackground(
         _chatBackground,
         imagePath:
@@ -2771,6 +3029,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     _displayName.dispose();
     _password.dispose();
     _confirmPassword.dispose();
+    _about.dispose();
     super.dispose();
   }
 
@@ -2816,6 +3075,88 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       controller: _username,
                       label: 'Username',
                       icon: Icons.alternate_email),
+                  const SizedBox(height: 14),
+                  _SettingsField(
+                      controller: _about,
+                      label: 'About (max 160 characters)',
+                      icon: Icons.info_outline),
+                  const SizedBox(height: 20),
+                  Text('Privacy',
+                      style: TextStyle(
+                          color: _P.muted, fontWeight: FontWeight.w600)),
+                  DropdownButtonFormField<String>(
+                      initialValue: _photoVisibility,
+                      decoration: const InputDecoration(
+                          labelText: 'Profile photo visible to'),
+                      items: const [
+                        DropdownMenuItem(
+                            value: 'everyone', child: Text('Everyone')),
+                        DropdownMenuItem(
+                            value: 'contacts', child: Text('My contacts')),
+                        DropdownMenuItem(value: 'nobody', child: Text('Nobody'))
+                      ],
+                      onChanged: (v) {
+                        if (v != null) setState(() => _photoVisibility = v);
+                      }),
+                  DropdownButtonFormField<String>(
+                      initialValue: _statusVisibility,
+                      decoration: const InputDecoration(
+                          labelText: 'Online status visible to'),
+                      items: const [
+                        DropdownMenuItem(
+                            value: 'everyone', child: Text('Everyone')),
+                        DropdownMenuItem(
+                            value: 'contacts', child: Text('My contacts')),
+                        DropdownMenuItem(value: 'nobody', child: Text('Nobody'))
+                      ],
+                      onChanged: (v) {
+                        if (v != null) setState(() => _statusVisibility = v);
+                      }),
+                  DropdownButtonFormField<String>(
+                      initialValue: _aboutVisibility,
+                      decoration:
+                          const InputDecoration(labelText: 'About visible to'),
+                      items: const [
+                        DropdownMenuItem(
+                            value: 'everyone', child: Text('Everyone')),
+                        DropdownMenuItem(
+                            value: 'contacts', child: Text('My contacts')),
+                        DropdownMenuItem(value: 'nobody', child: Text('Nobody'))
+                      ],
+                      onChanged: (v) {
+                        if (v != null) setState(() => _aboutVisibility = v);
+                      }),
+                  const SizedBox(height: 20),
+                  Text('Messages',
+                      style: TextStyle(
+                          color: _P.muted, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Read receipts'),
+                    subtitle: Text(
+                      'Let others know when you have read their messages',
+                      style: TextStyle(color: _P.muted, fontSize: 12),
+                    ),
+                    value: _readReceiptsEnabled,
+                    onChanged: (v) => setState(() => _readReceiptsEnabled = v),
+                  ),
+                  const SizedBox(height: 4),
+                  DropdownButtonFormField<Duration?>(
+                    initialValue: _defaultMessageExpiry,
+                    decoration: const InputDecoration(
+                        labelText: 'Default message timer'),
+                    items: const [
+                      DropdownMenuItem(value: null, child: Text('Off')),
+                      DropdownMenuItem(
+                          value: Duration(hours: 24), child: Text('24 hours')),
+                      DropdownMenuItem(
+                          value: Duration(days: 7), child: Text('7 days')),
+                      DropdownMenuItem(
+                          value: Duration(days: 30), child: Text('30 days')),
+                    ],
+                    onChanged: (v) => setState(() => _defaultMessageExpiry = v),
+                  ),
                   const SizedBox(height: 24),
                   Text('Chat background',
                       style: TextStyle(
@@ -3027,6 +3368,983 @@ class _SettingsFieldState extends State<_SettingsField> {
               borderSide: const BorderSide(color: _P.primary, width: 1.5)),
         ),
       );
+}
+
+// ---------------------------------------------------------------------------
+// User Profile Screen
+// ---------------------------------------------------------------------------
+
+class UserProfileScreen extends StatefulWidget {
+  const UserProfileScreen({super.key, required this.userId});
+  final String userId;
+
+  @override
+  State<UserProfileScreen> createState() => _UserProfileScreenState();
+}
+
+class _UserProfileScreenState extends State<UserProfileScreen> {
+  Profile? _profile;
+  bool _loading = true;
+  bool _isFollowing = false;
+  int _followersCount = 0;
+  int _followingCount = 0;
+  bool _followLoading = false;
+  String? _error;
+
+  bool get _isSelf => Supa.currentUser?.id == widget.userId;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final results = await Future.wait([
+        Supa.getProfile(widget.userId),
+        if (!_isSelf) Supa.isFollowing(widget.userId),
+        Supa.getFollowersCount(widget.userId),
+        Supa.getFollowingCount(widget.userId),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _profile = results[0] as Profile?;
+        if (!_isSelf) _isFollowing = results[1] as bool;
+        _followersCount = results[_isSelf ? 1 : 2] as int;
+        _followingCount = results[_isSelf ? 2 : 3] as int;
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Could not load profile.';
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _toggleFollow() async {
+    setState(() => _followLoading = true);
+    try {
+      final newFollow = !_isFollowing;
+      await Supa.setFollowing(widget.userId, newFollow);
+      if (!mounted) return;
+      setState(() {
+        _isFollowing = newFollow;
+        _followersCount += newFollow ? 1 : -1;
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not update follow status. Please try again.'),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _followLoading = false);
+    }
+  }
+
+  Future<void> _openDM() async {
+    try {
+      final conv = await Supa.getOrCreateDM(widget.userId);
+      if (mounted) context.go('/chat/${conv.id}');
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not open conversation.'),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  void _showFollowersSheet({required bool startOnFollowing}) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _P.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (_) => _FollowersFollowingSheet(
+        userId: widget.userId,
+        initialTab: startOnFollowing ? 1 : 0,
+        onOpenProfile: (uid) {
+          Navigator.pop(context);
+          context.push('/profile/$uid');
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _P.bg,
+      appBar: AppBar(
+        backgroundColor: _P.bg,
+        elevation: 0,
+        leading: const BackButton(color: _P.text),
+        title: _profile == null
+            ? null
+            : Text(
+                _profile!.label,
+                style: const TextStyle(
+                    color: _P.text, fontWeight: FontWeight.w700, fontSize: 17),
+              ),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.person_off_outlined,
+                          size: 48, color: _P.muted),
+                      const SizedBox(height: 12),
+                      Text(_error!,
+                          style: TextStyle(color: _P.muted, fontSize: 15)),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                          onPressed: _load, child: const Text('Retry')),
+                    ],
+                  ),
+                )
+              : _buildBody(),
+    );
+  }
+
+  Widget _buildBody() {
+    final profile = _profile!;
+    final isMe = _isSelf;
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // ── Avatar & name ──────────────────────────────────────────────
+          const SizedBox(height: 28),
+          Center(
+            child: Stack(
+              children: [
+                _Avatar(
+                  name: profile.peerInitial,
+                  url: profile.avatarUrl,
+                  size: 92,
+                ),
+                // Subtle glow ring
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: _P.primary.withValues(alpha: 0.35),
+                          width: 2.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            profile.label,
+            style: const TextStyle(
+                color: _P.text, fontSize: 22, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '@${profile.username}',
+            style: TextStyle(color: _P.muted, fontSize: 14),
+          ),
+          const SizedBox(height: 20),
+
+          // ── Follower / following counts ─────────────────────────────────
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _ProfileStatChip(
+                label: 'Followers',
+                count: _followersCount,
+                onTap: () => _showFollowersSheet(startOnFollowing: false),
+              ),
+              const SizedBox(width: 24),
+              _ProfileStatChip(
+                label: 'Following',
+                count: _followingCount,
+                onTap: () => _showFollowersSheet(startOnFollowing: true),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // ── Action buttons (only for other users) ───────────────────────
+          if (!isMe) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor:
+                            _isFollowing ? _P.surfaceHigh : _P.primary,
+                        foregroundColor:
+                            _isFollowing ? _P.text : _P.darkOnAccent,
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: _followLoading ? null : _toggleFollow,
+                      icon: _followLoading
+                          ? SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: _isFollowing ? _P.text : _P.darkOnAccent,
+                              ),
+                            )
+                          : Icon(
+                              _isFollowing
+                                  ? Icons.person_remove_outlined
+                                  : Icons.person_add_outlined,
+                              size: 18,
+                            ),
+                      label: Text(
+                        _isFollowing ? 'Unfollow' : 'Follow',
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _P.text,
+                        side: const BorderSide(color: _P.border),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: _openDM,
+                      icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                      label: const Text('Message',
+                          style: TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 28),
+          ] else ...[
+            const SizedBox(height: 12),
+            TextButton.icon(
+              onPressed: () => context.push('/settings'),
+              icon: const Icon(Icons.edit_outlined, size: 17),
+              label: const Text('Edit profile'),
+              style: TextButton.styleFrom(foregroundColor: _P.primary),
+            ),
+            const SizedBox(height: 28),
+          ],
+
+          // ── About section ──────────────────────────────────────────────
+          if (profile.about != null && profile.about!.trim().isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'About',
+                  style: TextStyle(
+                    color: _P.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              decoration: BoxDecoration(
+                color: _P.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _P.border.withValues(alpha: 0.5)),
+              ),
+              width: double.infinity,
+              child: Text(
+                profile.about!.trim(),
+                style: TextStyle(
+                    color: _P.text.withValues(alpha: 0.9),
+                    fontSize: 14,
+                    height: 1.5),
+              ),
+            ),
+            const SizedBox(height: 28),
+          ],
+
+          // ── Joined date ────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.calendar_today_outlined,
+                    size: 13, color: _P.muted.withValues(alpha: 0.6)),
+                const SizedBox(width: 6),
+                Text(
+                  'Joined ${_fmtJoined(profile.createdAt)}',
+                  style: TextStyle(
+                      color: _P.muted.withValues(alpha: 0.6), fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 40),
+        ],
+      ),
+    );
+  }
+
+  static String _fmtJoined(DateTime dt) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
+    return '${months[dt.month - 1]} ${dt.year}';
+  }
+}
+
+// Small tappable stat chip used in the profile page
+class _ProfileStatChip extends StatelessWidget {
+  const _ProfileStatChip(
+      {required this.label, required this.count, required this.onTap});
+  final String label;
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _fmt(count),
+            style: const TextStyle(
+                color: _P.text, fontSize: 20, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 2),
+          Text(label,
+              style: TextStyle(
+                  color: _P.muted, fontSize: 12, fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+
+  static String _fmt(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    return '$n';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Followers / Following Sheet
+// ---------------------------------------------------------------------------
+
+class _FollowersFollowingSheet extends StatefulWidget {
+  const _FollowersFollowingSheet({
+    required this.userId,
+    this.initialTab = 0,
+    required this.onOpenProfile,
+  });
+  final String userId;
+  final int initialTab;
+  final void Function(String userId) onOpenProfile;
+
+  @override
+  State<_FollowersFollowingSheet> createState() =>
+      _FollowersFollowingSheetState();
+}
+
+class _FollowersFollowingSheetState extends State<_FollowersFollowingSheet>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabs;
+  List<Profile>? _followers;
+  List<Profile>? _following;
+  bool _loadingFollowers = true;
+  bool _loadingFollowing = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabs =
+        TabController(length: 2, vsync: this, initialIndex: widget.initialTab);
+    _loadFollowers();
+    _loadFollowing();
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadFollowers() async {
+    try {
+      final list = await Supa.getFollowers(widget.userId);
+      if (mounted) {
+        setState(() {
+          _followers = list;
+          _loadingFollowers = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _followers = [];
+          _loadingFollowers = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadFollowing() async {
+    try {
+      final list = await Supa.getFollowing(widget.userId);
+      if (mounted) {
+        setState(() {
+          _following = list;
+          _loadingFollowing = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _following = [];
+          _loadingFollowing = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.65,
+      minChildSize: 0.4,
+      maxChildSize: 0.92,
+      expand: false,
+      builder: (_, scrollCtrl) => Column(
+        children: [
+          // Handle
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 4),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: _P.border, borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          // Tab bar
+          TabBar(
+            controller: _tabs,
+            labelColor: _P.primary,
+            unselectedLabelColor: _P.muted,
+            indicatorColor: _P.primary,
+            indicatorWeight: 2.5,
+            labelStyle:
+                const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+            unselectedLabelStyle:
+                const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            tabs: [
+              Tab(
+                text: 'Followers'
+                    '${_followers != null ? '  ${_fmt(_followers!.length)}' : ''}',
+              ),
+              Tab(
+                text: 'Following'
+                    '${_following != null ? '  ${_fmt(_following!.length)}' : ''}',
+              ),
+            ],
+          ),
+          const Divider(height: 1, color: _P.border),
+          Expanded(
+            child: TabBarView(
+              controller: _tabs,
+              children: [
+                _buildList(_followers, _loadingFollowers, scrollCtrl),
+                _buildList(_following, _loadingFollowing, scrollCtrl),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildList(
+      List<Profile>? profiles, bool loading, ScrollController scrollCtrl) {
+    if (loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (profiles == null || profiles.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.people_outline, size: 44, color: _P.muted),
+            const SizedBox(height: 10),
+            Text('Nobody here yet',
+                style: TextStyle(color: _P.muted, fontSize: 14)),
+          ],
+        ),
+      );
+    }
+    return ListView.builder(
+      controller: scrollCtrl,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: profiles.length,
+      itemBuilder: (_, i) {
+        final p = profiles[i];
+        return ListTile(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+          leading: _Avatar(name: p.peerInitial, url: p.avatarUrl, size: 42),
+          title: Text(p.label,
+              style:
+                  const TextStyle(color: _P.text, fontWeight: FontWeight.w600)),
+          subtitle: Text('@${p.username}',
+              style: TextStyle(color: _P.muted, fontSize: 12)),
+          trailing: p.id == Supa.currentUser?.id
+              ? null
+              : _FollowToggleButton(userId: p.id),
+          onTap: () => widget.onOpenProfile(p.id),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        );
+      },
+    );
+  }
+
+  static String _fmt(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    return '$n';
+  }
+}
+
+/// A small follow/unfollow toggle button used inside list tiles.
+class _FollowToggleButton extends StatefulWidget {
+  const _FollowToggleButton({required this.userId});
+  final String userId;
+
+  @override
+  State<_FollowToggleButton> createState() => _FollowToggleButtonState();
+}
+
+class _FollowToggleButtonState extends State<_FollowToggleButton> {
+  bool? _following; // null = loading
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Supa.isFollowing(widget.userId).then((v) {
+      if (mounted) setState(() => _following = v);
+    }).catchError((_) {
+      if (mounted) setState(() => _following = false);
+    });
+  }
+
+  Future<void> _toggle() async {
+    final current = _following;
+    if (current == null || _busy) return;
+    setState(() => _busy = true);
+    try {
+      await Supa.setFollowing(widget.userId, !current);
+      if (mounted) setState(() => _following = !current);
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_following == null) {
+      return const SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2));
+    }
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 180),
+      child: _busy
+          ? const SizedBox(
+              key: ValueKey('busy'),
+              width: 18,
+              height: 18,
+              child:
+                  CircularProgressIndicator(strokeWidth: 2, color: _P.primary))
+          : OutlinedButton(
+              key: ValueKey(_following),
+              onPressed: _toggle,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _following! ? _P.muted : _P.primary,
+                side: BorderSide(
+                    color: _following! ? _P.border : _P.primary, width: 1.2),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                minimumSize: const Size(80, 32),
+                textStyle:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              child: Text(_following! ? 'Following' : 'Follow'),
+            ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pinned Messages Banner
+// ---------------------------------------------------------------------------
+
+/// A compact banner shown at the top of the chat when at least one message is
+/// pinned.  Tapping it cycles through pinned messages and scrolls to each one
+/// in the list.  Long-pressing opens a full sheet of all pinned messages.
+/// The × button hides the banner for the current session (without unpinning).
+class _PinnedMessagesBanner extends StatelessWidget {
+  const _PinnedMessagesBanner({
+    super.key,
+    required this.pinnedMessages,
+    required this.currentIndex,
+    required this.onTap,
+    required this.onLongPress,
+    required this.onDismiss,
+  });
+
+  final List<Message> pinnedMessages;
+  final int currentIndex;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    if (pinnedMessages.isEmpty) return const SizedBox.shrink();
+
+    final count = pinnedMessages.length;
+    // Show the message at currentIndex (clamped for safety).
+    final msg = pinnedMessages[currentIndex.clamp(0, count - 1)];
+    final preview = msg.content.replaceAll('\n', ' ');
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: count > 1 ? onLongPress : null,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          decoration: BoxDecoration(
+            color: _P.surface,
+            border: Border(
+              bottom: BorderSide(color: _P.border.withValues(alpha: 0.6)),
+              left: BorderSide(color: _P.primary, width: 3),
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Row(
+            children: [
+              // Pin icon
+              Icon(Icons.push_pin, size: 15, color: _P.primary),
+              const SizedBox(width: 10),
+              // Message preview
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // "Pinned message" label + counter
+                    Row(
+                      children: [
+                        Text(
+                          'Pinned message',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: _P.primary,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                        if (count > 1) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: _P.primary.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '${currentIndex + 1} / $count',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: _P.primary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      preview,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: _P.text.withValues(alpha: 0.85),
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Dismiss button
+              GestureDetector(
+                onTap: onDismiss,
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Icon(Icons.close,
+                      size: 16, color: _P.muted.withValues(alpha: 0.7)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Bottom sheet listing all pinned messages with tap-to-scroll and unpin.
+void _showPinnedMessagesSheet(
+  BuildContext context,
+  List<Message> pinnedMessages,
+  void Function(int index, int total) onScrollTo,
+  Future<void> Function(Message msg) onUnpin,
+) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: _P.surface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (sheetCtx) => _PinnedMessagesSheet(
+      pinnedMessages: pinnedMessages,
+      onScrollTo: onScrollTo,
+      onUnpin: onUnpin,
+    ),
+  );
+}
+
+class _PinnedMessagesSheet extends StatefulWidget {
+  const _PinnedMessagesSheet({
+    required this.pinnedMessages,
+    required this.onScrollTo,
+    required this.onUnpin,
+  });
+
+  final List<Message> pinnedMessages;
+  final void Function(int index, int total) onScrollTo;
+  final Future<void> Function(Message msg) onUnpin;
+
+  @override
+  State<_PinnedMessagesSheet> createState() => _PinnedMessagesSheetState();
+}
+
+class _PinnedMessagesSheetState extends State<_PinnedMessagesSheet> {
+  // Track local unpin in-progress to show loading feedback.
+  final _unpinning = <String>{};
+
+  @override
+  Widget build(BuildContext context) {
+    final msgs = widget.pinnedMessages;
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Handle
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: _P.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+            child: Row(
+              children: [
+                Icon(Icons.push_pin, size: 18, color: _P.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Pinned messages',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: _P.text,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _P.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${msgs.length} / 5',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _P.primary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: _P.border),
+          // Message list – show most recent first
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 360),
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              itemCount: msgs.length,
+              separatorBuilder: (_, __) =>
+                  const Divider(height: 1, color: _P.border),
+              itemBuilder: (_, i) {
+                final msg = msgs[i];
+                final isUnpinning = _unpinning.contains(msg.id);
+                return ListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                  leading: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: _P.primary.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '${i + 1}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: _P.primary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  title: Text(
+                    msg.content.replaceAll('\n', ' '),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 14, color: _P.text),
+                  ),
+                  subtitle: Text(
+                    _fmtBannerTime(msg.pinnedAt ?? msg.createdAt),
+                    style: TextStyle(fontSize: 11, color: _P.muted),
+                  ),
+                  trailing: isUnpinning
+                      ? SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: _P.muted))
+                      : IconButton(
+                          icon: Icon(Icons.push_pin, size: 18, color: _P.muted),
+                          tooltip: 'Unpin',
+                          onPressed: () async {
+                            setState(() => _unpinning.add(msg.id));
+                            try {
+                              await widget.onUnpin(msg);
+                            } finally {
+                              if (mounted) {
+                                setState(() => _unpinning.remove(msg.id));
+                              }
+                            }
+                          },
+                        ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    widget.onScrollTo(i, msgs.length);
+                  },
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  static String _fmtBannerTime(DateTime t) {
+    final now = DateTime.now();
+    final diff = now.difference(t);
+    if (diff.inDays == 0) {
+      final h = t.hour == 0 ? 12 : (t.hour > 12 ? t.hour - 12 : t.hour);
+      final m = t.minute.toString().padLeft(2, '0');
+      final ap = t.hour >= 12 ? 'PM' : 'AM';
+      return 'Pinned today at $h:$m $ap';
+    }
+    if (diff.inDays == 1) return 'Pinned yesterday';
+    if (diff.inDays < 7) return 'Pinned ${diff.inDays} days ago';
+    return 'Pinned ${t.day}/${t.month}/${t.year}';
+  }
 }
 
 class _NavSidebar extends StatelessWidget {
