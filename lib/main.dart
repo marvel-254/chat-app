@@ -1064,6 +1064,53 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     }
   }
 
+  void _showConversationActions(BuildContext context, Conversation conv) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _P.surface,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (conv.peerId != null)
+              _MenuTile(
+                icon: Icons.person_outlined,
+                label: 'View profile',
+                onTap: () {
+                  Navigator.pop(context);
+                  if (context.mounted) context.push('/profile/${conv.peerId}');
+                },
+              ),
+            _MenuTile(
+              icon: conv.isLocked ? Icons.lock_open_outlined : Icons.lock_outlined,
+              label: conv.isLocked ? 'Unlock chat' : 'Lock chat',
+              onTap: () async {
+                Navigator.pop(context);
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  await Supa.setConversationLocked(conv.id, !conv.isLocked);
+                  messenger.showSnackBar(
+                    SnackBar(
+                        content: Text(conv.isLocked
+                            ? 'Chat unlocked'
+                            : 'Chat locked')),
+                  );
+                } catch (_) {
+                  messenger.showSnackBar(
+                    const SnackBar(
+                        content:
+                            Text('Could not update lock state. Try again.')),
+                  );
+                }
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1413,6 +1460,12 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
+                            if (conv.isLocked)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Icon(Icons.lock_outline,
+                                    size: 16, color: _P.muted),
+                              ),
                             if (unread)
                               Container(
                                 padding: const EdgeInsets.symmetric(
@@ -1452,9 +1505,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 4),
                         onTap: () => context.go('/chat/${conv.id}'),
-                        onLongPress: conv.peerId != null
-                            ? () => context.push('/profile/${conv.peerId}')
-                            : null,
+                        onLongPress: () => _showConversationActions(context, conv),
                       );
                     },
                   ),
@@ -1808,6 +1859,37 @@ class _ChatScreenState extends State<ChatScreen> {
                 if (peer != null) context.push('/profile/${peer.id}');
               },
             ),
+            FutureBuilder<bool>(
+              future: Supa.isConversationLocked(widget.conversationId),
+              builder: (_, snap) {
+                final locked = snap.data == true;
+                return _MenuTile(
+                  icon: locked ? Icons.lock_open_outlined : Icons.lock_outlined,
+                  label: locked ? 'Unlock chat' : 'Lock chat',
+                  onTap: () async {
+                    Navigator.pop(context);
+                    final messenger = ScaffoldMessenger.of(context);
+                    try {
+                      await Supa.setConversationLocked(
+                          widget.conversationId, !locked);
+                      messenger.showSnackBar(
+                        SnackBar(
+                            content: Text(locked
+                                ? 'Chat unlocked'
+                                : 'Chat locked')),
+                      );
+                      if (mounted) setState(() {});
+                    } catch (_) {
+                      messenger.showSnackBar(
+                        const SnackBar(
+                            content:
+                                Text('Could not update lock state. Try again.')),
+                      );
+                    }
+                  },
+                );
+              },
+            ),
             const SizedBox(height: 8),
           ],
         ),
@@ -2119,6 +2201,17 @@ class _ChatScreenState extends State<ChatScreen> {
               onTap: () => _startCall(video: true)),
           _ActionBtn(Icons.phone_rounded,
               onTap: () => _startCall(video: false)),
+          FutureBuilder<bool>(
+            future: Supa.isConversationLocked(widget.conversationId),
+            builder: (_, snap) {
+              if (snap.data != true) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Icon(Icons.lock_outline,
+                    size: 20, color: _P.muted),
+              );
+            },
+          ),
           _ActionBtn(Icons.more_vert, onTap: () => _showChatMenu(context)),
           const SizedBox(width: 6),
         ],
