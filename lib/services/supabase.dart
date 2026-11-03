@@ -92,13 +92,13 @@ class Supa {
   // Profiles
   static Future<Profile?> getProfile(String uid) async {
     final res =
-        await client.from('profiles').select().eq('id', uid).maybeSingle();
+        await client.from('visible_profiles').select().eq('id', uid).maybeSingle();
     return res != null ? Profile.fromJson(res) : null;
   }
 
   static Future<Profile?> getProfileByUsername(String username) async {
     final res = await client
-        .from('profiles')
+        .from('visible_profiles')
         .select()
         .eq('username', username)
         .maybeSingle();
@@ -107,7 +107,7 @@ class Supa {
 
   static Future<List<Profile>> searchUsers(String query,
       {int limit = 20}) async {
-    var request = client.from('profiles').select();
+    var request = client.from('visible_profiles').select();
     final me = currentUser?.id;
     if (me != null) request = request.neq('id', me);
     if (query.trim().isNotEmpty) {
@@ -215,7 +215,7 @@ class Supa {
           (res as List).map((row) => row['follower_id'] as String).toList();
       if (ids.isEmpty) return [];
       final profs =
-          await client.from('profiles').select().filter('id', 'in', ids);
+          await client.from('visible_profiles').select().filter('id', 'in', ids);
       return (profs as List)
           .map((p) => Profile.fromJson(p as Map<String, dynamic>))
           .toList();
@@ -234,7 +234,7 @@ class Supa {
           (res as List).map((row) => row['followed_id'] as String).toList();
       if (ids.isEmpty) return [];
       final profs =
-          await client.from('profiles').select().filter('id', 'in', ids);
+          await client.from('visible_profiles').select().filter('id', 'in', ids);
       return (profs as List)
           .map((p) => Profile.fromJson(p as Map<String, dynamic>))
           .toList();
@@ -276,7 +276,7 @@ class Supa {
           final profilesMap = <String, Map<String, dynamic>>{};
           if (userIds.isNotEmpty) {
             final profs =
-                await client.from('profiles').select().filter('id', 'in', userIds);
+                await client.from('visible_profiles').select().filter('id', 'in', userIds);
             for (final p in profs as List) {
               profilesMap[p['id'] as String] = p as Map<String, dynamic>;
             }
@@ -703,5 +703,64 @@ class Supa {
   static void unsubscribeTyping(String conversationId) {
     final channel = _typingChannels.remove(conversationId);
     if (channel != null) client.removeChannel(channel);
+  }
+
+  // Presence / last seen
+
+  /// Returns true if [userId] is currently online (last_seen_at within 2 min
+  /// and statusVisibility is not 'nobody').
+  static Future<bool> isPeerOnline(String userId) async {
+    final result = await _fetchPresence(userId);
+    return result == 'online';
+  }
+
+  /// Streams a human-readable presence string for [userId] every 30 seconds.
+  /// Returns null when the user has opted out (statusVisibility == 'nobody'),
+  /// or 'online' / 'last seen …' otherwise.
+  /// The current user's own statusVisibility is NOT applied here — the peer's
+  /// preference is what controls visibility for everyone else.
+  static Stream<String?> watchPeerPresence(String userId) async* {
+    yield await _fetchPresence(userId);
+    yield* Stream.periodic(const Duration(seconds: 30))
+        .asyncMap((_) => _fetchPresence(userId));
+  }
+
+  static Future<String?> _fetchPresence(String userId) async {
+    try {
+      final row = await client
+          .from('visible_profiles')
+          .select('last_seen_at, status_visibility')
+          .eq('id', userId)
+          .single();
+      final visibility = row['status_visibility'] as String? ?? 'everyone';
+      if (visibility == 'nobody') return null;
+      // 'contacts' — peer is a DM contact if a conversation exists; treat as
+      // visible for simplicity (full enforcement requires server-side check).
+      final raw = row['last_seen_at'] as String?;
+      if (raw == null) return null;
+      final lastSeen = DateTime.parse(raw).toLocal();
+      return formatLastSeen(lastSeen);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Returns 'online' if [lastSeen] is within the last 2 minutes, otherwise
+  /// a human-readable "last seen …" string.
+  static String formatLastSeen(DateTime lastSeen) {
+    final diff = DateTime.now().difference(lastSeen);
+    if (diff.inMinutes < 2) return 'online';
+    if (diff.inMinutes < 60) return 'last seen ${diff.inMinutes}m ago';
+    if (diff.inHours < 24) {
+      final h = lastSeen.hour == 0
+          ? 12
+          : (lastSeen.hour > 12 ? lastSeen.hour - 12 : lastSeen.hour);
+      final m = lastSeen.minute.toString().padLeft(2, '0');
+      final ap = lastSeen.hour >= 12 ? 'PM' : 'AM';
+      return 'last seen today at $h:$m $ap';
+    }
+    if (diff.inDays == 1) return 'last seen yesterday';
+    if (diff.inDays < 7) return 'last seen ${diff.inDays} days ago';
+    return 'last seen ${lastSeen.day}/${lastSeen.month}/${lastSeen.year}';
   }
 }

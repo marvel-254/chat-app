@@ -1358,10 +1358,19 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                           onTap: conv.peerId != null
                               ? () => context.push('/profile/${conv.peerId}')
                               : null,
-                          child: _Avatar(
-                              name: conv.peerInitial,
-                              url: conv.peerAvatarUrl,
-                              size: 46),
+                          child: conv.peerId != null
+                              ? FutureBuilder<bool>(
+                                  future: Supa.isPeerOnline(conv.peerId!),
+                                  builder: (_, snap) => _Avatar(
+                                      name: conv.peerInitial,
+                                      url: conv.peerAvatarUrl,
+                                      size: 46,
+                                      showOnlineDot: snap.data == true),
+                                )
+                              : _Avatar(
+                                  name: conv.peerInitial,
+                                  url: conv.peerAvatarUrl,
+                                  size: 46),
                         ),
                         title: Text(
                           conv.peerLabel,
@@ -1487,6 +1496,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Duration? _messageExpiry;
   bool _pinnedBannerDismissed = false;
   int _pinnedBannerIndex = 0;
+  bool _peerIsOnline = false;
+  StreamSubscription<String?>? _presenceSub;
 
   String _expiryLabel(Duration value) => switch (value.inDays) {
         1 => '24 hours',
@@ -1668,12 +1679,19 @@ class _ChatScreenState extends State<ChatScreen> {
         .firstOrNull?['user_id'] as String?;
     if (uid == null) return;
     final profile = await Supa.getProfile(uid);
-    if (mounted) setState(() => _peer = profile);
+    if (mounted) {
+      setState(() => _peer = profile);
+      _presenceSub?.cancel();
+      _presenceSub = Supa.watchPeerPresence(uid).listen((presence) {
+        if (mounted) setState(() => _peerIsOnline = presence == 'online');
+      });
+    }
   }
 
   @override
   void dispose() {
     Supa.unsubscribeTyping(widget.conversationId);
+    _presenceSub?.cancel();
     _ctrl.dispose();
     _scroll.dispose();
     _typingTimer?.cancel();
@@ -2008,6 +2026,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   name: _peer?.peerInitial ?? '?',
                   url: _peer?.avatarUrl,
                   size: 38,
+                  showOnlineDot: _peerIsOnline,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -2024,18 +2043,64 @@ class _ChatScreenState extends State<ChatScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      Text(
-                        _peerTyping != null
-                            ? 'typing…'
-                            : (_peer == null
-                                ? 'Direct message'
-                                : '@${_peer!.username}'),
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: _peerTyping != null ? _P.primary : _P.muted),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      if (_peerTyping != null)
+                        Text(
+                          'typing…',
+                          style: const TextStyle(
+                              fontSize: 12, color: _P.primary),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        )
+                      else if (_peer != null)
+                        StreamBuilder<String?>(
+                          key: ValueKey(_peer!.id),
+                          stream: Supa.watchPeerPresence(_peer!.id),
+                          builder: (_, snap) {
+                            final presence = snap.data;
+                            final isOnline = presence == 'online';
+                            return Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (isOnline) ...[
+                                  Container(
+                                    width: 7,
+                                    height: 7,
+                                    margin: const EdgeInsets.only(right: 5),
+                                    decoration: BoxDecoration(
+                                      color: _P.success,
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: _P.success
+                                              .withValues(alpha: 0.5),
+                                          blurRadius: 4,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                                Flexible(
+                                  child: Text(
+                                    presence ?? '@${_peer!.username}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: isOnline ? _P.success : _P.muted,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        )
+                      else
+                        Text(
+                          'Direct message',
+                          style: TextStyle(fontSize: 12, color: _P.muted),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                     ],
                   ),
                 ),
@@ -2323,6 +2388,101 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({this.peerName, this.onSayHello});
+  final String? peerName;
+  final VoidCallback? onSayHello;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: _P.surface,
+                shape: BoxShape.circle,
+                border: Border.all(color: _P.border),
+              ),
+              child: const Center(
+                child: Icon(Icons.waving_hand_outlined,
+                    color: _P.primary, size: 36),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              peerName != null ? 'Say hello to $peerName!' : 'No messages yet',
+              style: const TextStyle(
+                color: _P.text,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Break the ice with a message or a quick wave.',
+              style: TextStyle(color: _P.muted, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+            if (onSayHello != null) ...[
+              const SizedBox(height: 18),
+              FilledButton.tonalIcon(
+                onPressed: onSayHello,
+                style: FilledButton.styleFrom(
+                  backgroundColor: _P.surfaceHigh,
+                  foregroundColor: _P.text,
+                ),
+                icon: const Text('👋', style: TextStyle(fontSize: 16)),
+                label: const Text('Wave hello',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorState extends StatelessWidget {
+  const _ErrorState({required this.message, required this.onRetry});
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off, color: _P.muted, size: 48),
+            const SizedBox(height: 12),
+            Text(message,
+                style: const TextStyle(
+                    color: _P.text,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 20),
+            OutlinedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -2797,14 +2957,16 @@ class _Composer extends StatelessWidget {
 }
 
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.name, this.size = 44, this.url});
+  const _Avatar(
+      {required this.name, this.size = 44, this.url, this.showOnlineDot = false});
   final String name;
   final double size;
   final String? url;
+  final bool showOnlineDot;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final avatar = Container(
       width: size,
       height: size,
       alignment: Alignment.center,
@@ -2833,6 +2995,38 @@ class _Avatar extends StatelessWidget {
                               color: Colors.white,
                               fontSize: size * 0.4,
                               fontWeight: FontWeight.w600))))),
+    );
+
+    if (!showOnlineDot) return avatar;
+
+    // Dot size scales with avatar: ~22% of avatar diameter, min 8, max 14.
+    final dotSize = (size * 0.22).clamp(8.0, 14.0);
+    final borderWidth = (dotSize * 0.22).clamp(1.5, 2.5);
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        avatar,
+        Positioned(
+          right: 0,
+          bottom: 0,
+          child: Container(
+            width: dotSize,
+            height: dotSize,
+            decoration: BoxDecoration(
+              color: _P.success,
+              shape: BoxShape.circle,
+              border: Border.all(color: _P.bg, width: borderWidth),
+              boxShadow: [
+                BoxShadow(
+                  color: _P.success.withValues(alpha: 0.45),
+                  blurRadius: 5,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -3567,6 +3761,47 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             '@${profile.username}',
             style: TextStyle(color: _P.muted, fontSize: 14),
           ),
+          // Last seen / online indicator
+          if (!isMe) ...[
+            const SizedBox(height: 6),
+            StreamBuilder<String?>(
+              stream: Supa.watchPeerPresence(profile.id),
+              builder: (_, snap) {
+                final presence = snap.data;
+                if (presence == null) return const SizedBox.shrink();
+                final isOnline = presence == 'online';
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      margin: const EdgeInsets.only(right: 5),
+                      decoration: BoxDecoration(
+                        color: isOnline ? _P.success : _P.muted,
+                        shape: BoxShape.circle,
+                        boxShadow: isOnline
+                            ? [
+                                BoxShadow(
+                                  color: _P.success.withValues(alpha: 0.5),
+                                  blurRadius: 4,
+                                ),
+                              ]
+                            : null,
+                      ),
+                    ),
+                    Text(
+                      presence,
+                      style: TextStyle(
+                        color: isOnline ? _P.success : _P.muted,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
           const SizedBox(height: 20),
 
           // ── Follower / following counts ─────────────────────────────────
