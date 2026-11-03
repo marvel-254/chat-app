@@ -12,6 +12,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import 'screens/call_screen.dart';
+import 'screens/status_screen.dart';
 import 'services/supabase.dart';
 import 'services/connection_monitor.dart';
 import 'services/push_notifications.dart';
@@ -170,6 +171,7 @@ final _router = GoRouter(
         builder: (_, __) => const ConversationListScreen()),
     GoRoute(
         path: '/settings', builder: (_, __) => const AccountSettingsScreen()),
+    GoRoute(path: '/status', builder: (_, __) => const StatusScreen()),
     GoRoute(
         path: '/call/:conversationId',
         builder: (_, state) => CallScreen(
@@ -1083,6 +1085,10 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
           ],
         ),
         actions: [
+          IconButton(
+              icon: const Icon(Icons.circle_outlined),
+              tooltip: 'Status',
+              onPressed: () => context.push('/status')),
           IconButton(
               icon: const Icon(Icons.settings_outlined),
               tooltip: 'Settings',
@@ -4599,6 +4605,10 @@ class _NavSidebar extends StatelessWidget {
             icon: Icons.forum_outlined,
             label: 'Chats',
             onTap: () => context.go('/conversations')),
+        _NavItem(
+            icon: Icons.circle_outlined,
+            label: 'Status',
+            onTap: () => context.go('/status')),
         _NavItem(icon: Icons.search, label: 'Discover', onTap: () {}),
         _NavItem(
             icon: Icons.settings_outlined,
