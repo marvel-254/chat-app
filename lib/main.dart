@@ -16,6 +16,13 @@ import 'screens/status_screen.dart';
 import 'services/supabase.dart';
 import 'services/connection_monitor.dart';
 import 'services/push_notifications.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/update_logic.dart';
+import 'services/update_service.dart';
+import 'services/apk_installer.dart';
+import 'ui/update_dialogs.dart';
 import 'models/profile.dart';
 import 'ui/states.dart';
 
@@ -157,7 +164,10 @@ class BackendConfigurationApp extends StatelessWidget {
   }
 }
 
+final _navigatorKey = GlobalKey<NavigatorState>();
+
 final _router = GoRouter(
+  navigatorKey: _navigatorKey,
   initialLocation: '/',
   routes: [
     GoRoute(path: '/', builder: (_, __) => const AuthGate()),
@@ -210,6 +220,19 @@ class BroApp extends StatefulWidget {
 }
 
 class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
+  /// _updater is lazy so `initState` stays fast on first frame and the
+  /// throttled network check happens off the critical path.
+  AppUpdater? _updater;
+  bool _updateCheckPending = false;
+
+  Future<void> _ensureUpdater() async {
+    if (_updater != null) return;
+    _updater = AppUpdater(
+      installer: ApkInstaller(),
+      now: DateTime.now,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -218,6 +241,7 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
     PushNotifications.setOpenHandler(
       (conversationId) => _router.go('/chat/$conversationId'),
     );
+    unawaited(_maybeCheckForUpdates());
   }
 
   @override
@@ -231,6 +255,55 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(Supa.recordLastSeen());
+      unawaited(_maybeCheckForUpdates());
+    }
+  }
+
+  Future<void> _maybeCheckForUpdates() async {
+    if (_updateCheckPending) return;
+    _updateCheckPending = true;
+    try {
+      await _ensureUpdater();
+      final packageInfo = await PackageInfo.fromPlatform();
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      final installedVersion = int.tryParse(packageInfo.buildNumber) ?? 0;
+      final abi = AppUpdater.abiForName(androidInfo.supportedAbis.firstOrNull);
+      final prefs = UpdatePreferences(await SharedPreferences.getInstance());
+
+      final (outcome, release) = await _updater!.checkForUpdates(
+        repo: 'marvel-254/chat-app',
+        installedVersionCode: installedVersion,
+        prefs: prefs,
+      );
+
+      if (outcome == CheckOutcome.update && release != null) {
+        final asset = release.selectFor(abi ?? ApkAbi.arm64V8a);
+        if (asset != null) {
+          final context = _navigatorKey.currentContext;
+          if (context != null && context.mounted) {
+            await showUpdateFlow(
+              context,
+              release: release,
+              asset: asset,
+              priority: release.mandatory
+                  ? UpdatePriority.mandatory
+                  : UpdatePriority.optional,
+              onDownload: (onProgress) => _updater!.download(
+                release,
+                asset,
+                onProgress: onProgress,
+              ),
+              onInstall: () async =>
+                  _updater!.installDownloaded(await UpdateStorage.updateFile(asset.name)),
+              onPostpone: () => prefs.postponeUntil(release.versionCode),
+            );
+          }
+        }
+      }
+    } catch (_) {
+      // Background check failure is silent.
+    } finally {
+      _updateCheckPending = false;
     }
   }
 

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Downloads land under the app documents dir (-> filesDir). Share the
+         update subdirectory so the system installer can read the APK. -->
+    <files-path name="updates" path="updates/" />
+</paths>
