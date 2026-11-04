@@ -26,6 +26,8 @@ import 'ui/update_dialogs.dart';
 import 'models/profile.dart';
 import 'ui/states.dart';
 
+import 'theme.dart' as theme;
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
@@ -55,29 +57,6 @@ void main() async {
 /// (build-apk.yml / pages.yml). Empty in local/debug builds.
 const buildNumber = String.fromEnvironment('BUILD_NUMBER');
 
-const _bg = Color(0xFF121318);
-const _surface = Color(0xFF1E1F25);
-const _surfaceHigh = Color(0xFF292A2F);
-const _surfaceLow = Color(0xFF0D0E13);
-const _border = Color(0xFF444932);
-const _text = Color(0xFFE3E1E9);
-const _muted = Color(0xFFC5C9AC);
-const _success = Color(0xFF22C55E);
-
-// Electric Street accents
-const _volt = Color(0xFFD4FF00); // primary accent (lime)
-const _darkOnVolt = Color(0xFF0C0D12); // text on lime accents
-
-const _adaptiveBreakpoint = 600.0;
-
-const _chatBackgroundOptions = <(String, String, List<Color>)>[
-  ('default', 'Night', [_bg, _surfaceLow]),
-  ('ocean', 'Ocean', [Color(0xFF102438), Color(0xFF0D1724)]),
-  ('forest', 'Forest', [Color(0xFF142A24), Color(0xFF0E1B19)]),
-  ('plum', 'Plum', [Color(0xFF2A1D35), Color(0xFF191521)]),
-  ('ember', 'Ember', [Color(0xFF34221B), Color(0xFF1D1715)]),
-];
-
 BoxDecoration _chatCanvas(String name, {String? imageUrl}) {
   if (imageUrl != null) {
     return BoxDecoration(
@@ -88,8 +67,8 @@ BoxDecoration _chatCanvas(String name, {String? imageUrl}) {
           Colors.black.withValues(alpha: 0.28), BlendMode.darken),
     ));
   }
-  final option = _chatBackgroundOptions.firstWhere((entry) => entry.$1 == name,
-      orElse: () => _chatBackgroundOptions.first);
+  final option = theme.chatBackgroundOptions.firstWhere((entry) => entry.$1 == name,
+      orElse: () => theme.chatBackgroundOptions.first);
   return BoxDecoration(
       gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -98,17 +77,18 @@ BoxDecoration _chatCanvas(String name, {String? imageUrl}) {
 }
 
 class _P {
-  static const bg = _bg;
-  static const surface = _surface;
-  static const surfaceHigh = _surfaceHigh;
-  static const surfaceLow = _surfaceLow;
-  static const border = _border;
-  static const text = _text;
-  static const muted = _muted;
-  static const success = _success;
-  static const primary = _volt;
-  static const darkOnAccent = _darkOnVolt;
+  static const bg = theme.bg;
+  static const surface = theme.surface;
+  static const surfaceHigh = theme.surfaceHigh;
+  static const surfaceLow = theme.surfaceLow;
+  static const border = theme.border;
+  static const text = theme.text;
+  static const muted = theme.muted;
+  static const success = theme.success;
+  static const primary = theme.primary;
+  static const darkOnAccent = theme.darkOnPrimary;
 }
+
 
 class BackendConfigurationApp extends StatelessWidget {
   const BackendConfigurationApp({super.key});
@@ -266,7 +246,11 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
       await _ensureUpdater();
       final packageInfo = await PackageInfo.fromPlatform();
       final androidInfo = await DeviceInfoPlugin().androidInfo;
-      final installedVersion = int.tryParse(packageInfo.buildNumber) ?? 0;
+      // Use BUILD_NUMBER dart-define (injected at CI build) as the version code.
+      // Falls back to packageInfo.buildNumber (Android manifest versionCode) if unset.
+      final installedVersion = buildNumber.isNotEmpty
+          ? int.tryParse(buildNumber) ?? 0
+          : int.tryParse(packageInfo.buildNumber) ?? 0;
       final abi = AppUpdater.abiForName(androidInfo.supportedAbis.firstOrNull);
       final prefs = UpdatePreferences(await SharedPreferences.getInstance());
 
@@ -296,6 +280,7 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
               onInstall: () async =>
                   _updater!.installDownloaded(await UpdateStorage.updateFile(asset.name)),
               onPostpone: () => prefs.postponeUntil(release.versionCode),
+              installer: ApkInstaller(),
             );
           }
         }
@@ -495,7 +480,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final darkOnAccent = _P.darkOnAccent;
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(color: _bg),
+        decoration: BoxDecoration(color: theme.bg),
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -1226,7 +1211,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          if (constraints.maxWidth > _adaptiveBreakpoint) {
+          if (constraints.maxWidth > theme.adaptiveBreakpoint) {
             return _buildLargeScreenLayout(context);
           } else {
             return _buildSmallScreenLayout(context);
@@ -2291,7 +2276,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          if (constraints.maxWidth > _adaptiveBreakpoint) {
+          if (constraints.maxWidth > theme.adaptiveBreakpoint) {
             return _buildLargeScreenChat(context);
           } else {
             return _buildSmallScreenChat(context);
@@ -3144,7 +3129,7 @@ class _Avatar extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-            colors: [_bg, _surfaceHigh],
+            colors: [theme.bg, theme.surfaceHigh],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight),
         shape: BoxShape.circle,
@@ -3529,7 +3514,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                           color: _P.muted, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 10),
                   Wrap(spacing: 10, runSpacing: 10, children: [
-                    for (final option in _chatBackgroundOptions)
+                    for (final option in theme.chatBackgroundOptions)
                       InkWell(
                         borderRadius: BorderRadius.circular(14),
                         onTap: () =>
