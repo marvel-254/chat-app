@@ -2,18 +2,19 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/profile.dart';
 import '../services/supabase.dart';
+import '../theme.dart' as theme;
 
-/// Local palette matching main.dart _SP (private, not importable).
+/// Palette from shared theme.dart.
 class _SP {
-  static const bg = Color(0xFF121318);
-  static const surface = Color(0xFF1E1F25);
-  static const surfaceHigh = Color(0xFF292A2F);
-  static const surfaceLow = Color(0xFF0D0E13);
-  static const border = Color(0xFF444932);
-  static const text = Color(0xFFE3E1E9);
-  static const muted = Color(0xFFC5C9AC);
-  static const primary = Color(0xFFD4FF00);
-  static const darkOnAccent = Color(0xFF0C0D12);
+  static const bg = theme.bg;
+  static const surface = theme.surface;
+  static const surfaceHigh = theme.surfaceHigh;
+  static const surfaceLow = theme.surfaceLow;
+  static const border = theme.border;
+  static const text = theme.text;
+  static const muted = theme.muted;
+  static const primary = theme.primary;
+  static const darkOnAccent = theme.darkOnPrimary;
 }
 
 /// Status screen showing personal and contacts' status updates.

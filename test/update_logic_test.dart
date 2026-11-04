@@ -42,7 +42,6 @@ void main() {
       name: 'app-arm64-v8a-release.apk',
       url: 'https://example.com/a.apk',
       sizeBytes: 5 * 1024 * 1024,
-      sha256: 'abc',
     );
 
     test('sizeLabel formats MB', () {
@@ -54,14 +53,12 @@ void main() {
         name: 'a.apk',
         url: 'u',
         sizeBytes: 512,
-        sha256: '',
       );
       expect(k.sizeLabel, '512 B');
       const kb = ApkAsset(
         name: 'a.apk',
         url: 'u',
         sizeBytes: 1024,
-        sha256: '',
       );
       expect(kb.sizeLabel, '1 KB');
     });
@@ -71,15 +68,8 @@ void main() {
         name: 'a.apk',
         url: 'u',
         sizeBytes: 0,
-        sha256: '',
       );
       expect(z.sizeLabel, 'unknown size');
-    });
-
-    test('hasChecksum reflects sha256 presence', () {
-      expect(asset.hasChecksum, isTrue);
-      const none = ApkAsset(name: 'a.apk', url: 'u', sizeBytes: 1, sha256: '');
-      expect(none.hasChecksum, isFalse);
     });
   });
 
@@ -89,19 +79,16 @@ void main() {
             name: 'app-arm64-v8a-release.apk',
             url: 'https://e/arm64',
             sizeBytes: 100,
-            sha256: '',
           ),
           ApkAsset(
             name: 'app-armeabi-v7a-release.apk',
             url: 'https://e/armv7',
             sizeBytes: 90,
-            sha256: '',
           ),
           ApkAsset(
             name: 'app-x86_64-release.apk',
             url: 'https://e/x86',
             sizeBytes: 80,
-            sha256: '',
           ),
         ];
 
@@ -125,7 +112,7 @@ void main() {
 
     test('falls back to an untagged universal APK', () {
       const universal = [
-        ApkAsset(name: 'app-release.apk', url: 'https://e/u', sizeBytes: 1, sha256: ''),
+        ApkAsset(name: 'app-release.apk', url: 'https://e/u', sizeBytes: 1),
       ];
       final selected = ApkSelector.select(universal, ApkAbi.arm64V8a);
       expect(selected, isNotNull);
@@ -135,7 +122,7 @@ void main() {
     test('prefers exact ABI over untagged fallback', () {
       final mixed = [
         const ApkAsset(
-            name: 'app-release.apk', url: 'https://e/u', sizeBytes: 1, sha256: ''),
+            name: 'app-release.apk', url: 'https://e/u', sizeBytes: 1),
         ...assets(),
       ];
       final selected = ApkSelector.select(mixed, ApkAbi.x8664);
@@ -159,7 +146,6 @@ void main() {
             name: 'app-arm64-v8a-release.apk',
             url: 'https://e/arm64',
             sizeBytes: 100,
-            sha256: '',
           ),
         ],
         mandatory: false,

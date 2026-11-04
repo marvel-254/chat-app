@@ -19,4 +19,12 @@ class ApkInstaller implements Installer {
   }
 
   static const _channel = MethodChannel('brotools/updater');
+
+  Future<bool> canRequestPackageInstalls() async {
+    return await _channel.invokeMethod<bool>('canRequestPackageInstalls') ?? false;
+  }
+
+  Future<void> openInstallSettings() async {
+    await _channel.invokeMethod<void>('openInstallSettings');
+  }
 }

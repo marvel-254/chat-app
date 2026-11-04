@@ -4,7 +4,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
-import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -31,8 +30,6 @@ class UpdateException implements Exception {
 
 const networkFailure =
     UpdateException('network', 'Could not reach the update server');
-const checksumMismatch =
-    UpdateException('checksum', 'Downloaded APK failed checksum verification');
 const insufficientStorage =
     UpdateException('storage', 'Not enough free space for the update');
 const installUnavailable =
@@ -44,9 +41,6 @@ const malformedManifest =
 
 /// How long before the next background update check is allowed.
 const defaultCheckThrottle = Duration(hours: 6);
-
-/// sha256 of [bytes] as lowercase hex.
-String sha256Hex(List<int> bytes) => sha256.convert(bytes).toString();
 
 /// SharedPreferences-backed throttle + postpone state.
 class UpdatePreferences {
@@ -173,7 +167,6 @@ Future<File> downloadApk(
   String url, {
   required File file,
   required void Function(double progress) onProgress,
-  String? expectedSha256,
   http.Client? client,
   int Function()? freeBytes,
   Future<ManifestInfo?> Function(File)? verifyManifest,
@@ -203,10 +196,6 @@ Future<File> downloadApk(
     await sink.close();
     if (total > 0) onProgress(1.0);
 
-    if (expectedSha256 != null && expectedSha256.isNotEmpty) {
-      final actual = sha256Hex(await file.readAsBytes());
-      if (actual != expectedSha256) throw checksumMismatch;
-    }
     if (verifyManifest != null) {
       final manifest = await verifyManifest(file);
       if (manifest?.versionCode == null) throw malformedManifest;
@@ -328,7 +317,6 @@ class AppUpdater {
       asset.url,
       file: file,
       onProgress: onProgress,
-      expectedSha256: asset.sha256,
       client: httpClient,
       freeBytes: freeBytes,
       verifyManifest: (f) => readApkManifest(f),

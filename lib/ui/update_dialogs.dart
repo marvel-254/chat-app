@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/update_logic.dart';
 import '../services/update_service.dart';
+import '../services/apk_installer.dart';
 
 /// The stage the update dialog is currently showing.
 enum _Phase {
@@ -10,9 +11,6 @@ enum _Phase {
 
   /// Downloading the APK with a live progress bar.
   downloading,
-
-  /// Checksum verification of the completed download.
-  verifying,
 
   /// A download/install failure with a Retry action.
   failed,
@@ -38,6 +36,7 @@ Future<void> showUpdateFlow(
   required Future<void> Function(void Function(double) onProgress) onDownload,
   required Future<void> Function() onInstall,
   Future<void> Function()? onPostpone,
+  required ApkInstaller installer,
 }) {
   return showDialog<void>(
     context: context,
@@ -49,6 +48,7 @@ Future<void> showUpdateFlow(
       onDownload: onDownload,
       onInstall: onInstall,
       onPostpone: onPostpone,
+      installer: installer,
     ),
   );
 }
@@ -64,6 +64,7 @@ class UpdateFlowDialog extends StatefulWidget {
     required this.onDownload,
     required this.onInstall,
     this.onPostpone,
+    required this.installer,
   });
 
   final ReleaseInfo release;
@@ -81,6 +82,8 @@ class UpdateFlowDialog extends StatefulWidget {
 
   /// Persists "remind me later" for this release (optional updates only).
   final Future<void> Function()? onPostpone;
+
+  final ApkInstaller installer;
 
   @override
   State<UpdateFlowDialog> createState() => _UpdateFlowDialogState();
@@ -103,12 +106,6 @@ class _UpdateFlowDialogState extends State<UpdateFlowDialog> {
       await widget.onDownload((p) {
         if (mounted) setState(() => _progress = p);
       });
-      if (!mounted) return;
-      // The checksum ran inside onDownload and already passed; hold the
-      // integrity state briefly so the verification step is visible instead
-      // of a silent blink straight into the install screen.
-      setState(() => _phase = _Phase.verifying);
-      await Future<void>.delayed(const Duration(milliseconds: 450));
       if (!mounted) return;
       setState(() => _phase = _Phase.explaining);
     } on UpdateException catch (e) {
@@ -193,7 +190,6 @@ class _UpdateFlowDialogState extends State<UpdateFlowDialog> {
   IconData _phaseIcon(ColorScheme scheme) => switch (_phase) {
         _Phase.prompt => Icons.system_update_alt,
         _Phase.downloading => Icons.downloading,
-        _Phase.verifying => Icons.verified_outlined,
         _Phase.failed => Icons.error_outline,
         _Phase.explaining => Icons.security_outlined,
         _Phase.installing => Icons.android,
@@ -202,7 +198,6 @@ class _UpdateFlowDialogState extends State<UpdateFlowDialog> {
   String _phaseTitle(ColorScheme scheme) => switch (_phase) {
         _Phase.prompt => _mandatory ? 'Update required' : 'Update available',
         _Phase.downloading => 'Downloading update…',
-        _Phase.verifying => 'Verifying update',
         _Phase.failed => 'Update failed',
         _Phase.explaining => 'Ready to install',
         _Phase.installing => 'Installing…',
@@ -265,23 +260,6 @@ class _UpdateFlowDialogState extends State<UpdateFlowDialog> {
             Text(
               '${widget.asset.sizeLabel} · this can take a minute',
               style: TextStyle(color: muted, fontSize: 12),
-            ),
-          ],
-        );
-      case _Phase.verifying:
-        return Row(
-          children: [
-            const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2.5),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(
-                'Checking the download matches the official build…',
-                style: TextStyle(color: muted, fontSize: 14),
-              ),
             ),
           ],
         );
@@ -382,7 +360,6 @@ class _UpdateFlowDialogState extends State<UpdateFlowDialog> {
           ),
         ];
       case _Phase.downloading:
-      case _Phase.verifying:
       case _Phase.installing:
         return const [];
       case _Phase.failed:
@@ -400,6 +377,16 @@ class _UpdateFlowDialogState extends State<UpdateFlowDialog> {
         ];
       case _Phase.explaining:
         return [
+          TextButton(
+            onPressed: () async {
+              if (await widget.installer.canRequestPackageInstalls()) {
+                await _install();
+              } else {
+                await widget.installer.openInstallSettings();
+              }
+            },
+            child: const Text('Settings'),
+          ),
           FilledButton.icon(
             onPressed: _install,
             icon: const Icon(Icons.install_mobile, size: 18),

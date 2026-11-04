@@ -46,13 +46,6 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  group('sha256Hex', () {
-    test('produces the known SHA-256 of "abc"', () {
-      expect(sha256Hex(utf8.encode('abc')),
-          'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
-    });
-  });
-
   group('UpdatePreferences', () {
     test('defaults to no check time and no postponed version', () async {
       final prefs = UpdatePreferences(await SharedPreferences.getInstance());
@@ -321,34 +314,6 @@ void main() {
               .having((e) => e.kind, 'kind', 'network')));
     });
 
-    test('throws checksumMismatch when the hash does not match', () async {
-      final client =
-          MockClient((req) async => http.Response('hello', 200));
-      file.writeAsBytesSync([1, 2, 3, 4, 5]);
-      expect(
-          () => downloadApk('https://e/a.apk',
-              file: file,
-              onProgress: (_) {},
-              client: client,
-              expectedSha256: 'deadbeef'),
-          throwsA(isA<UpdateException>()
-              .having((e) => e.kind, 'kind', 'checksum')));
-    });
-
-    test('accepts a matching checksum', () async {
-      final body = 'same-bytes';
-      final client =
-          MockClient((req) async => http.Response(body, 200));
-      final result = await downloadApk(
-        'https://e/a.apk',
-        file: file,
-        onProgress: (_) {},
-        client: client,
-        expectedSha256: sha256Hex(utf8.encode(body)),
-      );
-      expect(result, same(file));
-    });
-
     test('throws insufficientStorage when free space runs out', () async {
       final client =
           MockClient((req) async => http.Response('a' * 64, 200));
@@ -415,7 +380,6 @@ void main() {
             name: 'app-arm64-v8a-release.apk',
             url: 'https://e/a.apk',
             sizeBytes: body.length,
-            sha256: '',
           ),
         ],
         mandatory: false,

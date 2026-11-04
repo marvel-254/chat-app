@@ -46,15 +46,11 @@ class ApkAsset {
     required this.name,
     required this.url,
     required this.sizeBytes,
-    required this.sha256,
   });
 
   final String name;
   final String url;
   final int sizeBytes;
-  final String sha256;
-
-  bool get hasChecksum => sha256.isNotEmpty;
 
   /// Human-friendly size, e.g. `12.5 MB`.
   String get sizeLabel {
@@ -108,7 +104,6 @@ class ApkAssetParser {
         name: name,
         url: url,
         sizeBytes: size is int && size > 0 ? size : 0,
-        sha256: '', // populated by the updater from the release body.
       ));
     }
     return out;

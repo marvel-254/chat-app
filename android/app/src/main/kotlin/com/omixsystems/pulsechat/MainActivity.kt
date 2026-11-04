@@ -1,7 +1,6 @@
 package com.omixsystems.pulsechat
 
-import android.content.Intent
-import android.net.Uri
+import android.provider.Settings
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -15,31 +14,42 @@ class MainActivity : FlutterActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             "brotools/updater",
         ).setMethodCallHandler { call, result ->
-            if (call.method == "installApk") {
-                val path = call.argument<String>("path")
-                if (path == null || !File(path).exists()) {
-                    result.error("invalid_path", "APK not found", null)
-                    return@setMethodCallHandler
+            when (call.method) {
+                "canRequestPackageInstalls" -> {
+                    result.success(packageManager.canRequestPackageInstalls())
                 }
-                try {
-                    val apk = File(path)
-                    val uri = FileProvider.getUriForFile(
-                        this,
-                        "$packageName.fileprovider",
-                        apk,
-                    )
-                    val intent = Intent(Intent.ACTION_VIEW).apply {
-                        setDataAndType(uri, "application/vnd.android.package-archive")
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                "openInstallSettings" -> {
+                    val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                        data = Uri.parse("package:$packageName")
                     }
                     startActivity(intent)
                     result.success(null)
-                } catch (e: Exception) {
-                    result.error("install_failed", e.message, null)
                 }
-            } else {
-                result.notImplemented()
+                "installApk" -> {
+                    val path = call.argument<String>("path")
+                    if (path == null || !File(path).exists()) {
+                        result.error("invalid_path", "APK not found", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val apk = File(path)
+                        val uri = FileProvider.getUriForFile(
+                            this,
+                            "$packageName.fileprovider",
+                            apk,
+                        )
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, "application/vnd.android.package-archive")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(intent)
+                        result.success(null)
+                    } catch (e: Exception) {
+                        result.error("install_failed", e.message, null)
+                    }
+                }
+                else -> result.notImplemented()
             }
         }
     }
