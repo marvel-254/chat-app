@@ -4,7 +4,7 @@ This guide describes the app, its backend, local development, and release proces
 
 ## Architecture
 
-- **Client:** Flutter 3.47.7. `lib/main.dart` contains the app routes and screens; `lib/services/supabase.dart` wraps authentication, profiles, conversations, messaging, and storage; `lib/services/push_notifications.dart` handles Firebase Messaging registration and received notifications; `lib/screens/call_screen.dart` implements the call experience.
+- **Client:** Flutter 3.47.7. `lib/main.dart` contains the app routes and screens; `lib/services/supabase.dart` wraps authentication, profiles, conversations, messaging, and storage; `lib/services/push_notifications.dart` handles Firebase Messaging registration and received notifications; `lib/services/connection_monitor.dart` publishes a debounced online/offline signal from connectivity_plus; `lib/ui/states.dart` holds the shared empty/error/loading/offline widgets; `lib/screens/call_screen.dart` implements the call experience.
 - **Authentication and data:** Supabase Auth, Postgres, and Realtime. User and conversation data are protected by row-level security and database functions/policies.
 - **Object storage:** Avatars remain in Supabase Storage. Chat files and custom chat backgrounds use a private Cloudflare R2 bucket through a Cloudflare Worker. Supabase hosted Storage cannot be directly redirected to R2, so the Worker is the authenticated bridge.
 - **Platforms:** Android, iOS, and Web. The repository’s automated release workflow builds Android APKs; Pages builds the web app.
@@ -89,3 +89,53 @@ After pushing, check the repository’s Actions page for all three runs. The rel
 - WebRTC calls currently have no TURN relay. Configure one before relying on calls across restrictive mobile, office, or carrier networks.
 - The app uses an expiring download URL, so a shared link can be opened by its holder until it expires. Keep the expiry short if the threat model changes.
 - Message notification behavior is platform-specific: Android push is wired; iOS depends on APNs setup; the Flutter web client currently skips FCM until its Web Push VAPID key and service worker are configured.
+
+## Current work status (2026-11-03)
+
+Uncommitted work in progress: a code review was completed against these changes, and the shared-state and connectivity workstreams from the follow-up plan are implemented and verified.
+
+### Completed in this session
+
+- **Code review report:** delivered to the user; findings are listed below as outstanding issues.
+- **Shared state widgets:** `lib/ui/states.dart` provides `AppEmptyState`, `AppErrorState`, `AppLoader` (with an `AppLoader.standard()` factory; call sites therefore drop `const` where a loader is used), `ListSkeleton`, and `BubbleSkeleton`. All widgets derive colors/sizes from the theme; no new dependencies.
+- **Wiring in `lib/main.dart`:** the conversation list shows the loader, an error state ("Failed to load conversations"), or an empty state whose CTA refocuses the profile search; both narrow and wide chat layouts show message skeletons, a "Failed to load messages" error state, or a "Wave hello" empty state that prefills "Hey! 👋" and sends. The old inline `_EmptyState`/`_ErrorState` classes were deleted.
+- **Connectivity monitoring:** `connectivity_plus: ^7.3.2` added to `pubspec.yaml`; `lib/services/connection_monitor.dart` watches the connectivity stream with a 3-second debounce and exposes a static `isOnline` notifier. `ConnectionMonitor.start()` is called on app start and disposed on shutdown; `OfflineBanner` (in `lib/ui/states.dart`) renders as a non-tappable overlay at the top of the screen when offline. The app initializes connection monitoring before the Supabase auth stream so a reload while offline is handled gracefully.
+- **Verification:** `flutter analyze` reports no issues; all three widget tests pass.
+- **Deferred by decision:** offline *queued sends* (compose offline → queue → auto-flush on reconnect) are part of Phase B1, not this workstream; they require `PendingMessage`.
+
+### Outstanding review findings
+
+Blocking:
+
+1. The `conversations` table has no UPDATE RLS policy, so `Supa.setMessageExpiry` and `Supa.getOrCreateDm` writes silently no-op. Fix with a narrow UPDATE policy or a SECURITY DEFINER function.
+2. "Pin message" is offered on peer messages (client-side), but the "Sender updates own message" policy plus the `guard_message_update` trigger reject non-author updates. Gate the client action per-message, or add a SECURITY DEFINER `pin_message()` function (keeping the 5-pin limit).
+3. `Supa.updateProfileDetails` unconditionally writes `default_message_expiry`, so a null value overwrites the stored default with `'0 seconds'`. Make the update map conditional.
+
+Non-blocking:
+
+4. `delete_expired_messages()` is never scheduled; `pg_cron` is not in any migration.
+5. Privacy columns (`photo_visibility`, `status_visibility`, `about_visibility`) are stored but not enforced in `get_conversations_for_user`, `getProfile`, or `record_last_seen`.
+6. The pin call site omits `conversationId`, so the client-side 5-pin guard is skipped.
+7. `last_seen` is recorded on app resume only, not on cold start.
+8. Minor: `watchMessages` re-queries `message_reads` per snapshot via asyncMap; follower counts load all follows instead of using `.count()`; there is no settings UI for `read_receipts_enabled`/`default_message_expiry`; `expires_at` is set with the client clock (skew risk).
+
+### Remaining plan
+
+**Phase B — core chat polish:**
+
+- `lib/models/pending_message.dart`: `localId`, `status` (`sending`/`sent`/`failed`/`queued`), `toOptimisticMessage()`, retry count.
+- `lib/chat/widgets.dart`: `UnreadDivider`, `JumpToBottomButton`, `PendingBubble` (tap-to-retry), `TypingFooterRow`, `FileBubble` (non-image attachments; note the no-comments repo rule applies to all new code except `///` dartdoc on public widgets).
+- `lib/main.dart`: optimistic append in `_send`/`_sendAttachment` with matching by `localId`; unread divider plus jump-to-bottom button when scrolled >400px; typing footer stub.
+- Phase B1: offline queued sends — queue failed/offline sends, auto-flush on reconnect using `ConnectionMonitor.isOnline`.
+- Deferred to Phase C: reply-to, reactions, in-conversation search.
+
+**Phase C — social surfaces:**
+
+- Statuses screen (sidebar entry, story viewer, ring avatars, create flow) using `Supa.createStatus`/`Supa.watchStatuses`.
+- Follow UI using `isFollowing`/`setFollowing` and the follower-count RPC.
+- Settings toggles for read receipts and default message expiry.
+
+### Handoff mechanics
+
+- Local SDK: `/home/marvel/flutter_sdk/bin/flutter`; run analyze/test from the repo root.
+- All work so far is uncommitted; review findings plus the remaining phases describe exactly where to resume.

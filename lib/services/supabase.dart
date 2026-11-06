@@ -92,13 +92,13 @@ class Supa {
   // Profiles
   static Future<Profile?> getProfile(String uid) async {
     final res =
-        await client.from('profiles').select().eq('id', uid).maybeSingle();
+        await client.from('visible_profiles').select().eq('id', uid).maybeSingle();
     return res != null ? Profile.fromJson(res) : null;
   }
 
   static Future<Profile?> getProfileByUsername(String username) async {
     final res = await client
-        .from('profiles')
+        .from('visible_profiles')
         .select()
         .eq('username', username)
         .maybeSingle();
@@ -107,7 +107,7 @@ class Supa {
 
   static Future<List<Profile>> searchUsers(String query,
       {int limit = 20}) async {
-    var request = client.from('profiles').select();
+    var request = client.from('visible_profiles').select();
     final me = currentUser?.id;
     if (me != null) request = request.neq('id', me);
     if (query.trim().isNotEmpty) {
@@ -127,6 +127,201 @@ class Supa {
     }).eq('id', currentUser!.id);
     await client.auth
         .updateUser(UserAttributes(data: {'username': username.trim()}));
+  }
+
+  static Future<void> updateProfileDetails(
+      {required String about,
+      required String photoVisibility,
+      required String statusVisibility,
+      required String aboutVisibility,
+      bool readReceiptsEnabled = true,
+      Duration? defaultMessageExpiry}) async {
+    await client.from('profiles').update({
+      'about': about.trim().isEmpty ? null : about.trim(),
+      'photo_visibility': photoVisibility,
+      'status_visibility': statusVisibility,
+      'about_visibility': aboutVisibility,
+      'read_receipts_enabled': readReceiptsEnabled,
+      'default_message_expiry': defaultMessageExpiry == null ||
+              defaultMessageExpiry == Duration.zero
+          ? '0 seconds'
+          : '${defaultMessageExpiry.inSeconds} seconds',
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    }).eq('id', currentUser!.id);
+  }
+
+  static Future<void> recordLastSeen() async {
+    try {
+      await client.rpc('record_last_seen');
+    } catch (_) {}
+  }
+
+  static Future<bool> isFollowing(String userId) async {
+    final row = await client
+        .from('user_follows')
+        .select('followed_id')
+        .eq('follower_id', currentUser!.id)
+        .eq('followed_id', userId)
+        .maybeSingle();
+    return row != null;
+  }
+
+  static Future<void> setFollowing(String userId, bool follow) async {
+    if (follow) {
+      await client.from('user_follows').upsert(
+          {'follower_id': currentUser!.id, 'followed_id': userId},
+          onConflict: 'follower_id,followed_id',
+          ignoreDuplicates: true);
+    } else {
+      await client
+          .from('user_follows')
+          .delete()
+          .eq('follower_id', currentUser!.id)
+          .eq('followed_id', userId);
+    }
+  }
+
+  static Future<int> getFollowersCount(String userId) async {
+    try {
+      final res = await client
+          .from('user_follows')
+          .select('follower_id')
+          .eq('followed_id', userId);
+      return (res as List).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  static Future<int> getFollowingCount(String userId) async {
+    try {
+      final res = await client
+          .from('user_follows')
+          .select('followed_id')
+          .eq('follower_id', userId);
+      return (res as List).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  static Future<List<Profile>> getFollowers(String userId) async {
+    try {
+      final res = await client
+          .from('user_follows')
+          .select('follower_id')
+          .eq('followed_id', userId);
+      final ids =
+          (res as List).map((row) => row['follower_id'] as String).toList();
+      if (ids.isEmpty) return [];
+      final profs =
+          await client.from('visible_profiles').select().filter('id', 'in', ids);
+      return (profs as List)
+          .map((p) => Profile.fromJson(p as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<List<Profile>> getFollowing(String userId) async {
+    try {
+      final res = await client
+          .from('user_follows')
+          .select('followed_id')
+          .eq('follower_id', userId);
+      final ids =
+          (res as List).map((row) => row['followed_id'] as String).toList();
+      if (ids.isEmpty) return [];
+      final profs =
+          await client.from('visible_profiles').select().filter('id', 'in', ids);
+      return (profs as List)
+          .map((p) => Profile.fromJson(p as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // Statuses
+  static Future<void> createStatus({
+    String? content,
+    String? mediaPath,
+    String? mood,
+    String privacy = 'contacts',
+  }) async {
+    await client.from('statuses').insert({
+      'user_id': currentUser!.id,
+      if (content != null && content.trim().isNotEmpty)
+        'content': content.trim(),
+      if (mediaPath != null) 'media_path': mediaPath,
+      if (mood != null && mood.trim().isNotEmpty) 'mood': mood.trim(),
+      'privacy': privacy,
+    });
+  }
+
+  static Stream<List<StatusPost>> watchStatuses() {
+    return client
+        .from('statuses')
+        .stream(primaryKey: ['id'])
+        .order('created_at', ascending: false)
+        .asyncMap((rows) async {
+          final now = DateTime.now();
+          final activeRows = rows.where((r) {
+            final exp = DateTime.tryParse(r['expires_at'] as String? ?? '');
+            return exp != null && exp.isAfter(now);
+          }).toList();
+          final userIds =
+              activeRows.map((r) => r['user_id'] as String).toSet().toList();
+          final profilesMap = <String, Map<String, dynamic>>{};
+          if (userIds.isNotEmpty) {
+            final profs =
+                await client.from('visible_profiles').select().filter('id', 'in', userIds);
+            for (final p in profs as List) {
+              profilesMap[p['id'] as String] = p as Map<String, dynamic>;
+            }
+          }
+          return activeRows.map((r) {
+            final rowWithProfile = Map<String, dynamic>.from(r);
+            rowWithProfile['profiles'] = profilesMap[r['user_id']];
+            return StatusPost.fromJson(rowWithProfile);
+          }).toList();
+        });
+  }
+
+  static Future<void> deleteStatus(String statusId) async {
+    await client.from('statuses').delete().eq('id', statusId);
+  }
+
+  // Conversation lock
+  static Future<bool> isConversationLocked(String conversationId) async {
+    final me = currentUser;
+    if (me == null) return false;
+    final res = await client
+        .from('conversation_locks')
+        .select('conversation_id')
+        .eq('conversation_id', conversationId)
+        .eq('user_id', me.id)
+        .maybeSingle();
+    return res != null;
+  }
+
+  static Future<void> setConversationLocked(
+      String conversationId, bool locked) async {
+    final me = currentUser;
+    if (me == null) return;
+    if (locked) {
+      await client.from('conversation_locks').upsert({
+        'conversation_id': conversationId,
+        'user_id': me.id,
+      }, onConflict: 'conversation_id,user_id');
+    } else {
+      await client
+          .from('conversation_locks')
+          .delete()
+          .eq('conversation_id', conversationId)
+          .eq('user_id', me.id);
+    }
   }
 
   static Future<void> updateChatBackground(String background,
@@ -247,6 +442,19 @@ class Supa {
     final existing = await client
         .rpc('get_or_create_dm', params: {'my_id': me, 'other_id': otherUid});
     final convId = existing as String;
+
+    try {
+      final myProfile = await getProfile(me);
+      if (myProfile != null &&
+          myProfile.defaultMessageExpiry != null &&
+          myProfile.defaultMessageExpiry! > Duration.zero) {
+        final currentExp = await getMessageExpiry(convId);
+        if (currentExp == null || currentExp == Duration.zero) {
+          await setMessageExpiry(convId, myProfile.defaultMessageExpiry);
+        }
+      }
+    } catch (_) {}
+
     return Conversation(
         id: convId, createdAt: DateTime.now(), updatedAt: DateTime.now());
   }
@@ -265,6 +473,18 @@ class Supa {
             'get_conversations_for_user',
           );
           final rows2 = (res as List).cast<Map<String, dynamic>>();
+
+          final lockedSet = <String>{};
+          try {
+            final locks = await client
+                .from('conversation_locks')
+                .select('conversation_id')
+                .eq('user_id', me);
+            for (final l in locks as List) {
+              lockedSet.add(l['conversation_id'] as String);
+            }
+          } catch (_) {}
+
           return rows2
               .map((r) => Conversation(
                     id: r['conversation_id'] as String,
@@ -279,6 +499,7 @@ class Supa {
                         ? null
                         : DateTime.parse(r['last_message_at'] as String),
                     unreadCount: (r['unread_count'] as num?)?.toInt() ?? 0,
+                    isLocked: lockedSet.contains(r['conversation_id'] as String),
                   ))
               .toList();
         })
@@ -289,14 +510,54 @@ class Supa {
   static Stream<List<Message>> watchMessages(String conversationId) {
     return client
         .from('messages')
-        .stream(primaryKey: ['id'])
+        .stream(
+          primaryKey: ['id'],
+        )
         .eq('conversation_id', conversationId)
         .order('created_at', ascending: true)
-        .map((rows) => rows.map((r) => Message.fromJson(r)).toList());
+        .asyncMap((rows) async {
+          final messageIds = rows.map((r) => r['id'] as String).toList();
+          final readByPeerSet = <String>{};
+          if (messageIds.isNotEmpty && currentUser != null) {
+            try {
+              final reads = await client
+                  .from('message_reads')
+                  .select('message_id')
+                  .filter('message_id', 'in', messageIds)
+                  .neq('user_id', currentUser!.id);
+              for (final row in reads as List) {
+                readByPeerSet.add(row['message_id'] as String);
+              }
+            } catch (_) {}
+          }
+          final now = DateTime.now();
+          return rows
+              .where((r) =>
+                  r['expires_at'] == null ||
+                  DateTime.parse(r['expires_at'] as String).isAfter(now))
+              .map((r) {
+                final id = r['id'] as String;
+                final msg = Message.fromJson(r);
+                return Message(
+                  id: msg.id,
+                  conversationId: msg.conversationId,
+                  senderId: msg.senderId,
+                  content: msg.content,
+                  createdAt: msg.createdAt,
+                  readAt: msg.readAt,
+                  expiresAt: msg.expiresAt,
+                  pinnedAt: msg.pinnedAt,
+                  editedAt: msg.editedAt,
+                  originalContent: msg.originalContent,
+                  readByPeer: readByPeerSet.contains(id) || msg.readAt != null,
+                );
+              })
+              .toList();
+        });
   }
 
-  static Future<Message> sendMessage(
-      String conversationId, String content) async {
+  static Future<Message> sendMessage(String conversationId, String content,
+      {Duration? expiry}) async {
     final me = currentUser!.id;
     final msgId = const Uuid().v4();
     final now = DateTime.now().toIso8601String();
@@ -306,6 +567,8 @@ class Supa {
       'sender_id': me,
       'content': content,
       'created_at': now,
+      if (expiry != null && expiry > Duration.zero)
+        'expires_at': DateTime.now().add(expiry).toUtc().toIso8601String(),
     });
     await client
         .from('conversations')
@@ -320,13 +583,79 @@ class Supa {
   }
 
   static Future<void> markRead(String conversationId, String messageId) async {
-    await client.from('messages').update(
-        {'read_at': DateTime.now().toIso8601String()}).eq('id', messageId);
+    final me = currentUser;
+    if (me != null) {
+      try {
+        final profile = await getProfile(me.id);
+        if (profile == null || profile.readReceiptsEnabled) {
+          await client.from('message_reads').upsert({
+            'message_id': messageId,
+            'user_id': me.id,
+            'read_at': DateTime.now().toUtc().toIso8601String(),
+          }, onConflict: 'message_id,user_id', ignoreDuplicates: true);
+        }
+      } catch (_) {}
+    }
     await client
         .from('conversation_participants')
         .update({'last_read_at': DateTime.now().toIso8601String()})
         .eq('conversation_id', conversationId)
         .eq('user_id', currentUser!.id);
+  }
+
+  static Future<void> updateMessage(String messageId, String content) async {
+    await client
+        .from('messages')
+        .update({'content': content}).eq('id', messageId);
+  }
+
+  static Future<void> setMessagePinned(String messageId, bool pinned,
+      {String? conversationId}) async {
+    if (pinned && conversationId != null) {
+      final res = await client
+          .from('messages')
+          .select('id')
+          .eq('conversation_id', conversationId)
+          .not('pinned_at', 'is', null);
+      if ((res as List).length >= 5) {
+        throw StateError('You can pin up to 5 messages per conversation.');
+      }
+    }
+    await client.from('messages').update({
+      'pinned_at': pinned ? DateTime.now().toUtc().toIso8601String() : null,
+    }).eq('id', messageId);
+  }
+
+  static Future<void> setMessageExpiry(
+      String conversationId, Duration? expiry) async {
+    await client.from('conversations').update({
+      'message_expiry': expiry == null || expiry == Duration.zero
+          ? '0 seconds'
+          : '${expiry.inSeconds} seconds',
+    }).eq('id', conversationId);
+  }
+
+  static Future<Duration?> getMessageExpiry(String conversationId) async {
+    final row = await client
+        .from('conversations')
+        .select('message_expiry')
+        .eq('id', conversationId)
+        .single();
+    final raw = row['message_expiry'] as String? ?? '00:00:00';
+    final days = RegExp(r'(\d+(?:\.\d+)?)\s+days?').firstMatch(raw);
+    if (days != null) {
+      final duration =
+          Duration(seconds: ((double.parse(days.group(1)!) * 86400).round()));
+      return duration == Duration.zero ? null : duration;
+    }
+    final parts = raw.split(':');
+    if (parts.length != 3) return null;
+    final seconds = double.tryParse(parts[2]) ?? 0;
+    final duration = Duration(
+        hours: int.tryParse(parts[0]) ?? 0,
+        minutes: int.tryParse(parts[1]) ?? 0,
+        seconds: seconds.floor());
+    return duration == Duration.zero ? null : duration;
   }
 
   // Realtime typing broadcast.
@@ -374,5 +703,64 @@ class Supa {
   static void unsubscribeTyping(String conversationId) {
     final channel = _typingChannels.remove(conversationId);
     if (channel != null) client.removeChannel(channel);
+  }
+
+  // Presence / last seen
+
+  /// Returns true if [userId] is currently online (last_seen_at within 2 min
+  /// and statusVisibility is not 'nobody').
+  static Future<bool> isPeerOnline(String userId) async {
+    final result = await _fetchPresence(userId);
+    return result == 'online';
+  }
+
+  /// Streams a human-readable presence string for [userId] every 30 seconds.
+  /// Returns null when the user has opted out (statusVisibility == 'nobody'),
+  /// or 'online' / 'last seen …' otherwise.
+  /// The current user's own statusVisibility is NOT applied here — the peer's
+  /// preference is what controls visibility for everyone else.
+  static Stream<String?> watchPeerPresence(String userId) async* {
+    yield await _fetchPresence(userId);
+    yield* Stream.periodic(const Duration(seconds: 30))
+        .asyncMap((_) => _fetchPresence(userId));
+  }
+
+  static Future<String?> _fetchPresence(String userId) async {
+    try {
+      final row = await client
+          .from('visible_profiles')
+          .select('last_seen_at, status_visibility')
+          .eq('id', userId)
+          .single();
+      final visibility = row['status_visibility'] as String? ?? 'everyone';
+      if (visibility == 'nobody') return null;
+      // 'contacts' — peer is a DM contact if a conversation exists; treat as
+      // visible for simplicity (full enforcement requires server-side check).
+      final raw = row['last_seen_at'] as String?;
+      if (raw == null) return null;
+      final lastSeen = DateTime.parse(raw).toLocal();
+      return formatLastSeen(lastSeen);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Returns 'online' if [lastSeen] is within the last 2 minutes, otherwise
+  /// a human-readable "last seen …" string.
+  static String formatLastSeen(DateTime lastSeen) {
+    final diff = DateTime.now().difference(lastSeen);
+    if (diff.inMinutes < 2) return 'online';
+    if (diff.inMinutes < 60) return 'last seen ${diff.inMinutes}m ago';
+    if (diff.inHours < 24) {
+      final h = lastSeen.hour == 0
+          ? 12
+          : (lastSeen.hour > 12 ? lastSeen.hour - 12 : lastSeen.hour);
+      final m = lastSeen.minute.toString().padLeft(2, '0');
+      final ap = lastSeen.hour >= 12 ? 'PM' : 'AM';
+      return 'last seen today at $h:$m $ap';
+    }
+    if (diff.inDays == 1) return 'last seen yesterday';
+    if (diff.inDays < 7) return 'last seen ${diff.inDays} days ago';
+    return 'last seen ${lastSeen.day}/${lastSeen.month}/${lastSeen.year}';
   }
 }
