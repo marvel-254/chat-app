@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/profile.dart';
 import '../ui/states.dart';
-import '../services/supabase.dart';
 import '../services/status_service.dart';
 import '../theme.dart' as theme;
 
@@ -979,7 +978,7 @@ class _StatusStoryPage extends StatelessWidget {
       children: [
         if (status.mediaPath != null)
           FutureBuilder<String>(
-            future: StatusService.client.storage.from('attachments').getPublicUrl(status.mediaPath!),
+            future: Future.value(StatusService.client.storage.from('attachments').getPublicUrl(status.mediaPath!)),
             builder: (_, snap) {
               if (snap.hasData) {
                 return Image.network(snap.data!,
