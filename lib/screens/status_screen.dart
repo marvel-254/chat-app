@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/profile.dart';
+import '../ui/states.dart';
 import '../services/supabase.dart';
+import '../services/status_service.dart';
 import '../theme.dart' as theme;
 
 /// Palette from shared theme.dart.
@@ -48,9 +50,9 @@ class _StatusScreenState extends State<StatusScreen>
   }
 
   void _subscribeStatuses() {
-    _statusSub = Supa.watchStatuses().listen((statuses) {
+    _statusSub = StatusService.watchStatuses().listen((statuses) {
       if (!mounted) return;
-      final me = Supa.currentUser?.id;
+      final me = StatusService.client.auth.currentUser!.id;
       final myList = statuses.where((s) => s.userId == me).toList();
       final contacts = statuses.where((s) => s.userId != me).toList();
       myList.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -71,7 +73,7 @@ class _StatusScreenState extends State<StatusScreen>
     String privacy = 'contacts',
   }) async {
     try {
-      await Supa.createStatus(
+      await StatusService.createStatus(
         content: content,
         mood: mood,
         privacy: privacy,
@@ -92,7 +94,7 @@ class _StatusScreenState extends State<StatusScreen>
 
   Future<void> _deleteStatus(String statusId) async {
     try {
-      await Supa.deleteStatus(statusId);
+      await StatusService.deleteStatus(statusId);
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -171,7 +173,7 @@ class _StatusScreenState extends State<StatusScreen>
         child: const Icon(Icons.add, size: 28),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppLoader()
           : TabBarView(
               controller: _tabs,
               children: [
@@ -207,47 +209,19 @@ class _MyStatusList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (statuses.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 88,
-                height: 88,
-                decoration: BoxDecoration(
-                  color: _SP.surfaceHigh,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: _SP.border),
-                ),
-                child: const Center(
-                  child: Icon(Icons.circle_outlined,
-                      color: _SP.primary, size: 44),
-                ),
-              ),
-              const SizedBox(height: 18),
-              const Text('No status yet',
-                  style: TextStyle(
-                      color: _SP.text, fontSize: 17, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 6),
-              const Text(
-                  'Share what\'s on your mind — text, mood, or a photo.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: _SP.muted, fontSize: 13, height: 1.4)),
-              const SizedBox(height: 16),
-              FilledButton.tonalIcon(
-                onPressed: onCreate,
-                style: FilledButton.styleFrom(
-                  backgroundColor: _SP.surface,
-                  foregroundColor: _SP.primary,
-                ),
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Add status',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
-              ),
-            ],
+      return AppEmptyState(
+        icon: Icons.circle_outlined,
+        title: 'No status yet',
+        subtitle: 'Share what\'s on your mind — text, mood, or a photo.',
+        action: FilledButton.tonalIcon(
+          onPressed: onCreate,
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+            foregroundColor: Theme.of(context).colorScheme.primary,
           ),
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('Add status',
+              style: TextStyle(fontWeight: FontWeight.w600)),
         ),
       );
     }
@@ -346,19 +320,9 @@ class _ContactStatusList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (statuses.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.people_outline, size: 44, color: _SP.muted),
-              SizedBox(height: 10),
-              Text('No updates from contacts',
-                  style: TextStyle(color: _SP.muted, fontSize: 14)),
-            ],
-          ),
-        ),
+      return const AppEmptyState(
+        icon: Icons.people_outline,
+        title: 'No updates from contacts',
       );
     }
 
@@ -863,7 +827,7 @@ class _StatusViewerState extends State<_StatusViewer>
                       ],
                     ),
                   ),
-                  if (widget.statuses[_currentIndex].userId == Supa.currentUser?.id)
+                  if (widget.statuses[_currentIndex].userId == StatusService.client.auth.currentUser!.id)
                     PopupMenuButton<String>(
                       icon: Icon(Icons.more_vert, color: Colors.white),
                       color: _SP.surface,
@@ -1015,7 +979,7 @@ class _StatusStoryPage extends StatelessWidget {
       children: [
         if (status.mediaPath != null)
           FutureBuilder<String>(
-            future: Supa.attachmentUrl(status.mediaPath!),
+            future: StatusService.client.storage.from('attachments').getPublicUrl(status.mediaPath!),
             builder: (_, snap) {
               if (snap.hasData) {
                 return Image.network(snap.data!,
