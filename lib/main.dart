@@ -14,7 +14,6 @@ import 'package:uuid/uuid.dart';
 import 'screens/call_screen.dart';
 import 'followers_following_screen.dart';
 import 'services/supabase.dart';
-import 'services/connection_monitor.dart';
 import 'services/push_notifications.dart';
 import 'models/profile.dart';
 import 'ui/states.dart';
