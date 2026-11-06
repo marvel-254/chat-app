@@ -14,23 +14,25 @@ class Profile {
   final DateTime? lastSeenAt;
   final bool readReceiptsEnabled;
   final Duration? defaultMessageExpiry;
+  final bool readByPeer;
 
   Profile({
     required this.id,
     required this.username,
     this.displayName,
     this.avatarUrl,
-    this.chatBackground = 'default',
+    this.chatBackground = '',
     this.chatBackgroundImagePath,
     required this.createdAt,
     required this.updatedAt,
     this.about,
-    this.photoVisibility = 'everyone',
-    this.statusVisibility = 'everyone',
-    this.aboutVisibility = 'everyone',
+    required this.photoVisibility,
+    required this.statusVisibility,
+    required this.aboutVisibility,
     this.lastSeenAt,
-    this.readReceiptsEnabled = true,
+    required this.readReceiptsEnabled,
     this.defaultMessageExpiry,
+    this.readByPeer = false,
   });
 
   factory Profile.fromJson(Map<String, dynamic> json) => Profile(
@@ -50,7 +52,6 @@ class Profile {
             ? null
             : DateTime.parse(json['last_seen_at'] as String),
         readReceiptsEnabled: json['read_receipts_enabled'] as bool? ?? true,
-        defaultMessageExpiry: parseInterval(json['default_message_expiry']),
       );
 
   Map<String, dynamic> toJson() => {
@@ -160,6 +161,8 @@ class Message {
   final DateTime? editedAt;
   final String? originalContent;
   final bool readByPeer;
+  final String? replyToId;
+  final List<Map<String, dynamic>> reactions;
 
   Message({
     required this.id,
@@ -173,6 +176,8 @@ class Message {
     this.editedAt,
     this.originalContent,
     this.readByPeer = false,
+    this.replyToId,
+    this.reactions = const [],
   });
 
   factory Message.fromJson(Map<String, dynamic> json) => Message(
@@ -195,6 +200,11 @@ class Message {
             : DateTime.parse(json['edited_at'] as String),
         originalContent: json['original_content'] as String?,
         readByPeer: (json['message_reads'] as List?)?.isNotEmpty ?? false,
+        replyToId: json['reply_to_id'] as String?,
+        reactions: (json['message_reactions'] as List?)
+                ?.map((e) => e as Map<String, dynamic>)
+                .toList() ??
+            [],
       );
 
   Map<String, dynamic> toJson() => {
