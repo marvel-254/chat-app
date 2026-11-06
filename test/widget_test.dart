@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:nyx_chat/main.dart';
-import 'package:nyx_chat/models/profile.dart';
+import 'package:bro_chat/main.dart';
+import 'package:bro_chat/models/profile.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
