@@ -420,6 +420,16 @@ class Supa {
       'avatar_url': '$url?v=${DateTime.now().millisecondsSinceEpoch}',
       'updated_at': DateTime.now().toIso8601String(),
     }).eq('id', uid);
+    final rows = await client
+        .from('conversation_participants')
+        .select('conversation_id')
+        .eq('user_id', uid);
+    for (final row in rows) {
+      await client
+          .from('conversation_participants')
+          .update({'peer_avatar_url': url})
+          .eq('conversation_id', row['conversation_id'] as String);
+    }
     return url;
   }
 
