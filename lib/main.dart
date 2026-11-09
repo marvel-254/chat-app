@@ -2512,14 +2512,12 @@ class _MessageRow extends StatelessWidget {
       this.prev,
       this.next,
       required this.me,
-      required this.onLongPress,
-      this.onReactionTap});
+      required this.onLongPress});
   final Message msg;
   final Message? prev;
   final Message? next;
   final String me;
   final ValueChanged<Message> onLongPress;
-  final ValueChanged<String>? onReactionTap;
 
   bool get _nowDateLine =>
       prev == null || !_sameDay(prev!.createdAt, msg.createdAt);
@@ -2642,14 +2640,11 @@ class _ReactionsRow extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final counts = _counts;
+  Widget build(BuildContext context) {final counts = _counts;
     final uniqueEmojis = counts.keys.toList();
-    final textColor = mine ? _P.darkOnAccent : _P.text;
     final mutedColor = mine
         ? _P.darkOnAccent.withValues(alpha: 0.5)
         : _P.muted;
-
     return Wrap(
       spacing: 4,
       runSpacing: 2,
@@ -2660,6 +2655,7 @@ class _ReactionsRow extends StatelessWidget {
         return GestureDetector(
           onTap: onTap != null ? () => onTap!(emoji) : null,
           child: AnimatedContainer(
+
             duration: const Duration(milliseconds: 150),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
@@ -2701,14 +2697,13 @@ class _Bubble extends StatelessWidget {
       this.groupedTop = false,
       this.groupedBottom = false,
       required this.mine,
-      required this.onLongPress,
-      this.onReactionTap});
+      required this.onLongPress});
   final Message msg;
   final bool groupedTop;
   final bool groupedBottom;
   final bool mine;
   final VoidCallback onLongPress;
-  final ValueChanged<String>? onReactionTap;
+  final ValueChanged<String>? onReactionTap = null;
 
   @override
   Widget build(BuildContext context) {
@@ -2781,7 +2776,7 @@ class _Bubble extends StatelessWidget {
                         fontSize: 15,
                         height: 1.3,
                         color: mine ? _P.darkOnAccent : _P.text)),
-              ...? [
+              if (msg.reactions.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 _ReactionsRow(
                   reactions: msg.reactions,
@@ -4105,11 +4100,9 @@ class _ProfileStatChip extends StatelessWidget {
 class _FollowersFollowingSheet extends StatefulWidget {
   const _FollowersFollowingSheet({
     required this.userId,
-    this.initialTab = 0,
     required this.onOpenProfile,
   });
   final String userId;
-  final int initialTab;
   final void Function(String userId) onOpenProfile;
 
   @override
@@ -4129,7 +4122,7 @@ class _FollowersFollowingSheetState extends State<_FollowersFollowingSheet>
   void initState() {
     super.initState();
     _tabs =
-        TabController(length: 2, vsync: this, initialIndex: widget.initialTab);
+        TabController(length: 2, vsync: this, initialIndex: 0);
     _loadFollowers();
     _loadFollowing();
   }

@@ -839,7 +839,7 @@ class Supa {
         .from('message_reactions')
         .stream(primaryKey: ['id'])
         .eq('message_id', messageId)
-        .map((rows) => rows.map((r) => r as Map<String, dynamic>).toList());
+        .map((rows) => rows.toList());
   }
 
   // ===== Reply-to =====
@@ -866,7 +866,7 @@ class Supa {
         .select()
         .single();
 
-    final msg = Message.fromJson(res as Map<String, dynamic>);
+    final msg = Message.fromJson(res);
 
     // Update conversation last_message_at
     await client
@@ -884,7 +884,7 @@ class Supa {
         .eq('id', messageId)
         .maybeSingle();
     if (res == null) return null;
-    return Message.fromJson(res as Map<String, dynamic>);
+    return Message.fromJson(res);
   }
 
   // ===== Read Receipts (enhanced) =====

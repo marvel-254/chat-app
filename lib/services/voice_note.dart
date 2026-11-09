@@ -17,9 +17,7 @@ import 'package:uuid/uuid.dart';
 
 import 'supabase.dart';
 
-/// Max recording duration in seconds and byte cap. [maxBytes] mirrors the
-/// chat-file cap (20 MB) and the existing storage policy.
-const _maxDuration = 60;
+/// Max byte cap. Mirrors the chat-file cap (20 MB) and the existing storage policy.
 const _maxBytes = 20 * 1024 * 1024;
 
 final _uuid = const Uuid();
@@ -33,7 +31,6 @@ class VoiceNoteService {
       'audioplayerscache/${_uuid.v4()}.m4a';
 
   /// Current recording file, if any.
-  static String? _currentFile;
 
   /// Starts the microphone. Returns true if permission is granted and
   /// recording can begin.
@@ -48,7 +45,6 @@ class VoiceNoteService {
         const RecordConfig(),
         path: _tmpPath,
       );
-      _currentFile = _tmpPath;
       return true;
     } catch (_) {
       return false;
@@ -59,7 +55,6 @@ class VoiceNoteService {
   /// on failure (oversized clip or upload error).
   static Future<String> stopAndUpload(String conversationId) async {
     final path = await _recorder.stop();
-    _currentFile = null;
     if (path == null || !File(path).existsSync()) return '';
 
     final bytes = await File(path).readAsBytes();

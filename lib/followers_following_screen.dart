@@ -43,7 +43,6 @@ class _FollowersFollowingScreenState extends State<FollowersFollowingScreen>
   List<Profile> _followers = [];
   bool _loadingFollowers = false;
   bool _followersHasMore = true;
-  int _followersOffset = 0;
   static const int _pageSize = 30;
   String _followersSearchQuery = '';
   Timer? _followersSearchDebounce;
@@ -115,7 +114,6 @@ class _FollowersFollowingScreenState extends State<FollowersFollowingScreen>
   Future<void> _loadFollowers({bool reset = false}) async {
     if (_loadingFollowers) return;
     if (reset) {
-      _followersOffset = 0;
       _followersHasMore = true;
     }
     if (!_followersHasMore && !reset) return;
@@ -130,9 +128,7 @@ class _FollowersFollowingScreenState extends State<FollowersFollowingScreen>
           } else {
             _followers.addAll(list);
           }
-          _followersOffset += list.length;
           _followersHasMore = list.length >= _pageSize;
-          _loadingFollowers = false;
         });
       }
     } catch (_) {
@@ -600,7 +596,6 @@ class _FollowListTile extends StatelessWidget {
 /// Avatar widget for follower/following list items.
 class _FollowAvatar extends StatelessWidget {
   const _FollowAvatar({
-    super.key,
     required this.name,
     required this.url,
     required this.size,
