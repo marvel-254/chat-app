@@ -26,8 +26,8 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
-          echo "key.properties" > android/key.properties
-          cat >> android/key.properties <<EOF
+          echo "key.properties" > android/app/key.properties
+          cat >> android/app/key.properties <<EOF
           storeFile=release.keystore
           storePassword=$KEYSTORE_PASSWORD
           keyAlias=$KEY_ALIAS

@@ -1,6 +1,6 @@
-# NYX
+# BRO — a messaging app built with Flutter
 
-A beautifully dark messaging app built with Flutter.
+A beautifully dark messaging app with automatic updates, voice notes, and a modern dark-mode UI.
 
 ## Getting Started
 
@@ -26,9 +26,17 @@ Chat attachments and custom chat backgrounds are stored in the private Cloudflar
 
 The Worker is configured in `cloudflare/storage`. To redeploy it, run `wrangler deploy` from that directory. Its `SUPABASE_ANON_KEY` and `URL_SIGNING_SECRET` are Cloudflare Worker secrets; do not add them to this repository. Local builds use the deployed Worker URL by default and can override it with `--dart-define=CLOUD_STORAGE_URL=...`.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Auto-update
+
+BRO checks for updates automatically. When a new release is published on GitHub Releases, the app shows an in-app update dialog. The update service downloads the APK from the release asset, verifies the embedded manifest (package name, version code, and version name), and offers to install it.
+
+End users receive updates automatically. To publish a new release:
+
+1. Create a new GitHub Release with the APK attached (e.g., `build/app/outputs/flutter-apk/*-release.apk`).
+2. Tag the release as `v<version>` (e.g., `v1.0.0`).
+3. The app detects the new release and prompts the user to update.
+
+The release must include a manifest file embedded in the APK for the app to verify the update. See `lib/services/update_logic.dart` for the manifest format.
 
 ## License
 

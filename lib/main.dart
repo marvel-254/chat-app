@@ -15,6 +15,7 @@ import 'screens/call_screen.dart';
 import 'followers_following_screen.dart';
 import 'services/supabase.dart';
 import 'services/push_notifications.dart';
+import 'services/connection_monitor.dart';
 import 'models/profile.dart';
 import 'ui/states.dart';
 
@@ -99,6 +100,7 @@ class _P {
   static const muted = _muted;
   static const success = _success;
   static const primary = _volt;
+  static const volt = _volt;
   static const darkOnAccent = _darkOnVolt;
 }
 
@@ -2779,13 +2781,14 @@ class _Bubble extends StatelessWidget {
                         fontSize: 15,
                         height: 1.3,
                         color: mine ? _P.darkOnAccent : _P.text)),
-              if (msg.reactions.isNotEmpty) ...[
+              ...? [
                 const SizedBox(height: 4),
                 _ReactionsRow(
                   reactions: msg.reactions,
                   mine: mine,
                   onTap: onReactionTap,
                 ),
+              ],
               const SizedBox(height: 2),
               Row(
                 mainAxisSize: MainAxisSize.min,

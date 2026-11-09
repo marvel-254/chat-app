@@ -359,6 +359,13 @@ class Supa {
     }).eq('id', currentUser!.id);
   }
 
+  static Future<void> refreshConversations() async {
+    await client
+        .from('conversation_participants')
+        .select('conversation_id')
+        .eq('user_id', currentUser!.id);
+  }
+
   static Future<String> uploadChatBackground(
       Uint8List bytes, String filename) async {
     if (bytes.length > 10 * 1024 * 1024) {
