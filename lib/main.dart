@@ -999,6 +999,9 @@ class ConversationListScreen extends StatefulWidget {
 class _ConversationListScreenState extends State<ConversationListScreen> {
   final _search = TextEditingController();
   final _searchFocusNode = FocusNode();
+  final _refreshKey = GlobalKey<RefreshIndicatorState>();
+  Timer? _autoRefreshTimer;
+  bool _initialLoadComplete = false;
   late final Future<List<Profile>> _suggestions = Supa.searchUsers('');
   List<Profile> _searchResults = [];
   Timer? _searchDebounce;
@@ -1283,8 +1286,13 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
           ),
         ),
         Expanded(
-          child: StreamBuilder<List<Conversation>>(
-            stream: Supa.watchConversations(),
+          child: RefreshIndicator(
+            key: _refreshKey,
+            onRefresh: _onRefresh,
+            color: _P.primary,
+            backgroundColor: _P.primary.withValues(alpha: 0.12),
+            child: StreamBuilder<List<Conversation>>(
+              stream: Supa.watchConversations(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
@@ -1461,6 +1469,27 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
         ),
       ],
     );
+  }
+
+
+  Future<void> _onRefresh() async {
+    try {
+      await Supa.refreshConversations();
+    } catch (e) {
+      debugPrint('Auto-refresh error: $e');
+    }
+  }
+
+  void _onRetry() {
+    _refreshKey.currentState?.show();
+    _autoRefresh();
+  }
+
+  void _autoRefresh() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (mounted) _refreshKey.currentState?.show();
+    });
   }
 
   Widget _buildLargeScreenLayout(BuildContext context) {
