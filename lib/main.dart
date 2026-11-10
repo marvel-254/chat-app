@@ -371,7 +371,10 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       if (_isSignUp) {
         final username = _username.text.trim();
-        if (username.isEmpty) throw 'Username required';
+        if (username.length < 3 ||
+            !RegExp(r'^[a-zA-Z0-9_.-]+$').hasMatch(username)) {
+          throw 'Use at least 3 letters, numbers, dots, dashes, or underscores for your username.';
+        }
         final res = await Supa.signUp(email, password, username);
         // Supabase may require email confirmation before sign-in is allowed.
         // If no session was created, the user must confirm their email first.
@@ -399,6 +402,26 @@ class _LoginScreenState extends State<LoginScreen> {
         if (mounted) {
           setState(() => _error =
               "Can't reach the server. Check your internet connection and try again.");
+        }
+        return;
+      }
+            if (e is AuthException) {
+        // Server message is already human readable (e.g. "Invalid login
+        // credentials"); never show the raw AuthApiException toString().
+        if (mounted) setState(() => _error = e.message);
+        return;
+      }
+      if (e is StateError) {
+        if (mounted) setState(() => _error = e.message);
+        return;
+      }
+      if (e is PostgrestException) {
+        // Sign-up used to abort on the profiles INSERT (RLS 42501) and strand
+        // the auth user (#43). The database trigger now creates the profile,
+        // but keep a friendly recovery path if it ever fails again.
+        if (mounted) {
+          setState(() => _error =
+              'Could not finish creating your account. Please try again.');
         }
         return;
       }
@@ -530,7 +553,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         prefix: Icons.badge_outlined,
                         suffix: Icons.check_circle,
                         suffixColor: accent,
-                        placeholder: 'Alex Vance',
+                        placeholder: 'alex_vance',
                         textInputAction: TextInputAction.next,
                         isGuideTarget: _guideTarget == 'username',
                         onFocus: () =>
@@ -1001,7 +1024,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   final _searchFocusNode = FocusNode();
   final _refreshKey = GlobalKey<RefreshIndicatorState>();
   Timer? _autoRefreshTimer;
-  bool _initialLoadComplete = false;
+  
   late final Future<List<Profile>> _suggestions = Supa.searchUsers('');
   List<Profile> _searchResults = [];
   Timer? _searchDebounce;
@@ -1009,6 +1032,12 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   bool _searchLoading = false;
   bool _searchCompleted = false;
   String? _searchError;
+
+  @override
+  void initState() {
+    super.initState();
+    _autoRefresh();
+  }
 
   void _onSearchChanged(String value) {
     _searchDebounce?.cancel();
@@ -1047,6 +1076,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   @override
   void dispose() {
     _searchRequestId++;
+    _autoRefreshTimer?.cancel();
     _searchDebounce?.cancel();
     _search.dispose();
     _searchFocusNode.dispose();
@@ -2364,7 +2394,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         if (snapshot.hasError) {
                           return _ErrorState(
                               message: 'Failed to load messages',
-                              onRetry: () => setState(() {}));
+onRetry: _onRetry);
                         }
                         if (messages.isEmpty) {
                           return _EmptyState(
@@ -3623,7 +3653,17 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   const SizedBox(height: 12),
                   Center(
                       child: Text(Supa.currentUser?.email ?? '',
-                          style: TextStyle(color: _P.muted, fontSize: 12))),
+                          style: TextStyle(color: _P.muted, fontSize: 12))                   const SizedBox(height: 28),
+                  Text('About',
+                      style: TextStyle(
+                          color: _P.muted, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  Text(
+                      buildNumber.isEmpty
+                          ? 'BRO · development build'
+                          : 'BRO · build $buildNumber',
+                      style:
+                          const TextStyle(color: _P.muted, fontSize: 12)),
                 ]),
               )),
       );
