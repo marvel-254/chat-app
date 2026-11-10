@@ -11,6 +11,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
+import 'package:local_auth/local_auth.dart';
 import 'screens/call_screen.dart';
 import 'followers_following_screen.dart';
 import 'services/supabase.dart';
@@ -1323,7 +1324,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
             backgroundColor: _P.primary.withValues(alpha: 0.12),
             child: StreamBuilder<List<Conversation>>(
               stream: Supa.watchConversations(),
-            builder: (context, snapshot) {
+              builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
               }
@@ -1447,6 +1448,12 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
+                            if (conv.isLocked)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Icon(Icons.lock_outline_rounded,
+                                    size: 16, color: _P.muted),
+                              ),
                             if (unread)
                               Container(
                                 padding: const EdgeInsets.symmetric(
@@ -1497,6 +1504,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
             },
           ),
         ),
+      ),
       ],
     );
   }
@@ -1508,11 +1516,6 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     } catch (e) {
       debugPrint('Auto-refresh error: $e');
     }
-  }
-
-  void _onRetry() {
-    _refreshKey.currentState?.show();
-    _autoRefresh();
   }
 
   void _autoRefresh() {
@@ -1616,6 +1619,82 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } catch (_) {
       _unsupported('Could not update the message timer.');
+    }
+  }
+
+  Future<void> _authenticateAndLock() async {
+    final auth = LocalAuthentication();
+    final canCheck = await auth.canCheckBiometrics;
+    final isAvailable = await auth.isDeviceSupported();
+    if (!canCheck || !isAvailable) {
+      _unsupported('Biometric authentication not available on this device.');
+      return;
+    }
+    try {
+      final didAuthenticate = await auth.authenticate(
+        localizedReason: 'Lock this conversation',
+        options: const AuthenticationOptions(
+          stickyAuth: true,
+          biometricOnly: true,
+        ),
+      );
+      if (didAuthenticate && mounted) {
+        await Supa.setConversationLocked(widget.conversationId, true);
+        if (mounted) {
+          setState(() {});
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Conversation locked'),
+            behavior: SnackBarBehavior.floating,
+          ));
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Authentication failed'),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  Future<void> _lockConversation() async {
+    await _authenticateAndLock();
+  }
+
+  Future<void> _unlockConversation() async {
+    final auth = LocalAuthentication();
+    final canCheck = await auth.canCheckBiometrics;
+    final isAvailable = await auth.isDeviceSupported();
+    if (!canCheck || !isAvailable) {
+      _unsupported('Biometric authentication not available on this device.');
+      return;
+    }
+    try {
+      final didAuthenticate = await auth.authenticate(
+        localizedReason: 'Unlock this conversation',
+        options: const AuthenticationOptions(
+          stickyAuth: true,
+          biometricOnly: true,
+        ),
+      );
+      if (didAuthenticate && mounted) {
+        await Supa.setConversationLocked(widget.conversationId, false);
+        if (mounted) {
+          setState(() {});
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Conversation unlocked'),
+            behavior: SnackBarBehavior.floating,
+          ));
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Authentication failed'),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
     }
   }
 
@@ -1830,6 +1909,8 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  void _onRetry() => setState(() {});
+
   void _unsupported(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1863,6 +1944,22 @@ class _ChatScreenState extends State<ChatScreen> {
                 if (peer != null) context.push('/profile/${peer.id}');
               },
             ),
+            _MenuTile(
+              icon: Icons.lock_outlined,
+              label: 'Lock conversation',
+              onTap: () {
+                Navigator.pop(context);
+                _lockConversation();
+              },
+            ),
+            _MenuTile(
+              icon: Icons.lock_open_outlined,
+              label: 'Unlock conversation',
+              onTap: () {
+                Navigator.pop(context);
+                _unlockConversation();
+              },
+            ),
             const SizedBox(height: 8),
           ],
         ),
@@ -1881,13 +1978,14 @@ class _ChatScreenState extends State<ChatScreen> {
       backgroundColor: _P.surface,
       builder: (sheetContext) => SafeArea(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-        ListTile(
-            leading: Icon(message.pinnedAt == null
-                ? Icons.push_pin_outlined
-                : Icons.push_pin),
-            title: Text(
-                message.pinnedAt == null ? 'Pin message' : 'Unpin message'),
-            onTap: () => Navigator.pop(sheetContext, 'pin')),
+        if (isMine)
+          ListTile(
+              leading: Icon(message.pinnedAt == null
+                  ? Icons.push_pin_outlined
+                  : Icons.push_pin),
+              title: Text(
+                  message.pinnedAt == null ? 'Pin message' : 'Unpin message'),
+              onTap: () => Navigator.pop(sheetContext, 'pin')),
         if (canEdit)
           ListTile(
               leading: const Icon(Icons.edit_outlined),
@@ -3231,6 +3329,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   String _aboutVisibility = 'everyone';
   bool _readReceiptsEnabled = true;
   Duration? _defaultMessageExpiry;
+  Duration? _autoLockTimer;
 
   @override
   void initState() {
@@ -3251,6 +3350,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       _aboutVisibility = profile?.aboutVisibility ?? 'everyone';
       _readReceiptsEnabled = profile?.readReceiptsEnabled ?? true;
       _defaultMessageExpiry = profile?.defaultMessageExpiry;
+      _autoLockTimer = profile?.autoLockTimer;
       _chatBackground = profile?.chatBackground ?? 'default';
       _chatBackgroundImagePath = profile?.chatBackgroundImagePath;
       if (_chatBackgroundImagePath != null) {
@@ -3498,6 +3598,26 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     ],
                     onChanged: (v) => setState(() => _defaultMessageExpiry = v),
                   ),
+                  const SizedBox(height: 4),
+                  DropdownButtonFormField<Duration?>(
+                    initialValue: _autoLockTimer,
+                    decoration: const InputDecoration(
+                        labelText: 'Auto-lock conversations'),
+                    items: const [
+                      DropdownMenuItem(value: null, child: Text('Off')),
+                      DropdownMenuItem(
+                          value: Duration(minutes: 1), child: Text('1 minute')),
+                      DropdownMenuItem(
+                          value: Duration(minutes: 5), child: Text('5 minutes')),
+                      DropdownMenuItem(
+                          value: Duration(minutes: 15), child: Text('15 minutes')),
+                      DropdownMenuItem(
+                          value: Duration(minutes: 30), child: Text('30 minutes')),
+                      DropdownMenuItem(
+                          value: Duration(hours: 1), child: Text('1 hour')),
+                    ],
+                    onChanged: (v) => setState(() => _autoLockTimer = v),
+                  ),
                   const SizedBox(height: 24),
                   Text('Chat background',
                       style: TextStyle(
@@ -3653,7 +3773,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   const SizedBox(height: 12),
                   Center(
                       child: Text(Supa.currentUser?.email ?? '',
-                          style: TextStyle(color: _P.muted, fontSize: 12))                   const SizedBox(height: 28),
+                          style: TextStyle(color: _P.muted, fontSize: 12))),
+                  const SizedBox(height: 28),
                   Text('About',
                       style: TextStyle(
                           color: _P.muted, fontWeight: FontWeight.w600)),

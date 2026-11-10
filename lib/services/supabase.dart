@@ -136,18 +136,23 @@ class Supa {
       required String aboutVisibility,
       bool readReceiptsEnabled = true,
       Duration? defaultMessageExpiry}) async {
-    await client.from('profiles').update({
+    final updates = <String, dynamic>{
       'about': about.trim().isEmpty ? null : about.trim(),
       'photo_visibility': photoVisibility,
       'status_visibility': statusVisibility,
       'about_visibility': aboutVisibility,
       'read_receipts_enabled': readReceiptsEnabled,
-      'default_message_expiry': defaultMessageExpiry == null ||
-              defaultMessageExpiry == Duration.zero
-          ? '0 seconds'
-          : '${defaultMessageExpiry.inSeconds} seconds',
       'updated_at': DateTime.now().toUtc().toIso8601String(),
-    }).eq('id', currentUser!.id);
+    };
+
+    // Only include if explicitly set (not null)
+    if (defaultMessageExpiry != null) {
+      updates['default_message_expiry'] = defaultMessageExpiry == Duration.zero
+          ? '0 seconds'
+          : '${defaultMessageExpiry.inSeconds} seconds';
+    }
+
+    await client.from('profiles').update(updates).eq('id', currentUser!.id);
   }
 
   static Future<void> recordLastSeen() async {
@@ -503,50 +508,28 @@ class Supa {
   }
 
   static Stream<List<Conversation>> watchConversations() {
-    final me = currentUser!.id;
-    return client
-        .from('conversation_participants')
-        .stream(primaryKey: ['conversation_id', 'user_id'])
-        .eq('user_id', me)
-        .map((rows) async {
-          final convIds =
-              rows.map((r) => r['conversation_id'] as String).toList();
-          if (convIds.isEmpty) return <Conversation>[];
-          final res = await client.rpc(
-            'get_conversations_for_user',
-          );
-          final rows2 = (res as List).cast<Map<String, dynamic>>();
-
-          final lockedSet = <String>{};
-          try {
-            final locks = await client
-                .from('conversation_locks')
-                .select('conversation_id')
-                .eq('user_id', me);
-            for (final l in locks as List) {
-              lockedSet.add(l['conversation_id'] as String);
-            }
-          } catch (_) {}
-
-          return rows2
-              .map((r) => Conversation(
-                    id: r['conversation_id'] as String,
-                    createdAt: DateTime.parse(r['created_at'] as String),
-                    updatedAt: DateTime.parse(r['updated_at'] as String),
-                    peerId: r['peer_id'] as String?,
-                    peerUsername: r['peer_username'] as String?,
-                    peerDisplayName: r['peer_display_name'] as String?,
-                    peerAvatarUrl: r['peer_avatar_url'] as String?,
-                    lastMessage: r['last_message'] as String?,
-                    lastMessageAt: r['last_message_at'] == null
-                        ? null
-                        : DateTime.parse(r['last_message_at'] as String),
-                    unreadCount: (r['unread_count'] as num?)?.toInt() ?? 0,
-                    isLocked: lockedSet.contains(r['conversation_id'] as String),
-                  ))
-              .toList();
-        })
-        .asyncExpand((f) => Stream.fromFuture(f));
+    return Stream.periodic(const Duration(seconds: 30), (_) => null)
+        .asyncMap((_) async {
+      final res = await client.rpc('get_conversations_for_user');
+      final rows = (res as List).cast<Map<String, dynamic>>();
+      return rows
+          .map((r) => Conversation(
+                id: r['conversation_id'] as String,
+                createdAt: DateTime.parse(r['created_at'] as String),
+                updatedAt: DateTime.parse(r['updated_at'] as String),
+                peerId: r['peer_id'] as String?,
+                peerUsername: r['peer_username'] as String?,
+                peerDisplayName: r['peer_display_name'] as String?,
+                peerAvatarUrl: r['peer_avatar_url'] as String?,
+                lastMessage: r['last_message'] as String?,
+                lastMessageAt: r['last_message_at'] == null
+                    ? null
+                    : DateTime.parse(r['last_message_at'] as String),
+                unreadCount: (r['unread_count'] as num?)?.toInt() ?? 0,
+                isLocked: (r['is_locked'] as bool?) ?? false,
+              ))
+          .toList();
+    });
   }
 
   // Messages
@@ -621,24 +604,10 @@ class Supa {
   }
 
   static Future<void> markRead(String conversationId, String messageId) async {
-    final me = currentUser;
-    if (me != null) {
-      try {
-        final profile = await getProfile(me.id);
-        if (profile == null || profile.readReceiptsEnabled) {
-          await client.from('message_reads').upsert({
-            'message_id': messageId,
-            'user_id': me.id,
-            'read_at': DateTime.now().toUtc().toIso8601String(),
-          }, onConflict: 'message_id,user_id', ignoreDuplicates: true);
-        }
-      } catch (_) {}
-    }
-    await client
-        .from('conversation_participants')
-        .update({'last_read_at': DateTime.now().toIso8601String()})
-        .eq('conversation_id', conversationId)
-        .eq('user_id', currentUser!.id);
+    // Use the new SECURITY DEFINER RPC that handles read receipts atomically
+    await client.rpc('mark_messages_read', params: {
+      'p_conversation_id': conversationId,
+    });
   }
 
   static Future<void> updateMessage(String messageId, String content) async {
@@ -649,19 +618,10 @@ class Supa {
 
   static Future<void> setMessagePinned(String messageId, bool pinned,
       {String? conversationId}) async {
-    if (pinned && conversationId != null) {
-      final res = await client
-          .from('messages')
-          .select('id')
-          .eq('conversation_id', conversationId)
-          .not('pinned_at', 'is', null);
-      if ((res as List).length >= 5) {
-        throw StateError('You can pin up to 5 messages per conversation.');
-      }
-    }
-    await client.from('messages').update({
-      'pinned_at': pinned ? DateTime.now().toUtc().toIso8601String() : null,
-    }).eq('id', messageId);
+    await client.rpc('pin_message', params: {
+      'msg_id': messageId,
+      'do_pin': pinned,
+    });
   }
 
   static Future<void> setMessageExpiry(
@@ -905,28 +865,4 @@ class Supa {
         .eq('id', me.id);
   }
 
-  static Future<void> markReadWithReceipts(String conversationId,
-      String messageId) async {
-    final me = currentUser;
-    if (me == null) return;
-
-    // Check if read receipts are enabled
-    final profile = await getProfile(me.id);
-    final receiptsEnabled = profile?.readReceiptsEnabled ?? true;
-
-    if (receiptsEnabled) {
-      await client.from('message_reads').upsert({
-        'message_id': messageId,
-        'user_id': me.id,
-        'read_at': DateTime.now().toUtc().toIso8601String(),
-      }, onConflict: 'message_id,user_id', ignoreDuplicates: true);
-    }
-
-    // Always update conversation participant's last_read_at for unread count
-    await client
-        .from('conversation_participants')
-        .update({'last_read_at': DateTime.now().toIso8601String()})
-        .eq('conversation_id', conversationId)
-        .eq('user_id', me.id);
   }
-}

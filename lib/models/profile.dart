@@ -14,6 +14,7 @@ class Profile {
   final DateTime? lastSeenAt;
   final bool readReceiptsEnabled;
   final Duration? defaultMessageExpiry;
+  final Duration? autoLockTimer;
   final bool readByPeer;
 
   Profile({
@@ -32,6 +33,7 @@ class Profile {
     this.lastSeenAt,
     required this.readReceiptsEnabled,
     this.defaultMessageExpiry,
+    this.autoLockTimer,
     this.readByPeer = false,
   });
 
@@ -52,6 +54,8 @@ class Profile {
             ? null
             : DateTime.parse(json['last_seen_at'] as String),
         readReceiptsEnabled: json['read_receipts_enabled'] as bool? ?? true,
+        defaultMessageExpiry: parseInterval(json['default_message_expiry']),
+        autoLockTimer: parseInterval(json['auto_lock_timer']),
       );
 
   Map<String, dynamic> toJson() => {
