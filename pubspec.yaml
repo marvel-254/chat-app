@@ -49,6 +49,7 @@ dependencies:
   url_launcher: ^6.3.2
   connectivity_plus: ^7.3.2
   local_auth: ^2.3.0
+  flutter_windowmanager: ^0.2.0
   archive: ^4.0.0
   http: ^1.6.0
   firebase_core: ^5.1.0

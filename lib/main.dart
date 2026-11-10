@@ -1953,11 +1953,19 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
             _MenuTile(
-              icon: Icons.lock_open_outlined,
-              label: 'Unlock conversation',
+              icon: Icons.report_outlined,
+              label: 'Report user',
               onTap: () {
                 Navigator.pop(context);
-                _unlockConversation();
+                _reportUser();
+              },
+            ),
+            _MenuTile(
+              icon: Icons.block_flipped,
+              label: 'Block user',
+              onTap: () {
+                Navigator.pop(context);
+                _blockUser();
               },
             ),
             const SizedBox(height: 8),
@@ -1965,6 +1973,52 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _reportUser() async {
+    final peer = _peer;
+    if (peer == null) return;
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _P.surface,
+        title: Text('Report @${peer.username}', style: const TextStyle(color: _P.text)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(title: const Text('Spam', style: TextStyle(color: _P.text)), onTap: () => Navigator.pop(ctx, 'spam')),
+            ListTile(title: const Text('Harassment', style: TextStyle(color: _P.text)), onTap: () => Navigator.pop(ctx, 'harassment')),
+            ListTile(title: const Text('Other', style: TextStyle(color: _P.text)), onTap: () => Navigator.pop(ctx, 'other')),
+          ],
+        ),
+      ),
+    );
+    if (reason == null) return;
+    await Supa.reportUser(userId: peer.id, reason: reason);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Report submitted')));
+    }
+  }
+
+  Future<void> _blockUser() async {
+    final peer = _peer;
+    if (peer == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _P.surface,
+        title: Text('Block @${peer.username}?', style: const TextStyle(color: _P.text)),
+        content: const Text('You will no longer receive messages or calls from this person.', style: TextStyle(color: _P.muted)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Block', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await Supa.blockUser(peer.id);
+      if (mounted) context.pop(); // Close the chat screen
+    }
   }
 
   Future<void> _showMessageActions(Message message) async {

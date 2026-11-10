@@ -507,6 +507,64 @@ class Supa {
         id: convId, createdAt: DateTime.now(), updatedAt: DateTime.now());
   }
 
+  // Message Requests - check if users are contacts
+  static Future<bool> areContacts(String userId1, String userId2) async {
+    try {
+      final res = await client
+          .from('contacts')
+          .select('id')
+          .or(
+              'and(user_id.eq.$userId1,contact_id.eq.$userId2),and(user_id.eq.$userId2,contact_id.eq.$userId1)')
+          .limit(1);
+      return (res as List).isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> addContact(String contactId) async {
+    final me = currentUser!.id;
+    await client.from('contacts').upsert({
+      'user_id': me,
+      'contact_id': contactId,
+      'status': 'accepted',
+    });
+  }
+
+  static Stream<List<Map<String, dynamic>>> watchMessageRequests() {
+    return Stream.periodic(const Duration(seconds: 30), (_) => null)
+        .asyncMap((_) async {
+      final me = currentUser!.id;
+      final res = await client.rpc('get_conversations_for_user');
+      final rows = (res as List).cast<Map<String, dynamic>>();
+      final requests = <Map<String, dynamic>>[];
+      for (final r in rows) {
+        final peerId = r['peer_id'] as String?;
+        if (peerId != null) {
+          final isContact = await areContacts(me, peerId);
+          if (!isContact) {
+            requests.add(r);
+          }
+        }
+      }
+      return requests;
+    });
+  }
+
+  static Future<void> acceptMessageRequest(
+      String conversationId, String peerId) async {
+    await addContact(peerId);
+  }
+
+  static Future<void> declineMessageRequest(String conversationId) async {
+    final me = currentUser!.id;
+    await client
+        .from('conversation_participants')
+        .delete()
+        .eq('conversation_id', conversationId)
+        .eq('user_id', me);
+  }
+
   static Stream<List<Conversation>> watchConversations() {
     return Stream.periodic(const Duration(seconds: 30), (_) => null)
         .asyncMap((_) async {
@@ -622,6 +680,46 @@ class Supa {
       'msg_id': messageId,
       'do_pin': pinned,
     });
+  }
+
+  static Future<void> deleteMessage(String messageId) async {
+    final me = currentUser;
+    if (me == null) return;
+    await client
+        .from('messages')
+        .delete()
+        .eq('id', messageId)
+        .eq('sender_id', me.id);
+  }
+
+  static Future<void> deleteMessageForEveryone(String messageId) async {
+    final me = currentUser;
+    if (me == null) return;
+    // Check if within time window (e.g., 1 hour)
+    final message = await client
+        .from('messages')
+        .select('created_at, sender_id')
+        .eq('id', messageId)
+        .single();
+    final senderId = message['sender_id'] as String;
+    final createdAt = DateTime.parse(message['created_at'] as String);
+    final now = DateTime.now().toUtc();
+    final diff = now.difference(createdAt);
+
+    if (diff > const Duration(hours: 1)) {
+      // Soft delete - replace content with "This message was deleted"
+      await client.from('messages').update({
+        'content': 'This message was deleted',
+        'edited_at': now.toIso8601String(),
+      }).eq('id', messageId).eq('sender_id', senderId);
+    } else {
+      // Hard delete within 1 hour
+      await client
+          .from('messages')
+          .delete()
+          .eq('id', messageId)
+          .eq('sender_id', senderId);
+    }
   }
 
   static Future<void> setMessageExpiry(
@@ -804,11 +902,79 @@ class Supa {
 
   // ===== Reply-to =====
 
+  // Anti-spam protection
+  static DateTime? _lastMessageTime;
+  static int _messageCountInWindow = 0;
+  static const int _maxMessagesPerMinute = 30;
+  static const int _maxMessageLength = 4000;
+
+  static bool _checkRateLimit() {
+    final now = DateTime.now();
+    if (_lastMessageTime == null ||
+        now.difference(_lastMessageTime!).inMinutes >= 1) {
+      _lastMessageTime = now;
+      _messageCountInWindow = 1;
+      return true;
+    }
+    if (_messageCountInWindow >= _maxMessagesPerMinute) {
+      return false;
+    }
+    _messageCountInWindow++;
+    return true;
+  }
+
+  static bool _containsSuspiciousLinks(String content) {
+    // Check for known URL shorteners / spam domains
+    final suspiciousPatterns = [
+      r'bit\.ly',
+      r'tinyurl\.com',
+      r't\.co',
+      r'goo\.gl',
+      r'is\.gd',
+      r'v\.gd',
+      r'ow\.ly',
+      r'buff\.ly',
+      r'adf\.ly',
+      r'bc\.vc',
+      r'cutt\.ly',
+      r'shorte\.st',
+      r'clicky\.me',
+      r'tr\.im',
+    ];
+    for (final pattern in suspiciousPatterns) {
+      if (RegExp(pattern, caseSensitive: false).hasMatch(content)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static String? _validateMessageContent(String content) {
+    if (content.trim().isEmpty) {
+      return 'Message cannot be empty';
+    }
+    if (content.length > _maxMessageLength) {
+      return 'Message too long (max $_maxMessageLength characters)';
+    }
+    if (!_checkRateLimit()) {
+      return 'Rate limit exceeded. Please slow down.';
+    }
+    if (_containsSuspiciousLinks(content)) {
+      return 'Message contains suspicious links and was blocked';
+    }
+    return null;
+  }
+
   static Future<Message> sendMessageWithReply({
     required String conversationId,
     required String content,
     String? replyToId,
   }) async {
+    // Anti-spam validation
+    final validationError = _validateMessageContent(content);
+    if (validationError != null) {
+      throw StateError(validationError);
+    }
     final me = currentUser!;
     final now = DateTime.now().toUtc().toIso8601String();
 
@@ -865,4 +1031,63 @@ class Supa {
         .eq('id', me.id);
   }
 
+  // ===== Block/Report =====
+
+  static Future<void> blockUser(String userId) async {
+    final me = currentUser;
+    if (me == null) return;
+    await client.from('blocked_users').upsert({
+      'blocker_id': me.id,
+      'blocked_id': userId,
+    }, onConflict: 'blocker_id,blocked_id', ignoreDuplicates: true);
   }
+
+  static Future<void> unblockUser(String userId) async {
+    final me = currentUser;
+    if (me == null) return;
+    await client
+        .from('blocked_users')
+        .delete()
+        .eq('blocker_id', me.id)
+        .eq('blocked_id', userId);
+  }
+
+  static Future<bool> isUserBlocked(String userId) async {
+    final me = currentUser;
+    if (me == null) return false;
+    final res = await client
+        .from('blocked_users')
+        .select('blocked_id')
+        .eq('blocker_id', me.id)
+        .eq('blocked_id', userId)
+        .maybeSingle();
+    return res != null;
+  }
+
+  static Future<List<String>> getBlockedUserIds() async {
+    final me = currentUser;
+    if (me == null) return [];
+    final res = await client
+        .from('blocked_users')
+        .select('blocked_id')
+        .eq('blocker_id', me.id);
+    return (res as List).map((e) => e['blocked_id'] as String).toList();
+  }
+
+  static Future<void> reportUser({
+    required String userId,
+    required String reason,
+    String? details,
+  }) async {
+    final me = currentUser;
+    if (me == null) return;
+    await client.from('user_reports').insert({
+      'reporter_id': me.id,
+      'reported_id': userId,
+      'reason': reason,
+      'details': details,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+}
