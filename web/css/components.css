@@ -1,18 +1,91 @@
 /**
- * BRO Component Library
+ * BRO Component Library — Premium Edition
  * 
  * Reusable UI components powered by BRO design tokens.
+ * Architecture: Double-bezel cards, editorial typography, tactile interactions.
  */
 
 /* ==========================================================================
-   Typography Styles
+   Font Face Definitions (Preload via <link rel="preload"> in HTML)
+   ========================================================================== */
+@font-face {
+  font-family: 'Geist';
+  src: url('https://cdn.jsdelivr.net/npm/geist@1.3.0/fonts/Geist/Geist-Variable.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('https://cdn.jsdelivr.net/npm/geist@1.3.0/fonts/GeistMono/GeistMono-Variable.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Clash Display';
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/clash-display@5.0.0/files/clash-display-latin-700-normal.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+
+/* ==========================================================================
+   Global Reset & Base Styles
+   ========================================================================== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--nyx-color-bg);
+  color: var(--nyx-color-text);
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-base);
+  font-weight: var(--nyx-font-weight-regular);
+  line-height: var(--nyx-line-height-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Focus visible for keyboard navigation */
+:focus-visible {
+  outline: 2px solid var(--nyx-color-accent);
+  outline-offset: 3px;
+  border-radius: var(--nyx-radius-xs);
+}
+
+/* Selection */
+::selection {
+  background-color: var(--nyx-color-accent-subtle);
+  color: var(--nyx-color-text);
+}
+
+/* ==========================================================================
+   Typography Styles — Editorial Scale
    ========================================================================== */
 .nyx-h1 {
-  font-family: var(--nyx-font-family);
+  font-family: var(--nyx-font-family-display);
   font-size: var(--nyx-font-size-4xl);
   font-weight: var(--nyx-font-weight-extrabold);
   line-height: var(--nyx-line-height-tight);
-  letter-spacing: var(--nyx-letter-spacing-tight);
+  letter-spacing: var(--nyx-letter-spacing-tighter);
   color: var(--nyx-color-text);
   margin: 0;
 }
@@ -23,8 +96,14 @@
   }
 }
 
+@media (min-width: 1200px) {
+  .nyx-h1 {
+    font-size: var(--nyx-font-size-6xl);
+  }
+}
+
 .nyx-h2 {
-  font-family: var(--nyx-font-family);
+  font-family: var(--nyx-font-family-display);
   font-size: var(--nyx-font-size-2xl);
   font-weight: var(--nyx-font-weight-bold);
   line-height: var(--nyx-line-height-snug);
@@ -48,13 +127,23 @@
   margin: 0;
 }
 
+.nyx-h4 {
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-lg);
+  font-weight: var(--nyx-font-weight-semibold);
+  line-height: var(--nyx-line-height-snug);
+  color: var(--nyx-color-text);
+  margin: 0;
+}
+
 .nyx-lead {
   font-family: var(--nyx-font-family);
   font-size: var(--nyx-font-size-lg);
   font-weight: var(--nyx-font-weight-regular);
-  line-height: var(--nyx-line-height-normal);
+  line-height: var(--nyx-line-height-relaxed);
   color: var(--nyx-color-text-muted);
   margin: 0;
+  max-width: 68ch;
 }
 
 .nyx-body {
@@ -62,6 +151,16 @@
   font-size: var(--nyx-font-size-base);
   font-weight: var(--nyx-font-weight-regular);
   line-height: var(--nyx-line-height-normal);
+  color: var(--nyx-color-text-muted);
+  margin: 0;
+  max-width: 72ch;
+}
+
+.nyx-body-lg {
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-lg);
+  font-weight: var(--nyx-font-weight-regular);
+  line-height: var(--nyx-line-height-relaxed);
   color: var(--nyx-color-text-muted);
   margin: 0;
 }
@@ -82,30 +181,54 @@
   letter-spacing: var(--nyx-letter-spacing-wider);
   text-transform: uppercase;
   color: var(--nyx-color-accent-secondary);
+  margin: 0;
+}
+
+/* Microcopy for UI labels */
+.nyx-micro {
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-xs);
+  font-weight: var(--nyx-font-weight-medium);
+  line-height: var(--nyx-line-height-normal);
+  color: var(--nyx-color-text-muted);
+  letter-spacing: var(--nyx-letter-spacing-wide);
+  text-transform: uppercase;
 }
 
 /* ==========================================================================
-   Buttons
+   Buttons — Tactile, Double-Bezel Architecture
    ========================================================================== */
 .nyx-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--nyx-space-2);
-  padding: 0.75rem 1.5rem;
+  padding: 0.8125rem 1.625rem;
   font-family: var(--nyx-font-family);
   font-size: var(--nyx-font-size-base);
   font-weight: var(--nyx-font-weight-semibold);
-  line-height: 1.25;
+  line-height: 1.2;
   text-decoration: none;
   white-space: nowrap;
-  border-radius: var(--nyx-radius-md);
+  border-radius: var(--nyx-radius-lg);
   border: 1px solid transparent;
   cursor: pointer;
   user-select: none;
-  transition: all var(--nyx-transition-fast);
+  transition: all var(--nyx-transition-snappy);
   position: relative;
   overflow: hidden;
+  z-index: var(--nyx-z-content);
+}
+
+.nyx-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  opacity: 0;
+  border-radius: inherit;
+  transition: opacity var(--nyx-transition-fast);
+  z-index: -1;
 }
 
 .nyx-btn:focus-visible {
@@ -113,44 +236,56 @@
   outline-offset: 3px;
 }
 
-/* Button Variants */
+/* Button Variants — Primary (Double Bezel) */
 .nyx-btn--primary {
   background-color: var(--nyx-color-accent);
-  color: #FFFFFF;
+  color: var(--nyx-color-text-on-accent);
   border-color: var(--nyx-color-accent);
-  box-shadow: 0 4px 16px rgba(119, 100, 255, 0.28);
+  box-shadow: 
+    0 1px 1px rgba(255, 255, 255, 0.15),
+    0 4px 16px rgba(124, 109, 255, 0.28);
 }
 
 .nyx-btn--primary:hover:not(:disabled):not(.nyx-btn--disabled) {
   background-color: var(--nyx-color-accent-hover);
   border-color: var(--nyx-color-accent-hover);
-  box-shadow: 0 8px 24px rgba(119, 100, 255, 0.42);
-  transform: translateY(-2px);
+  box-shadow: 
+    0 1px 1px rgba(255, 255, 255, 0.2),
+    0 10px 32px rgba(124, 109, 255, 0.42);
+  transform: translateY(-3px);
 }
 
 .nyx-btn--primary:active:not(:disabled):not(.nyx-btn--disabled) {
   background-color: var(--nyx-color-accent-active);
-  transform: translateY(0);
+  transform: scale(0.97);
+  box-shadow: 
+    0 1px 1px rgba(255, 255, 255, 0.15),
+    0 2px 8px rgba(124, 109, 255, 0.2);
 }
 
+/* Secondary (Glass Surface) */
 .nyx-btn--secondary {
   background-color: var(--nyx-color-surface);
   color: var(--nyx-color-text);
   border-color: var(--nyx-color-border);
+  box-shadow: var(--nyx-shadow-outer-shell);
 }
 
 .nyx-btn--secondary:hover:not(:disabled):not(.nyx-btn--disabled) {
   background-color: var(--nyx-color-surface-elevated);
   border-color: var(--nyx-color-border-active);
   color: #FFFFFF;
-  transform: translateY(-2px);
+  box-shadow: var(--nyx-shadow-sm), var(--nyx-shadow-glow-sm);
+  transform: translateY(-3px);
 }
 
 .nyx-btn--secondary:active:not(:disabled):not(.nyx-btn--disabled) {
   background-color: var(--nyx-color-surface);
-  transform: translateY(0);
+  transform: scale(0.97);
+  box-shadow: var(--nyx-shadow-outer-shell);
 }
 
+/* Outline (Hairline) */
 .nyx-btn--outline {
   background-color: transparent;
   color: var(--nyx-color-accent-secondary);
@@ -161,38 +296,41 @@
   background-color: var(--nyx-color-accent-subtle);
   border-color: var(--nyx-color-accent);
   color: #FFFFFF;
-  transform: translateY(-2px);
+  transform: translateY(-3px);
 }
 
-.nyx-btn--text {
+/* Ghost / Text Button */
+.nyx-btn--ghost {
   background-color: transparent;
   color: var(--nyx-color-text-muted);
   border-color: transparent;
-  padding-left: var(--nyx-space-2);
-  padding-right: var(--nyx-space-2);
+  padding-left: var(--nyx-space-3);
+  padding-right: var(--nyx-space-3);
 }
 
-.nyx-btn--text:hover:not(:disabled):not(.nyx-btn--disabled) {
+.nyx-btn--ghost:hover:not(:disabled):not(.nyx-btn--disabled) {
   color: var(--nyx-color-text);
+  background-color: var(--nyx-color-surface-subtle);
 }
 
 /* Button Sizes */
 .nyx-btn--sm {
   padding: 0.5rem 1rem;
   font-size: var(--nyx-font-size-sm);
-  border-radius: var(--nyx-radius-sm);
+  border-radius: var(--nyx-radius-md);
+  gap: var(--nyx-space-1);
 }
 
 .nyx-btn--lg {
-  padding: 0.95rem 2rem;
+  padding: 1rem 2.25rem;
   font-size: var(--nyx-font-size-lg);
-  border-radius: var(--nyx-radius-lg);
+  border-radius: var(--nyx-radius-xl);
 }
 
 /* Button States */
 .nyx-btn:disabled,
 .nyx-btn--disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
   pointer-events: none;
   transform: none !important;
@@ -224,7 +362,88 @@
 }
 
 /* ==========================================================================
-   Surfaces and Cards
+   Double-Bezel Card Architecture
+   ========================================================================== */
+.nyx-card {
+  position: relative;
+  background-color: var(--nyx-color-surface);
+  border: 1px solid var(--nyx-color-border);
+  border-radius: var(--nyx-radius-xl);
+  padding: var(--nyx-space-7);
+  overflow: visible;
+  isolation: isolate;
+  transition: all var(--nyx-transition-smooth);
+}
+
+/* Outer shell bezel */
+.nyx-card::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 1px solid var(--nyx-color-border-hairline);
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity var(--nyx-transition-base);
+  z-index: -1;
+}
+
+/* Inner core glow on hover */
+.nyx-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: var(--nyx-shadow-inner-core);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--nyx-transition-smooth);
+  z-index: -1;
+}
+
+.nyx-card:hover {
+  background-color: var(--nyx-color-surface-elevated);
+  border-color: var(--nyx-color-border-active);
+  transform: translateY(-6px);
+  box-shadow: var(--nyx-shadow-md), var(--nyx-shadow-glow-sm);
+}
+
+.nyx-card:hover::after {
+  opacity: 1;
+}
+
+.nyx-card:hover::before {
+  opacity: 0.5;
+}
+
+/* Interactive card variant */
+.nyx-card--interactive {
+  cursor: pointer;
+}
+
+.nyx-card--interactive:focus-visible {
+  outline: 2px solid var(--nyx-color-accent);
+  outline-offset: 4px;
+}
+
+/* Compact card */
+.nyx-card--compact {
+  padding: var(--nyx-space-5) var(--nyx-space-6);
+  border-radius: var(--nyx-radius-lg);
+}
+
+/* Elevated card (for hero features) */
+.nyx-card--elevated {
+  background-color: var(--nyx-color-surface);
+  box-shadow: var(--nyx-shadow-lg);
+}
+
+.nyx-card--elevated:hover {
+  box-shadow: var(--nyx-shadow-xl), var(--nyx-shadow-glow);
+}
+
+/* ==========================================================================
+   Surfaces
    ========================================================================== */
 .nyx-surface {
   background-color: var(--nyx-color-surface);
@@ -232,24 +451,11 @@
   border-radius: var(--nyx-radius-lg);
 }
 
-.nyx-card {
-  background-color: var(--nyx-color-surface);
-  border: 1px solid var(--nyx-color-border);
-  border-radius: var(--nyx-radius-lg);
-  padding: var(--nyx-space-6);
-  position: relative;
-  transition: all var(--nyx-transition-base);
-}
-
-.nyx-card--interactive {
-  cursor: pointer;
-}
-
-.nyx-card--interactive:hover {
-  background-color: var(--nyx-color-surface-elevated);
-  border-color: var(--nyx-color-border-active);
-  transform: translateY(-4px);
-  box-shadow: var(--nyx-shadow-md), var(--nyx-shadow-glow-sm);
+.nyx-surface--glass {
+  background-color: var(--nyx-color-surface-glass);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--nyx-color-border-hairline);
 }
 
 /* ==========================================================================
@@ -259,7 +465,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--nyx-space-2);
-  padding: 0.25rem 0.75rem;
+  padding: 0.3125rem 0.875rem;
   font-family: var(--nyx-font-family);
   font-size: var(--nyx-font-size-xs);
   font-weight: var(--nyx-font-weight-semibold);
@@ -268,18 +474,31 @@
   background-color: var(--nyx-color-surface-elevated);
   border: 1px solid var(--nyx-color-border);
   color: var(--nyx-color-text-muted);
+  transition: all var(--nyx-transition-fast);
+}
+
+.nyx-badge:hover {
+  background-color: var(--nyx-color-surface);
+  border-color: var(--nyx-color-border-active);
+  color: var(--nyx-color-text);
 }
 
 .nyx-badge--accent {
   background-color: var(--nyx-color-accent-subtle);
-  border-color: rgba(119, 100, 255, 0.3);
+  border-color: rgba(124, 109, 255, 0.3);
   color: var(--nyx-color-accent-secondary);
 }
 
 .nyx-badge--success {
   background-color: var(--nyx-color-status-success-subtle);
-  border-color: rgba(103, 232, 192, 0.3);
+  border-color: rgba(90, 232, 191, 0.3);
   color: var(--nyx-color-status-success);
+}
+
+.nyx-badge--danger {
+  background-color: var(--nyx-color-status-danger-subtle);
+  border-color: rgba(255, 90, 122, 0.3);
+  color: var(--nyx-color-status-danger);
 }
 
 .nyx-status-indicator {
@@ -288,15 +507,17 @@
   height: 8px;
   border-radius: 50%;
   background-color: var(--nyx-color-text-subtle);
+  flex-shrink: 0;
 }
 
 .nyx-status-indicator--online {
   background-color: var(--nyx-color-status-success);
-  box-shadow: 0 0 8px rgba(103, 232, 192, 0.6);
+  box-shadow: 0 0 12px rgba(90, 232, 191, 0.7);
+  animation: nyx-pulse-dot 2.8s ease-in-out infinite;
 }
 
 /* ==========================================================================
-   Form Controls
+   Form Controls — Refined
    ========================================================================== */
 .nyx-input-group {
   display: flex;
@@ -314,7 +535,7 @@
 
 .nyx-input {
   width: 100%;
-  padding: 0.75rem 1rem;
+  padding: 0.8125rem 1rem;
   font-family: var(--nyx-font-family);
   font-size: var(--nyx-font-size-base);
   color: var(--nyx-color-text);
@@ -322,7 +543,7 @@
   border: 1px solid var(--nyx-color-border);
   border-radius: var(--nyx-radius-md);
   outline: none;
-  transition: all var(--nyx-transition-fast);
+  transition: all var(--nyx-transition-snappy);
   box-sizing: border-box;
 }
 
@@ -336,12 +557,12 @@
 
 .nyx-input:focus {
   border-color: var(--nyx-color-accent);
-  box-shadow: 0 0 0 3px var(--nyx-color-focus-ring);
+  box-shadow: 0 0 0 4px var(--nyx-color-focus-ring);
   background-color: var(--nyx-color-surface-elevated);
 }
 
 .nyx-input:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
   background-color: var(--nyx-color-surface-subtle);
 }
@@ -351,7 +572,7 @@
 }
 
 .nyx-input--error:focus {
-  box-shadow: 0 0 0 3px var(--nyx-color-status-danger-subtle) !important;
+  box-shadow: 0 0 0 4px var(--nyx-color-status-danger-subtle) !important;
 }
 
 .nyx-input-error-msg {
@@ -367,11 +588,26 @@
   color: var(--nyx-color-accent-secondary);
   text-decoration: none;
   transition: color var(--nyx-transition-fast);
+  position: relative;
+}
+
+.nyx-link::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background-color: var(--nyx-color-accent);
+  transition: width var(--nyx-transition-smooth);
 }
 
 .nyx-link:hover {
   color: var(--nyx-color-text);
-  text-decoration: underline;
+}
+
+.nyx-link:hover::after {
+  width: 100%;
 }
 
 .nyx-link:focus-visible {
@@ -427,6 +663,11 @@
   height: 1.75rem;
 }
 
+.nyx-icon--xl {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
 /* ==========================================================================
    Real Product Chat UI Components (Matches Flutter main.dart)
    ========================================================================== */
@@ -435,10 +676,11 @@
   padding: 0.65rem 0.95rem;
   font-family: var(--nyx-font-family);
   font-size: 0.9375rem;
-  line-height: 1.35;
+  line-height: 1.4;
   position: relative;
   display: flex;
   flex-direction: column;
+  border-radius: var(--nyx-radius-bubble-main);
 }
 
 .nyx-chat-bubble--in {
@@ -446,44 +688,44 @@
   background-color: var(--nyx-color-surface);
   color: var(--nyx-color-text);
   border: 1px solid var(--nyx-color-border);
-  border-radius: 18px 18px 18px 6px;
+  border-radius: 20px 20px 20px 7px;
   margin-right: auto;
 }
 
 .nyx-chat-bubble--out {
   align-self: flex-end;
   background-color: var(--nyx-color-accent);
-  color: #FFFFFF;
-  border-radius: 18px 18px 6px 18px;
+  color: var(--nyx-color-text-on-accent);
+  border-radius: 20px 20px 7px 20px;
   margin-left: auto;
 }
 
 /* Grouped consecutive messages */
 .nyx-chat-bubble--in.nyx-chat-bubble--grouped-top {
-  border-top-left-radius: 6px;
-  margin-top: 2px;
+  border-top-left-radius: 7px;
+  margin-top: 3px;
 }
 .nyx-chat-bubble--in.nyx-chat-bubble--grouped-bottom {
-  border-bottom-left-radius: 6px;
-  margin-bottom: 2px;
+  border-bottom-left-radius: 7px;
+  margin-bottom: 3px;
 }
 
 .nyx-chat-bubble--out.nyx-chat-bubble--grouped-top {
-  border-top-right-radius: 6px;
-  margin-top: 2px;
+  border-top-right-radius: 7px;
+  margin-top: 3px;
 }
 .nyx-chat-bubble--out.nyx-chat-bubble--grouped-bottom {
-  border-bottom-right-radius: 6px;
-  margin-bottom: 2px;
+  border-bottom-right-radius: 7px;
+  margin-bottom: 3px;
 }
 
 .nyx-chat-meta {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
-  margin-top: 3px;
-  font-size: 0.6875rem;
+  gap: 5px;
+  margin-top: 4px;
+  font-size: 0.7rem;
 }
 
 .nyx-chat-meta--in {
@@ -503,17 +745,17 @@
 .nyx-typing-dots {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 0.5rem 0.85rem;
+  gap: 5px;
+  padding: 0.55rem 0.9rem;
   background-color: var(--nyx-color-surface);
   border: 1px solid var(--nyx-color-border);
-  border-radius: 14px;
+  border-radius: 16px;
   width: fit-content;
 }
 
 .nyx-typing-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   background-color: var(--nyx-color-accent-secondary);
   border-radius: 50%;
   animation: nyx-typing-bounce 1.4s infinite ease-in-out both;
@@ -529,20 +771,430 @@
     opacity: 0.4;
   }
   40% {
-    transform: scale(1.15);
+    transform: scale(1.2);
     opacity: 1;
   }
 }
 
 /* ==========================================================================
-   Design Motion System
+   Navigation Bar — Glass Surface
+   ========================================================================== */
+.nyx-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--nyx-nav-height);
+  z-index: var(--nyx-z-sticky);
+  background-color: var(--nyx-color-surface-overlay);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-bottom: 1px solid var(--nyx-color-border-hairline);
+  transition: all var(--nyx-transition-smooth);
+}
+
+.nyx-nav--scrolled {
+  background-color: rgba(5, 5, 5, 0.92);
+  border-bottom-color: var(--nyx-color-border);
+  box-shadow: var(--nyx-shadow-sm);
+}
+
+.nyx-nav__inner {
+  max-width: var(--nyx-container-max-width);
+  margin: 0 auto;
+  height: 100%;
+  padding: 0 var(--nyx-space-6);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nyx-space-4);
+}
+
+.nyx-nav__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--nyx-space-3);
+  text-decoration: none;
+  color: var(--nyx-color-text);
+  flex-shrink: 0;
+}
+
+.nyx-nav__brand svg {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--nyx-radius-md);
+  transition: transform var(--nyx-transition-spring);
+}
+
+.nyx-nav__brand:hover svg {
+  transform: rotate(-6deg) scale(1.05);
+}
+
+.nyx-nav__brand-text {
+  font-family: var(--nyx-font-family-display);
+  font-weight: 700;
+  font-size: var(--nyx-font-size-lg);
+  letter-spacing: var(--nyx-letter-spacing-wide);
+}
+
+.nyx-nav__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--nyx-space-3);
+}
+
+.nyx-nav__link {
+  color: var(--nyx-color-text-muted);
+  text-decoration: none;
+  font-size: var(--nyx-font-size-sm);
+  font-weight: var(--nyx-font-weight-medium);
+  padding: var(--nyx-space-2) var(--nyx-space-3);
+  border-radius: var(--nyx-radius-md);
+  transition: all var(--nyx-transition-fast);
+}
+
+.nyx-nav__link:hover {
+  color: var(--nyx-color-text);
+  background-color: var(--nyx-color-surface-elevated);
+}
+
+/* ==========================================================================
+   Section Layout Utilities
+   ========================================================================== */
+.nyx-section {
+  padding: var(--nyx-space-11) var(--nyx-space-6);
+  position: relative;
+  isolation: isolate;
+}
+
+@media (min-width: 768px) {
+  .nyx-section {
+    padding: var(--nyx-space-13) var(--nyx-space-8);
+  }
+}
+
+.nyx-section__inner {
+  max-width: var(--nyx-container-max-width);
+  margin: 0 auto;
+}
+
+.nyx-section--narrow .nyx-section__inner {
+  max-width: var(--nyx-container-narrow);
+}
+
+.nyx-section-header {
+  text-align: center;
+  margin-bottom: var(--nyx-space-10);
+}
+
+@media (min-width: 768px) {
+  .nyx-section-header {
+    margin-bottom: var(--nyx-space-12);
+  }
+}
+
+.nyx-section-header--left {
+  text-align: left;
+  max-width: 680px;
+}
+
+.nyx-section-badge {
+  display: inline-block;
+  margin-bottom: var(--nyx-space-4);
+}
+
+.nyx-section-title {
+  margin-bottom: var(--nyx-space-4);
+}
+
+.nyx-section-desc {
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.nyx-section-header--left .nyx-section-desc {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+/* ==========================================================================
+   Grid Systems — Asymmetrical Bento & Editorial Split
+   ========================================================================== */
+.nyx-grid {
+  display: grid;
+  gap: var(--nyx-space-6);
+}
+
+@media (min-width: 768px) {
+  .nyx-grid {
+    gap: var(--nyx-space-8);
+  }
+}
+
+/* Bento Grid — Asymmetrical feature layout */
+.nyx-grid--bento {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+  .nyx-grid--bento {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .nyx-grid--bento {
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(2, minmax(280px, auto));
+  }
+  
+  .nyx-grid--bento > :nth-child(1) { grid-column: span 2; grid-row: span 1; }
+  .nyx-grid--bento > :nth-child(2) { grid-column: span 1; grid-row: span 1; }
+  .nyx-grid--bento > :nth-child(3) { grid-column: span 1; grid-row: span 1; }
+  .nyx-grid--bento > :nth-child(4) { grid-column: span 2; grid-row: span 1; }
+  .nyx-grid--bento > :nth-child(5) { grid-column: span 1; grid-row: span 1; }
+  .nyx-grid--bento > :nth-child(6) { grid-column: span 1; grid-row: span 1; }
+}
+
+/* Editorial Split — 60/40 or 50/50 content/image */
+.nyx-grid--editorial {
+  grid-template-columns: 1fr;
+  align-items: center;
+  gap: var(--nyx-space-8);
+}
+
+@media (min-width: 1024px) {
+  .nyx-grid--editorial {
+    grid-template-columns: 1.2fr 1fr;
+  }
+  
+  .nyx-grid--editorial--reverse {
+    direction: rtl;
+  }
+  
+  .nyx-grid--editorial--reverse > * {
+    direction: ltr;
+  }
+}
+
+/* Three-column feature grid */
+.nyx-grid--features {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+  .nyx-grid--features {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .nyx-grid--features {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Two-column testimonials */
+.nyx-grid--testimonials {
+  grid-template-columns: 1fr;
+  gap: var(--nyx-space-6);
+}
+
+@media (min-width: 768px) {
+  .nyx-grid--testimonials {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1200px) {
+  .nyx-grid--testimonials {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* ==========================================================================
+   Feature Card — Premium Variant
+   ========================================================================== */
+.nyx-feature-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.nyx-feature-card__icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--nyx-radius-lg);
+  background: linear-gradient(135deg, var(--nyx-color-accent), var(--nyx-color-accent-secondary));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--nyx-space-4);
+  box-shadow: var(--nyx-shadow-glow-sm);
+  transition: all var(--nyx-transition-smooth);
+}
+
+.nyx-feature-card__icon .nyx-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--nyx-color-text-on-accent);
+}
+
+.nyx-feature-card:hover .nyx-feature-card__icon {
+  transform: scale(1.08) rotate(3deg);
+  box-shadow: var(--nyx-shadow-glow);
+}
+
+.nyx-feature-card__title {
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-xl);
+  font-weight: var(--nyx-font-weight-semibold);
+  line-height: var(--nyx-line-height-snug);
+  color: var(--nyx-color-text);
+  margin: 0 0 var(--nyx-space-2);
+}
+
+.nyx-feature-card__desc {
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-base);
+  font-weight: var(--nyx-font-weight-regular);
+  line-height: var(--nyx-line-height-relaxed);
+  color: var(--nyx-color-text-muted);
+  margin: 0;
+  flex-grow: 1;
+}
+
+/* ==========================================================================
+   Testimonial Card
+   ========================================================================== */
+.nyx-testimonial {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.nyx-testimonial__content {
+  flex-grow: 1;
+  margin-bottom: var(--nyx-space-6);
+}
+
+.nyx-testimonial__text {
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-lg);
+  font-weight: var(--nyx-font-weight-regular);
+  line-height: var(--nyx-line-height-relaxed);
+  color: var(--nyx-color-text);
+  margin: 0 0 var(--nyx-space-4);
+  font-style: normal;
+}
+
+.nyx-testimonial__author {
+  display: flex;
+  align-items: center;
+  gap: var(--nyx-space-3);
+}
+
+.nyx-testimonial__avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--nyx-color-accent), var(--nyx-color-accent-secondary));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--nyx-font-family-display);
+  font-weight: 700;
+  font-size: var(--nyx-font-size-lg);
+  color: var(--nyx-color-text-on-accent);
+  flex-shrink: 0;
+}
+
+.nyx-testimonial__name {
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-base);
+  font-weight: var(--nyx-font-weight-semibold);
+  color: var(--nyx-color-text);
+  margin: 0;
+}
+
+.nyx-testimonial__role {
+  font-family: var(--nyx-font-family);
+  font-size: var(--nyx-font-size-sm);
+  color: var(--nyx-color-text-muted);
+  margin: 0;
+}
+
+/* ==========================================================================
+   Phone Frame — Premium Device Mockup
+   ========================================================================== */
+.nyx-phone-frame {
+  position: relative;
+  width: 100%;
+  max-width: 360px;
+  margin: 0 auto;
+  background: linear-gradient(180deg, #0A0B12 0%, #050505 100%);
+  border: 2px solid var(--nyx-color-border);
+  border-radius: 44px;
+  padding: 24px 16px 32px;
+  box-shadow: 
+    var(--nyx-shadow-xl),
+    0 0 0 1px rgba(255, 255, 255, 0.03),
+    inset 0 1px 1px rgba(255, 255, 255, 0.05);
+  transform: perspective(1000px) rotateX(2deg) rotateY(-3deg);
+  transition: transform var(--nyx-duration-cinematic) var(--nyx-ease-decelerate);
+}
+
+.nyx-phone-frame:hover {
+  transform: perspective(1000px) rotateX(0deg) rotateY(0deg);
+  box-shadow: 
+    var(--nyx-shadow-xl),
+    var(--nyx-shadow-glow),
+    0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.nyx-phone-frame::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  height: 6px;
+  background-color: #1A1B28;
+  border-radius: 3px;
+}
+
+.nyx-phone-frame__screen {
+  background-color: var(--nyx-color-bg);
+  border: 1px solid var(--nyx-color-border-subtle);
+  border-radius: 24px;
+  overflow: hidden;
+  height: 100%;
+  min-height: 640px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ==========================================================================
+   Design Motion System — Premium Keyframes
    ========================================================================== */
 
 /* Entrance Animations */
 @keyframes nyx-entrance-up {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes nyx-entrance-up-lg {
+  from {
+    opacity: 0;
+    transform: translateY(50px);
   }
   to {
     opacity: 1;
@@ -555,23 +1207,34 @@
   to { opacity: 1; }
 }
 
+@keyframes nyx-entrance-scale {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 @keyframes nyx-float-gentle {
   0%, 100% {
     transform: translateY(0);
   }
   50% {
-    transform: translateY(-8px);
+    transform: translateY(-12px);
   }
 }
 
 @keyframes nyx-ambient-breathe {
   0%, 100% {
-    transform: scale(0.95);
-    opacity: 0.2;
+    transform: scale(0.96);
+    opacity: 0.18;
   }
   50% {
     transform: scale(1.06);
-    opacity: 0.32;
+    opacity: 0.3;
   }
 }
 
@@ -581,45 +1244,88 @@
     opacity: 1;
   }
   50% {
-    transform: scale(0.85);
-    opacity: 0.6;
+    transform: scale(0.82);
+    opacity: 0.55;
   }
 }
 
-/* Motion Utilities */
-.nyx-motion-fade-up {
-  animation: nyx-entrance-up var(--nyx-duration-slow) var(--nyx-ease-decelerate) both;
+@keyframes nyx-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
 
-.nyx-motion-fade {
-  animation: nyx-entrance-fade var(--nyx-duration-normal) var(--nyx-ease-decelerate) both;
+@keyframes nyx-border-glow {
+  0%, 100% {
+    border-color: var(--nyx-color-border);
+    box-shadow: var(--nyx-shadow-outer-shell);
+  }
+  50% {
+    border-color: var(--nyx-color-border-active);
+    box-shadow: var(--nyx-shadow-sm), var(--nyx-shadow-glow-sm);
+  }
 }
 
+/* Staggered Reveal Utilities */
+.nyx-reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: all var(--nyx-duration-cinematic) var(--nyx-ease-decelerate);
+}
+
+.nyx-reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.nyx-reveal--fast {
+  transition-duration: var(--nyx-duration-slow);
+}
+
+.nyx-reveal--delay-1 { transition-delay: 80ms; }
+.nyx-reveal--delay-2 { transition-delay: 160ms; }
+.nyx-reveal--delay-3 { transition-delay: 240ms; }
+.nyx-reveal--delay-4 { transition-delay: 320ms; }
+.nyx-reveal--delay-5 { transition-delay: 400ms; }
+.nyx-reveal--delay-6 { transition-delay: 480ms; }
+
+/* Float animation for hero elements */
 .nyx-motion-float {
-  animation: nyx-float-gentle 6s ease-in-out infinite;
+  animation: nyx-float-gentle 7s ease-in-out infinite;
 }
 
+/* Ambient breathe for background blobs */
 .nyx-motion-breathe {
-  animation: nyx-ambient-breathe 7s ease-in-out infinite;
+  animation: nyx-ambient-breathe 8s ease-in-out infinite;
 }
-
-.nyx-motion-delay-1 { animation-delay: 100ms; }
-.nyx-motion-delay-2 { animation-delay: 200ms; }
-.nyx-motion-delay-3 { animation-delay: 320ms; }
-.nyx-motion-delay-4 { animation-delay: 460ms; }
 
 /* Status indicator pulsing */
 .nyx-status-indicator--online {
-  animation: nyx-pulse-dot 2.5s ease-in-out infinite;
+  animation: nyx-pulse-dot 2.8s ease-in-out infinite;
 }
 
+/* Typing dots */
+.nyx-typing-dot {
+  animation: nyx-typing-bounce 1.4s infinite ease-in-out both;
+}
+
+.nyx-typing-dot:nth-child(1) { animation-delay: -0.32s; }
+.nyx-typing-dot:nth-child(2) { animation-delay: -0.16s; }
+.nyx-typing-dot:nth-child(3) { animation-delay: 0s; }
+
 /* Tactile Active States */
-.nyx-btn:active:not(:disabled):not(.nyx-btn--disabled) {
+.nyx-btn:active:not(:disabled):not(.nyx-btn--disabled),
+.nyx-card:active,
+.nyx-badge:active {
   transform: scale(0.97) !important;
+  transition-duration: 50ms !important;
 }
 
 /* ==========================================================================
-   Reduced Motion
+   Reduced Motion — Accessibility First
    ========================================================================== */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -631,8 +1337,11 @@
     scroll-behavior: auto !important;
   }
 
-  .nyx-motion-fade-up,
-  .nyx-motion-fade,
+  .nyx-reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
   .nyx-motion-float,
   .nyx-motion-breathe,
   .nyx-status-indicator--online,
@@ -642,10 +1351,46 @@
     transform: none !important;
   }
 
-  .nyx-btn--primary:hover,
-  .nyx-btn--secondary:hover,
-  .nyx-btn--outline:hover,
-  .nyx-card--interactive:hover {
+  .nyx-btn:active:not(:disabled):not(.nyx-btn--disabled) {
     transform: none !important;
   }
+
+  .nyx-card:hover,
+  .nyx-btn--primary:hover:not(:disabled):not(.nyx-btn--disabled),
+  .nyx-btn--secondary:hover:not(:disabled):not(.nyx-btn--disabled),
+  .nyx-btn--outline:hover:not(:disabled):not(.nyx-btn--disabled),
+  .nyx-card--interactive:hover,
+  .nyx-feature-card:hover .nyx-feature-card__icon {
+    transform: none !important;
+  }
+
+  .nyx-phone-frame:hover {
+    transform: perspective(1000px) rotateX(2deg) rotateY(-3deg) !important;
+  }
+}
+
+/* ==========================================================================
+   Scrollbar Styling
+   ========================================================================== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--nyx-color-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--nyx-color-border);
+  border-radius: var(--nyx-radius-full);
+  border: 2px solid var(--nyx-color-bg);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--nyx-color-border-active);
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--nyx-color-bg);
 }
