@@ -12,6 +12,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_windowmanager/flutter_windowmanager.dart';
 import 'screens/call_screen.dart';
 import 'followers_following_screen.dart';
 import 'services/supabase.dart';
@@ -211,6 +213,10 @@ class BroApp extends StatefulWidget {
 }
 
 class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
+  bool _appLocked = false;
+  bool _appLockEnabled = false;
+  Timer? _lockTimer;
+
   @override
   void initState() {
     super.initState();
@@ -219,6 +225,18 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
     PushNotifications.setOpenHandler(
       (conversationId) => _router.go('/chat/$conversationId'),
     );
+    _loadAppLockSettings();
+  }
+
+  Future<void> _loadAppLockSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (mounted) {
+        setState(() {
+          _appLockEnabled = prefs.getBool('app_lock_enabled') ?? false;
+        });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -232,31 +250,85 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(Supa.recordLastSeen());
+      if (_appLockEnabled) {
+        _lockApp();
+      }
+    } else if (state == AppLifecycleState.paused ||
+               state == AppLifecycleState.inactive) {
+      if (_appLockEnabled) {
+        _startLockTimer();
+      }
     }
+  }
+
+  void _startLockTimer() {
+    _lockTimer?.cancel();
+    _lockTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted) _lockApp();
+    });
+  }
+
+  void _lockApp() {
+    if (mounted) setState(() => _appLocked = true);
+  }
+
+  Future<void> _unlockApp() async {
+    final auth = LocalAuthentication();
+    final canCheck = await auth.canCheckBiometrics;
+    final isAvailable = await auth.isDeviceSupported();
+    if (!canCheck || !isAvailable) {
+      _showPinDialog();
+      return;
+    }
+    try {
+      final didAuthenticate = await auth.authenticate(
+        localizedReason: 'Unlock BRO',
+        options: const AuthenticationOptions(
+          stickyAuth: true,
+          biometricOnly: false,
+        ),
+      );
+      if (didAuthenticate && mounted) {
+        setState(() => _appLocked = false);
+      }
+    } catch (_) {
+      if (mounted) {
+        _showPinDialog();
+      }
+    }
+  }
+
+  void _showPinDialog() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('PIN fallback not implemented')),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp.router(
-      title: 'BRO',
-      debugShowCheckedModeBanner: false,
-      scaffoldMessengerKey: appScaffoldMessengerKey,
-      routerConfig: _router,
-      builder: (context, child) {
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            if (child != null) child,
-            const Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: OfflineBanner(),
-            ),
-          ],
-        );
-      },
-      theme: ThemeData(
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        MaterialApp.router(
+          title: 'BRO',
+          debugShowCheckedModeBanner: false,
+          scaffoldMessengerKey: appScaffoldMessengerKey,
+          routerConfig: _router,
+          builder: (context, child) {
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                if (child != null) child,
+                const Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: OfflineBanner(),
+                ),
+              ],
+            );
+          },
+          theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
         scaffoldBackgroundColor: _P.bg,
@@ -276,6 +348,76 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
         textTheme: const TextTheme(
           bodyMedium: TextStyle(color: _P.text),
         ),
+      ),
+    ),
+    if (_appLocked) _AppLockScreen(onUnlock: _unlockApp),
+  ],
+);
+  }
+}
+
+class _AppLockScreen extends StatelessWidget {
+  const _AppLockScreen({required this.onUnlock});
+  final VoidCallback onUnlock;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _P.bg,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.lock_outline_rounded,
+                  size: 80, color: _P.primary),
+              const SizedBox(height: 24),
+              Text('App Locked',
+                  style: TextStyle(
+                      color: _P.text,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              Text('Authenticate to unlock',
+                  style: TextStyle(color: _P.muted, fontSize: 16)),
+              const SizedBox(height: 32),
+              FilledButton.icon(
+                icon: const Icon(Icons.fingerprint),
+                label: const Text('Unlock with Biometrics'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _P.primary,
+                  foregroundColor: _P.darkOnAccent,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                ),
+                onPressed: onUnlock,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReactionPickerItem extends StatelessWidget {
+  const _ReactionPickerItem({required this.emoji});
+  final String emoji;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.pop(context, emoji),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 100),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: _P.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _P.border),
+        ),
+        child: Text(emoji, style: const TextStyle(fontSize: 28)),
       ),
     );
   }
@@ -1578,6 +1720,16 @@ class _ChatScreenState extends State<ChatScreen> {
     _loadMessageExpiry();
     Supa.onTyping(widget.conversationId, _onPeerTyping);
     _listenForCalls();
+    _checkConversationLock();
+  }
+
+  Future<void> _checkConversationLock() async {
+    try {
+      final isLocked = await Supa.isConversationLocked(widget.conversationId);
+      if (isLocked && mounted) {
+        await FlutterWindowManager.addFlags(FlutterWindowManager.FLAG_SECURE);
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadMessageExpiry() async {
@@ -1830,6 +1982,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    // Remove secure flag when leaving chat
+    FlutterWindowManager.clearFlags(FlutterWindowManager.FLAG_SECURE);
     Supa.unsubscribeTyping(widget.conversationId);
     _presenceSub?.cancel();
     _ctrl.dispose();
@@ -1953,6 +2107,14 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
             _MenuTile(
+              icon: Icons.lock_open_outlined,
+              label: 'Unlock conversation',
+              onTap: () {
+                Navigator.pop(context);
+                _unlockConversation();
+              },
+            ),
+            _MenuTile(
               icon: Icons.report_outlined,
               label: 'Report user',
               onTap: () {
@@ -2021,12 +2183,64 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _showReactionPicker(Message message) async {
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: _P.surface,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'React to message',
+                style: TextStyle(
+                    color: _P.text,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: const [
+                  '👍',
+                  '❤️',
+                  '😂',
+                  '😮',
+                  '😢',
+                  '😡',
+                  '🎉',
+                  '👏',
+                  '🙏',
+                  '🔥',
+                ].map((emoji) => _ReactionPickerItem(emoji: emoji)).toList(),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    ).then((emoji) {
+      if (emoji != null && emoji is String) {
+        Supa.addReaction(message.id, emoji);
+      }
+    });
+  }
+
   Future<void> _showMessageActions(Message message) async {
     final isMine = message.senderId == Supa.currentUser!.id;
+    final now = DateTime.now();
+    final messageAge = now.difference(message.createdAt);
     final canEdit = isMine &&
-        DateTime.now().difference(message.createdAt) <=
-            const Duration(minutes: 15) &&
+        messageAge <= const Duration(minutes: 15) &&
         !message.content.startsWith('attachment:');
+    final canDeleteForEveryone = isMine && messageAge <= const Duration(hours: 1);
     final action = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: _P.surface,
@@ -2045,6 +2259,22 @@ class _ChatScreenState extends State<ChatScreen> {
               leading: const Icon(Icons.edit_outlined),
               title: const Text('Edit message'),
               onTap: () => Navigator.pop(sheetContext, 'edit')),
+        if (canDeleteForEveryone)
+          ListTile(
+              leading: const Icon(Icons.delete_forever_outlined,
+                  color: Colors.redAccent),
+              title: const Text('Delete for everyone',
+                  style: TextStyle(color: Colors.redAccent)),
+              onTap: () => Navigator.pop(sheetContext, 'delete_for_everyone')),
+        ListTile(
+            leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+            title: const Text('Delete for me',
+                style: TextStyle(color: Colors.redAccent)),
+            onTap: () => Navigator.pop(sheetContext, 'delete')),
+        ListTile(
+            leading: const Icon(Icons.emoji_emotions_outlined),
+            title: const Text('Add reaction'),
+            onTap: () => Navigator.pop(sheetContext, 'react')),
         ListTile(
             leading: const Icon(Icons.copy),
             title: const Text('Copy'),
@@ -2084,6 +2314,53 @@ class _ChatScreenState extends State<ChatScreen> {
             updated != message.content) {
           await Supa.updateMessage(message.id, updated);
         }
+      }
+      if (action == 'delete_for_everyone' && mounted) {
+        final confirm = await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+                  title: const Text('Delete for everyone'),
+                  content: const Text(
+                      'This will remove the message for all participants. This action cannot be undone.'),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        child: const Text('Cancel')),
+                    FilledButton(
+                        onPressed: () => Navigator.pop(dialogContext, true),
+                        style: FilledButton.styleFrom(
+                            backgroundColor: Colors.redAccent),
+                        child: const Text('Delete for everyone'))
+                  ],
+                ));
+        if (confirm == true) {
+          await Supa.deleteMessageForEveryone(message.id);
+        }
+      }
+      if (action == 'delete' && mounted) {
+        final confirm = await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+                  title: const Text('Delete for me'),
+                  content: const Text(
+                      'This will remove the message only from your view.'),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        child: const Text('Cancel')),
+                    FilledButton(
+                        onPressed: () => Navigator.pop(dialogContext, true),
+                        style: FilledButton.styleFrom(
+                            backgroundColor: Colors.redAccent),
+                        child: const Text('Delete'))
+                  ],
+                ));
+        if (confirm == true) {
+          await Supa.deleteMessage(message.id);
+        }
+      }
+      if (action == 'react') {
+        _showReactionPicker(message);
       }
     } catch (e) {
       if (e is StateError) {
@@ -3671,6 +3948,41 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                           value: Duration(hours: 1), child: Text('1 hour')),
                     ],
                     onChanged: (v) => setState(() => _autoLockTimer = v),
+                  ),
+                  const SizedBox(height: 20),
+                  Text('Security',
+                      style: TextStyle(
+                          color: _P.muted, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  FutureBuilder<bool>(
+                    future: SharedPreferences.getInstance()
+                        .then((prefs) => prefs.getBool('app_lock_enabled') ?? false),
+                    builder: (context, snapshot) {
+                      final enabled = snapshot.data ?? false;
+                      // Get appState reference before async gap
+                      final appState =
+                          context.findAncestorStateOfType<_BroAppState>();
+                      return SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('App Lock'),
+                        subtitle: Text(
+                          'Require biometric or PIN to open the app',
+                          style: TextStyle(color: _P.muted, fontSize: 12),
+                        ),
+                        value: enabled,
+                        onChanged: (v) async {
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.setBool('app_lock_enabled', v);
+                          if (appState != null && appState.mounted) {
+                            appState.setState(() => appState._appLockEnabled = v);
+                            if (v) {
+                              appState._lockApp();
+                            }
+                          }
+                          // No setState needed - FutureBuilder will rebuild
+                        },
+                      );
+                    },
                   ),
                   const SizedBox(height: 24),
                   Text('Chat background',
