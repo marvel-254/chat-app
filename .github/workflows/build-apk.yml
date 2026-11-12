@@ -18,6 +18,12 @@ jobs:
           channel: stable
       - run: flutter pub get
       - run: dart run flutter_launcher_icons
+
+      # Release signing. KEYSTORE_BASE64 is the base64 of release.keystore;
+      # see scripts/generate_keystore.sh for how that file is produced.
+      # The step fails loudly when the secrets are absent, and the Gradle
+      # build is additionally run with REQUIRE_RELEASE_SIGNING=true so it is
+      # impossible to silently publish a debug-signed "release" APK.
       - name: Set up release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -25,24 +31,95 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          set -euo pipefail
+          missing=""
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Release signing is not configured; missing repository secret(s):$missing"
+            echo "Add them in Settings > Secrets and variables > Actions of this repository."
+            echo "Without them every APK would be debug-signed and could not update an installed release."
+            exit 1
+          fi
+
           echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
-          echo "key.properties" > android/app/key.properties
-          cat >> android/app/key.properties <<EOF
-          storeFile=release.keystore
-          storePassword=$KEYSTORE_PASSWORD
-          keyAlias=$KEY_ALIAS
-          keyPassword=$KEY_PASSWORD
-          EOF
+          if [ ! -s android/app/release.keystore ]; then
+            echo "::error::KEYSTORE_BASE64 decoded to an empty file. Re-encode release.keystore with: base64 -w0 release.keystore"
+            exit 1
+          fi
+
+          # Android's keystore reader needs a binary JKS/PKCS12 file. A text
+          # payload means KEYSTORE_BASE64 holds the wrong value (for example
+          # the password, or a path), which would otherwise only surface as
+          # "Failed to read key ... Invalid keystore format" minutes later.
+          if head -c 2 android/app/release.keystore | grep -q '[[:print:]]'; then
+            echo "::error::android/app/release.keystore is text, not a keystore binary."
+            echo "KEYSTORE_BASE64 must be the base64 encoding of release.keystore itself."
+            exit 1
+          fi
+
+          {
+            echo "storeFile=release.keystore"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > android/app/key.properties
+
+          echo "Release keystore installed ($(wc -c < android/app/release.keystore) bytes)."
 
       - name: Build APK
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          REQUIRE_RELEASE_SIGNING: "true"
         run: |
           flutter build apk --release --split-per-abi \
             --dart-define=SUPABASE_URL="${SUPABASE_URL}" \
             --dart-define=SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}" \
             --dart-define=BUILD_NUMBER="${{ github.run_number }}"
+
+      # Prove the artefacts really carry the release certificate before they
+      # are published. This is the check that would have caught the earlier
+      # debug-signed "release" builds.
+      - name: Verify APK signing certificates
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$SDK_ROOT" ] || [ ! -d "$SDK_ROOT" ]; then
+            echo "::error::ANDROID_HOME/ANDROID_SDK_ROOT is not set; cannot locate apksigner."
+            exit 1
+          fi
+
+          APKSIGNER=$(find "$SDK_ROOT/build-tools" -maxdepth 2 -name apksigner -type f 2>/dev/null \
+            | sort -V | tail -n 1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::apksigner not found under $SDK_ROOT/build-tools."
+            exit 1
+          fi
+          echo "Using $APKSIGNER"
+
+          shopt -s nullglob
+          apks=(build/app/outputs/flutter-apk/*-release.apk)
+          if [ ${#apks[@]} -eq 0 ]; then
+            echo "::error::No release APKs were produced."
+            exit 1
+          fi
+
+          for apk in "${apks[@]}"; do
+            echo "--- $apk"
+            "$APKSIGNER" verify --print-certs "$apk" | tee /tmp/certs.txt
+            if grep -qi "CN=Android Debug" /tmp/certs.txt; then
+              echo "::error::$apk is signed with the Android debug key."
+              exit 1
+            fi
+            if ! grep -q "Signer #1 certificate DN:" /tmp/certs.txt; then
+              echo "::error::$apk has no signing certificate."
+              exit 1
+            fi
+          done
+          echo "All ${#apks[@]} APK(s) carry a non-debug signing certificate."
+
       - uses: actions/upload-artifact@v4
         with:
           name: chat-app-apk

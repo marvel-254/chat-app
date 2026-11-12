@@ -49,14 +49,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.5"
-  archive:
-    dependency: "direct main"
-    description:
-      name: archive
-      sha256: "0d58d1fa1fddf6588251ccf2819f3fb3b6d0452c1b2813ac7413a05592bfbefe"
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.5.2"
   args:
     dependency: transitive
     description:
@@ -218,7 +210,7 @@ packages:
     source: hosted
     version: "0.3.5+5"
   crypto:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: crypto
       sha256: c8ea0233063ba03258fbcf2ca4d6dadfefe14f02fab57702265467a19f27fadf
@@ -464,14 +456,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.6.3"
-  flutter_windowmanager:
-    dependency: "direct main"
-    description:
-      name: flutter_windowmanager
-      sha256: b4d0bc06f6777952b729c0cdb7ce9ad1ecabd8b8b1cb0acb57a36621457dab1b
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.0"
   functions_client:
     dependency: transitive
     description:
@@ -792,30 +776,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.9.1"
-  path_provider:
-    dependency: "direct main"
-    description:
-      name: path_provider
-      sha256: a7f4874f987173da295a61c181b8ee71dab59b332a486b391babf26a1b884825
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.1.6"
-  path_provider_android:
-    dependency: transitive
-    description:
-      name: path_provider_android
-      sha256: "69cbd515a62b94d32a7944f086b2f82b4ac40a1d45bebfc00813a430ab2dabcd"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.3.1"
-  path_provider_foundation:
-    dependency: transitive
-    description:
-      name: path_provider_foundation
-      sha256: "2a376b7d6392d80cd3705782d2caa734ca4727776db0b6ec36ef3f1855197699"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.6.0"
   path_provider_linux:
     dependency: transitive
     description:
@@ -840,54 +800,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.0"
-  permission_handler:
-    dependency: "direct main"
-    description:
-      name: permission_handler
-      sha256: e6bcecadfe40df6b888141f23cbaf6ba6c3da49fb33f6ff887d060dd48544fbd
-      url: "https://pub.dev"
-    source: hosted
-    version: "13.0.2"
-  permission_handler_android:
-    dependency: transitive
-    description:
-      name: permission_handler_android
-      sha256: baf93fbf80008c240b2cf5e6d62e9495ea7727fe327444d135c44bfff9af6b6e
-      url: "https://pub.dev"
-    source: hosted
-    version: "14.1.1"
-  permission_handler_apple:
-    dependency: transitive
-    description:
-      name: permission_handler_apple
-      sha256: "82d31c9b321c45785ccd73bce9c63af17037116193b4000b998a4363059adb6e"
-      url: "https://pub.dev"
-    source: hosted
-    version: "9.6.5"
-  permission_handler_html:
-    dependency: transitive
-    description:
-      name: permission_handler_html
-      sha256: "6ea98b3f17f60d3b527f2647ed2ab4dc0f6bfe25b22cb1c363f5d8f62252f6ac"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.4+1"
-  permission_handler_platform_interface:
-    dependency: transitive
-    description:
-      name: permission_handler_platform_interface
-      sha256: ed86a61c190258fdd65de395ea0632822e3415c1faec38eae0c31b479c28a531
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.4.1"
-  permission_handler_windows:
-    dependency: transitive
-    description:
-      name: permission_handler_windows
-      sha256: f411872409a099a7f4826f80cb98cb903317be890cbf8a2e6d062024cd88e4fb
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.3"
   petitparser:
     dependency: transitive
     description:
@@ -1149,14 +1061,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.18.3"
-  swipe:
-    dependency: "direct main"
-    description:
-      name: swipe
-      sha256: e2f823093ef0161698cc380f5f868a6be380cb5c90c1c0ddc7fa2b0a7eadfa0e
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.0.1"
   synchronized:
     dependency: transitive
     description:

@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:crypto/crypto.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
@@ -13,12 +15,12 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_windowmanager/flutter_windowmanager.dart';
 import 'screens/call_screen.dart';
 import 'followers_following_screen.dart';
 import 'services/supabase.dart';
 import 'services/push_notifications.dart';
 import 'services/connection_monitor.dart';
+import 'services/secure_screen.dart';
 import 'models/profile.dart';
 import 'ui/states.dart';
 
@@ -161,7 +163,10 @@ class BackendConfigurationApp extends StatelessWidget {
   }
 }
 
+final _rootNavigatorKey = GlobalKey<NavigatorState>();
+
 final _router = GoRouter(
+  navigatorKey: _rootNavigatorKey,
   initialLocation: '/',
   routes: [
     GoRoute(path: '/', builder: (_, __) => const AuthGate()),
@@ -216,6 +221,8 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
   bool _appLocked = false;
   bool _appLockEnabled = false;
   Timer? _lockTimer;
+  String? _pinHash;
+  String? _pinSalt;
 
   @override
   void initState() {
@@ -226,17 +233,37 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
       (conversationId) => _router.go('/chat/$conversationId'),
     );
     _loadAppLockSettings();
+    // didChangeAppLifecycleState only fires on resume, so a cold start would
+    // otherwise leave last_seen stamped from the previous session.
+    unawaited(Supa.recordLastSeen());
   }
 
   Future<void> _loadAppLockSettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final salt = prefs.getString('app_lock_pin_salt') ??
+          _randomSalt();
+      if (!prefs.containsKey('app_lock_pin_salt')) {
+        await prefs.setString('app_lock_pin_salt', salt);
+      }
       if (mounted) {
         setState(() {
           _appLockEnabled = prefs.getBool('app_lock_enabled') ?? false;
+          _pinSalt = salt;
+          _pinHash = prefs.getString('app_lock_pin_hash');
         });
       }
+      // A cold start with the lock enabled must show the lock screen before
+      // any conversation content is painted.
+      if (mounted && _appLockEnabled) _lockApp();
     } catch (_) {}
+  }
+
+  static String _randomSalt() {
+    final random = Random.secure();
+    return base64Url.encode(
+      List<int>.generate(16, (_) => random.nextInt(256)),
+    );
   }
 
   @override
@@ -274,10 +301,13 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
 
   Future<void> _unlockApp() async {
     final auth = LocalAuthentication();
+    // canCheckBiometrics is false on devices with no enrolled biometrics, but
+    // isDeviceSupported also covers device-credential fallback, so require both
+    // before skipping straight to the PIN.
     final canCheck = await auth.canCheckBiometrics;
     final isAvailable = await auth.isDeviceSupported();
     if (!canCheck || !isAvailable) {
-      _showPinDialog();
+      await _showPinDialog();
       return;
     }
     try {
@@ -292,16 +322,58 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
         setState(() => _appLocked = false);
       }
     } catch (_) {
-      if (mounted) {
-        _showPinDialog();
-      }
+      // Cancelled, locked out, or no hardware: fall back to the app PIN.
+      if (mounted) await _showPinDialog();
     }
   }
 
-  void _showPinDialog() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('PIN fallback not implemented')),
+  /// Six-digit fallback used when biometrics are unavailable, cancelled, or the
+  /// sensor is locked out. The PIN is stored as a salted SHA-256 digest in
+  /// SharedPreferences, so a backup of the preferences file does not reveal it.
+  Future<void> _showPinDialog() async {
+    // `context` here is the root of the widget tree (above MaterialApp), which
+    // has no Navigator. The dialog is pushed onto the router's navigator.
+    final navigatorContext = _rootNavigatorKey.currentContext;
+    if (navigatorContext == null) return;
+    final pin = await showDialog<String>(
+      context: navigatorContext,
+      barrierDismissible: false,
+      builder: (dialogContext) => _AppPinDialog(
+        hasPin: _pinHash != null,
+      ),
     );
+    if (pin == null || !mounted) return;
+
+    final stored = _pinHash;
+    if (stored == null) {
+      // First run: the dialog asked for a new PIN twice.
+      final hash = _hashPin(pin, _pinSalt!);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('app_lock_pin_hash', hash);
+      await prefs.setString('app_lock_pin_salt', _pinSalt!);
+      if (mounted) {
+        setState(() {
+          _pinHash = hash;
+          _appLocked = false;
+        });
+      }
+      return;
+    }
+
+    if (_hashPin(pin, _pinSalt!) == stored) {
+      if (mounted) setState(() => _appLocked = false);
+    } else {
+      // This State lives above MaterialApp, so `context` has no ScaffoldMessenger;
+      // use the app-level key that MaterialApp is configured with.
+      appScaffoldMessengerKey.currentState?.showSnackBar(const SnackBar(
+        content: Text('Incorrect PIN'),
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
+
+  static String _hashPin(String pin, String salt) {
+    return sha256.convert(utf8.encode('$salt:$pin')).toString();
   }
 
   @override
@@ -325,6 +397,14 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
                   right: 0,
                   child: OfflineBanner(),
                 ),
+                // The lock overlay lives inside MaterialApp so it inherits
+                // Theme/Directionality/MediaQuery. As a sibling of MaterialApp
+                // it had no Directionality ancestor and threw on first paint.
+                if (_appLocked)
+                  _AppLockScreen(
+                    onUnlock: _unlockApp,
+                    onUsePin: _showPinDialog,
+                  ),
               ],
             );
           },
@@ -350,15 +430,15 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
         ),
       ),
     ),
-    if (_appLocked) _AppLockScreen(onUnlock: _unlockApp),
   ],
 );
   }
 }
 
 class _AppLockScreen extends StatelessWidget {
-  const _AppLockScreen({required this.onUnlock});
+  const _AppLockScreen({required this.onUnlock, this.onUsePin});
   final VoidCallback onUnlock;
+  final VoidCallback? onUsePin;
 
   @override
   Widget build(BuildContext context) {
@@ -393,10 +473,109 @@ class _AppLockScreen extends StatelessWidget {
                 ),
                 onPressed: onUnlock,
               ),
+              if (onUsePin != null)
+                TextButton(
+                  onPressed: onUsePin,
+                  child: Text('Use PIN',
+                      style: const TextStyle(color: _P.muted, fontSize: 14)),
+                ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Six-digit PIN entry, used both to set the app-lock PIN and to verify it.
+class _AppPinDialog extends StatefulWidget {
+  const _AppPinDialog({required this.hasPin});
+  final bool hasPin;
+
+  @override
+  State<_AppPinDialog> createState() => _AppPinDialogState();
+}
+
+class _AppPinDialogState extends State<_AppPinDialog> {
+  final _pin = TextEditingController();
+  final _confirm = TextEditingController();
+  String? _error;
+
+  @override
+  void dispose() {
+    _pin.dispose();
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  bool get _isSettingUp => !widget.hasPin;
+
+  void _submit() {
+    final value = _pin.text.trim();
+    if (value.length != 6 || int.tryParse(value) == null) {
+      setState(() => _error = 'Enter exactly 6 digits.');
+      return;
+    }
+    if (_isSettingUp && _confirm.text.trim() != value) {
+      setState(() => _error = 'The PINs do not match.');
+      return;
+    }
+    Navigator.pop(context, value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: _P.surface,
+      title: Text(_isSettingUp ? 'Create an app PIN' : 'Enter your app PIN',
+          style: const TextStyle(color: _P.text, fontSize: 18)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _isSettingUp
+                ? 'Used when biometrics are unavailable.'
+                : 'Biometrics were skipped or failed.',
+            style: const TextStyle(color: _P.muted, fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _pin,
+            autofocus: true,
+            obscureText: true,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            style: const TextStyle(color: _P.text),
+            decoration: const InputDecoration(labelText: 'PIN'),
+          ),
+          if (_isSettingUp)
+            TextField(
+              controller: _confirm,
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              style: const TextStyle(color: _P.text),
+              decoration: const InputDecoration(labelText: 'Confirm PIN'),
+            ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(_error!,
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+            ),
+        ],
+      ),
+      actions: [
+        if (_isSettingUp)
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        FilledButton(
+          onPressed: _submit,
+          child: Text(_isSettingUp ? 'Set PIN' : 'Unlock'),
+        ),
+      ],
     );
   }
 }
@@ -1727,7 +1906,7 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final isLocked = await Supa.isConversationLocked(widget.conversationId);
       if (isLocked && mounted) {
-        await FlutterWindowManager.addFlags(FlutterWindowManager.FLAG_SECURE);
+        await SecureScreen.setSecure(true);
       }
     } catch (_) {}
   }
@@ -1982,8 +2161,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
-    // Remove secure flag when leaving chat
-    FlutterWindowManager.clearFlags(FlutterWindowManager.FLAG_SECURE);
+    // Remove the screenshot block when leaving a protected conversation.
+    SecureScreen.setSecure(false);
     Supa.unsubscribeTyping(widget.conversationId);
     _presenceSub?.cancel();
     _ctrl.dispose();
@@ -2019,12 +2198,18 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// Marks the whole conversation read at most once per build.
+  ///
+  /// The RPC advances the caller's cursor to `now()`, so calling it once is
+  /// equivalent to calling it per message and avoids one round-trip per unread
+  /// row on every rebuild.
   void _markUnreadAsRead(List<Message> messages) {
-    for (final m in messages) {
-      if (m.senderId != Supa.currentUser!.id && m.readAt == null) {
-        Supa.markRead(widget.conversationId, m.id);
-      }
-    }
+    final me = Supa.currentUser?.id;
+    if (me == null) return;
+    final hasUnread = messages.any(
+        (m) => m.senderId != me && m.readAt == null && !m.isDeleted);
+    if (!hasUnread) return;
+    unawaited(Supa.markRead(widget.conversationId));
   }
 
   void _onTypingChanged(String text) {
@@ -2671,7 +2856,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           }
                         },
                         (msg) async {
-                          await Supa.setMessagePinned(msg.id, false);
+                          await Supa.setMessagePinned(msg.id, false,
+                              conversationId: widget.conversationId);
                         },
                       ),
                       onDismiss: () =>
@@ -2801,7 +2987,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                 }
                               },
                               (msg) async {
-                                await Supa.setMessagePinned(msg.id, false);
+                                await Supa.setMessagePinned(msg.id, false,
+                                    conversationId: widget.conversationId);
                               },
                             ),
                             onDismiss: () =>
@@ -3046,7 +3233,9 @@ class _MessageRow extends StatelessWidget {
             groupedTop: _groupPrev,
             groupedBottom: _groupNext,
             mine: mine,
-            onLongPress: () => onLongPress(msg),
+            // A deleted-for-everyone message has no actions left: editing,
+            // replying, reacting or re-deleting it must not be offered.
+            onLongPress: msg.isDeleted ? null : () => onLongPress(msg),
           ),
         ),
       ],
@@ -3190,7 +3379,7 @@ class _Bubble extends StatelessWidget {
   final bool groupedTop;
   final bool groupedBottom;
   final bool mine;
-  final VoidCallback onLongPress;
+  final VoidCallback? onLongPress;
   final ValueChanged<String>? onReactionTap = null;
 
   @override
@@ -3216,10 +3405,12 @@ class _Bubble extends StatelessWidget {
         right: mine ? 4 : 64,
       ),
       child: GestureDetector(
-        onLongPress: () {
-          if (attachment != null) return;
-          onLongPress();
-        },
+        onLongPress: onLongPress == null
+            ? null
+            : () {
+                if (attachment != null) return;
+                onLongPress!();
+              },
         child: Container(
           constraints: BoxConstraints(
               maxWidth: MediaQuery.of(context).size.width * 0.68),
@@ -3954,35 +4145,133 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       style: TextStyle(
                           color: _P.muted, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
-                  FutureBuilder<bool>(
-                    future: SharedPreferences.getInstance()
-                        .then((prefs) => prefs.getBool('app_lock_enabled') ?? false),
-                    builder: (context, snapshot) {
-                      final enabled = snapshot.data ?? false;
-                      // Get appState reference before async gap
-                      final appState =
-                          context.findAncestorStateOfType<_BroAppState>();
-                      return SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('App Lock'),
-                        subtitle: Text(
-                          'Require biometric or PIN to open the app',
-                          style: TextStyle(color: _P.muted, fontSize: 12),
-                        ),
-                        value: enabled,
-                        onChanged: (v) async {
-                          final prefs = await SharedPreferences.getInstance();
-                          await prefs.setBool('app_lock_enabled', v);
-                          if (appState != null && appState.mounted) {
-                            appState.setState(() => appState._appLockEnabled = v);
-                            if (v) {
-                              appState._lockApp();
-                            }
-                          }
-                          // No setState needed - FutureBuilder will rebuild
-                        },
-                      );
-                    },
+                  StatefulBuilder(
+                    builder: (context, setSectionState) => FutureBuilder<bool>(
+                      future: SharedPreferences.getInstance().then((prefs) =>
+                          prefs.getBool('app_lock_enabled') ?? false),
+                      builder: (context, snapshot) {
+                        final enabled = snapshot.data ?? false;
+                        return Column(
+                          children: [
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('App Lock'),
+                              subtitle: Text(
+                                'Require biometrics or a 6-digit PIN to open the app',
+                                style:
+                                    TextStyle(color: _P.muted, fontSize: 12),
+                              ),
+                              value: enabled,
+                              onChanged: (v) async {
+                                // The ancestor state owns the live flag so the
+                                // lock overlay reacts immediately.
+                                final appState =
+                                    context.findAncestorStateOfType<_BroAppState>();
+                                final prefs =
+                                    await SharedPreferences.getInstance();
+                                if (!mounted) return;
+
+                                if (!v) {
+                                  // Disabling the lock must not be possible from
+                                  // an unlocked session alone: anyone holding the
+                                  // phone could otherwise switch it off. Ask for
+                                  // the PIN (or biometrics) first.
+                                  final confirmed = await showDialog<String>(
+                                    context: context,
+                                    barrierDismissible: false,
+                                    builder: (_) =>
+                                        const _AppPinDialog(hasPin: true),
+                                  );
+                                  final expected = appState?._pinHash;
+                                  final salt = appState?._pinSalt;
+                                  if (confirmed == null ||
+                                      expected == null ||
+                                      salt == null ||
+                                      _BroAppState._hashPin(confirmed, salt) !=
+                                          expected) {
+                                    setSectionState(() {});
+                                    return;
+                                  }
+                                  await prefs.setBool('app_lock_enabled', false);
+                                  if (appState != null && appState.mounted) {
+                                    appState.setState(
+                                        () => appState._appLockEnabled = false);
+                                  }
+                                  setSectionState(() {});
+                                  return;
+                                }
+
+                                // Require a PIN *before* turning the lock on:
+                                // a device without biometrics would otherwise
+                                // have no way back into the app.
+                                final pin = await showDialog<String>(
+                                  context: context,
+                                  barrierDismissible: false,
+                                  builder: (_) => _AppPinDialog(
+                                    hasPin: (appState?._pinHash) != null,
+                                  ),
+                                );
+                                final salt = appState?._pinSalt;
+                                if (pin == null || salt == null) {
+                                  setSectionState(() {});
+                                  return;
+                                }
+                                final hash = _BroAppState._hashPin(pin, salt);
+                                await prefs.setString('app_lock_pin_hash', hash);
+                                await prefs.setBool('app_lock_enabled', true);
+                                if (appState != null && appState.mounted) {
+                                  appState.setState(() {
+                                    appState._pinHash = hash;
+                                    appState._appLockEnabled = true;
+                                  });
+                                }
+                                setSectionState(() {});
+                              },
+                            ),
+                            FutureBuilder<String?>(
+                              future: SharedPreferences.getInstance()
+                                  .then((p) => p.getString('app_lock_pin_hash')),
+                              builder: (context, pinSnapshot) {
+                                if (pinSnapshot.data == null) {
+                                  return const SizedBox.shrink();
+                                }
+                                return Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: TextButton.icon(
+                                    icon: const Icon(Icons.password,
+                                        size: 18, color: _P.muted),
+                                    label: const Text('Change PIN'),
+                                    onPressed: () async {
+                                      final appState = context
+                                          .findAncestorStateOfType<_BroAppState>();
+                                      final pin = await showDialog<String>(
+                                        context: context,
+                                        barrierDismissible: false,
+                                        builder: (_) =>
+                                            const _AppPinDialog(hasPin: false),
+                                      );
+                                      if (pin == null || appState == null) return;
+                                      final salt = appState._pinSalt;
+                                      if (salt == null) return;
+                                      final hash = _BroAppState._hashPin(pin, salt);
+                                      final prefs =
+                                          await SharedPreferences.getInstance();
+                                      await prefs.setString(
+                                          'app_lock_pin_hash', hash);
+                                      if (appState.mounted) {
+                                        appState.setState(
+                                            () => appState._pinHash = hash);
+                                      }
+                                      setSectionState(() {});
+                                    },
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        );
+                      },
+                    ),
                   ),
                   const SizedBox(height: 24),
                   Text('Chat background',

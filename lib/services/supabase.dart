@@ -55,7 +55,10 @@ class Supa {
   static Future<AuthResponse> signIn(String email, String password) =>
       client.auth.signInWithPassword(email: email, password: password);
 
-  static Future<void> signOut() => client.auth.signOut();
+  static Future<void> signOut() async {
+    clearUserCaches();
+    await client.auth.signOut();
+  }
   static User? get currentUser => client.auth.currentUser;
   static Stream<AuthState> get authStateChanges =>
       client.auth.onAuthStateChange;
@@ -646,6 +649,7 @@ class Supa {
                   readByPeer: readByPeerSet.contains(id) || msg.readAt != null,
                   replyToId: msg.replyToId,
                   reactions: reactionsMap[id] ?? [],
+                  deletedAt: msg.deletedAt,
                 );
               })
               .toList();
@@ -661,10 +665,16 @@ class Supa {
     );
   }
 
-  static Future<void> markRead(String conversationId, String messageId) async {
-    // Use the new SECURITY DEFINER RPC that handles read receipts atomically
+  /// Marks the conversation read up to now.
+  ///
+  /// When the user has read receipts turned off, the unread counter still has
+  /// to advance (so their own badge clears) but the peer must not see a
+  /// double-tick. `mark_messages_read` takes a flag for exactly that.
+  static Future<void> markRead(String conversationId) async {
+    final receipts = await getReadReceiptsEnabled();
     await client.rpc('mark_messages_read', params: {
       'p_conversation_id': conversationId,
+      'p_share_receipt': receipts,
     });
   }
 
@@ -674,52 +684,48 @@ class Supa {
         .update({'content': content}).eq('id', messageId);
   }
 
+  /// Pins or unpins a message through the SECURITY DEFINER `pin_message` RPC.
+  ///
+  /// The database enforces both rules (author-only, five pins per
+  /// conversation). The client-side count below only exists to fail fast with
+  /// a friendlier message when [conversationId] is supplied.
   static Future<void> setMessagePinned(String messageId, bool pinned,
       {String? conversationId}) async {
+    if (pinned && conversationId != null) {
+      final pinnedNow = await client
+          .from('messages')
+          .select('id')
+          .eq('conversation_id', conversationId)
+          .not('pinned_at', 'is', null)
+          .limit(5);
+      if ((pinnedNow as List).length >= 5) {
+        throw StateError(
+            'A conversation can have at most 5 pinned messages. Unpin one first.');
+      }
+    }
     await client.rpc('pin_message', params: {
       'msg_id': messageId,
       'do_pin': pinned,
     });
   }
 
+  /// "Delete for me": removes the message from this user's view only.
   static Future<void> deleteMessage(String messageId) async {
     final me = currentUser;
     if (me == null) return;
-    await client
-        .from('messages')
-        .delete()
-        .eq('id', messageId)
-        .eq('sender_id', me.id);
+    await client.rpc('hide_message_for_me', params: {'msg_id': messageId});
   }
 
+  /// "Delete for everyone": author only. The database decides between a hard
+  /// removal (inside the 1-hour window) and a tombstone, so the rule cannot
+  /// drift between client and server.
   static Future<void> deleteMessageForEveryone(String messageId) async {
     final me = currentUser;
     if (me == null) return;
-    // Check if within time window (e.g., 1 hour)
-    final message = await client
-        .from('messages')
-        .select('created_at, sender_id')
-        .eq('id', messageId)
-        .single();
-    final senderId = message['sender_id'] as String;
-    final createdAt = DateTime.parse(message['created_at'] as String);
-    final now = DateTime.now().toUtc();
-    final diff = now.difference(createdAt);
-
-    if (diff > const Duration(hours: 1)) {
-      // Soft delete - replace content with "This message was deleted"
-      await client.from('messages').update({
-        'content': 'This message was deleted',
-        'edited_at': now.toIso8601String(),
-      }).eq('id', messageId).eq('sender_id', senderId);
-    } else {
-      // Hard delete within 1 hour
-      await client
-          .from('messages')
-          .delete()
-          .eq('id', messageId)
-          .eq('sender_id', senderId);
-    }
+    await client.rpc(
+      'delete_message_for_everyone',
+      params: {'msg_id': messageId},
+    );
   }
 
   static Future<void> setMessageExpiry(
@@ -1015,20 +1021,30 @@ class Supa {
 
   // ===== Read Receipts (enhanced) =====
 
-  static Future<bool> getReadReceiptsEnabled() async {
+  static bool? _receiptsCache;
+
+  static Future<bool> getReadReceiptsEnabled({bool refresh = false}) async {
+    if (!refresh && _receiptsCache != null) return _receiptsCache!;
     final me = currentUser;
     if (me == null) return true;
     final profile = await getProfile(me.id);
-    return profile?.readReceiptsEnabled ?? true;
+    _receiptsCache = profile?.readReceiptsEnabled ?? true;
+    return _receiptsCache!;
   }
 
   static Future<void> setReadReceiptsEnabled(bool enabled) async {
     final me = currentUser;
     if (me == null) return;
+    _receiptsCache = enabled;
     await client
         .from('profiles')
         .update({'read_receipts_enabled': enabled})
         .eq('id', me.id);
+  }
+
+  /// Drops cached per-user flags; call on sign-out or account switch.
+  static void clearUserCaches() {
+    _receiptsCache = null;
   }
 
   // ===== Block/Report =====

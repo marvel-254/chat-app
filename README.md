@@ -1,12 +1,12 @@
 # BRO — a messaging app built with Flutter
 
-A beautifully dark messaging app with automatic updates, voice notes, and a modern dark-mode UI.
+A beautifully dark messaging app with voice notes, WebRTC calls, and a modern dark-mode UI.
 
 ## Getting Started
 
 Before running the app, configure its Supabase project. Create a local `.env.local` file (it is gitignored) with `SUPABASE_URL` and `SUPABASE_ANON_KEY`, using the Project URL and publishable/anon key from your Supabase project settings. Build with `./scripts/build.sh` (or `./scripts/build.sh web`). The app shows a setup message instead of starting with a fake backend endpoint when either value is missing.
 
-For GitHub Actions builds, configure repository secrets named `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
+For GitHub Actions builds, configure repository secrets named `SUPABASE_URL` and `SUPABASE_ANON_KEY`, plus the release-signing secrets described under [Releases and signing](#releases-and-signing).
 
 ## Chat features
 
@@ -26,19 +26,37 @@ Chat attachments and custom chat backgrounds are stored in the private Cloudflar
 
 The Worker is configured in `cloudflare/storage`. To redeploy it, run `wrangler deploy` from that directory. Its `SUPABASE_ANON_KEY` and `URL_SIGNING_SECRET` are Cloudflare Worker secrets; do not add them to this repository. Local builds use the deployed Worker URL by default and can override it with `--dart-define=CLOUD_STORAGE_URL=...`.
 
-## Auto-update
+## Releases and signing
 
-BRO checks for updates automatically. When a new release is published on GitHub Releases, the app shows an in-app update dialog. The update service downloads the APK from the release asset, verifies the embedded manifest (package name, version code, and version name), and offers to install it.
+Pushing to `main` runs `.github/workflows/build-apk.yml`, which builds split
+per-ABI release APKs and publishes them as GitHub Release `v<run number>`.
 
-End users receive updates automatically. To publish a new release:
+Every release **must** be signed with the same key, otherwise Android refuses to
+install the update over an existing copy. The workflow therefore:
 
-1. Create a new GitHub Release with the APK attached (e.g., `build/app/outputs/flutter-apk/*-release.apk`).
-2. Tag the release as `v<version>` (e.g., `v1.0.0`).
-3. The app detects the new release and prompts the user to update.
+1. materialises `android/app/release.keystore` and `android/app/key.properties`
+   from the `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and
+   `KEY_PASSWORD` repository secrets, failing loudly if any is missing;
+2. builds with `REQUIRE_RELEASE_SIGNING=true`, which makes
+   `android/app/build.gradle.kts` refuse to fall back to the debug key;
+3. runs `apksigner verify --print-certs` on every artefact and fails if a debug
+   certificate is found.
 
-The release must include a manifest file embedded in the APK for the app to verify the update. See `lib/services/update_logic.dart` for the manifest format.
+Create the keystore once with `./scripts/generate_keystore.sh`, which also
+prints the secret values to paste into GitHub. Keep the keystore backed up:
+losing it makes in-place updates impossible for installed copies.
+
+There is currently **no in-app auto-update**: the app does not check GitHub
+Releases or install downloads itself. Users update by installing the newer APK
+from the Releases page over the existing app (which works because the signing
+key is stable).
+
+To publish a release manually instead of via `main`:
+
+1. Build and sign an APK (`./scripts/build.sh apk` needs a local `.env.local`).
+2. Attach it to a GitHub Release tagged `v<version>` (e.g. `v1.0.0`).
 
 ## License
 
 Copyright © 2026 marvel-254. All Rights Reserved — see [LICENSE](LICENSE).
-NYX is proprietary software: the source is viewable but no usage, modification, or distribution rights are granted.
+BRO is proprietary software: the source is viewable but no usage, modification, or distribution rights are granted.

@@ -11,7 +11,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:uuid/uuid.dart';
 
@@ -35,11 +34,12 @@ class VoiceNoteService {
   /// Starts the microphone. Returns true if permission is granted and
   /// recording can begin.
   static Future<bool> start() async {
-    // Permission is handled by the UI before this is called; request it here
-    // as a safety net so the recorder never starts with denied input.
-    final status = await Permission.microphone.request();
-    if (status != PermissionStatus.granted) return false;
+    // `record` owns the microphone permission request on every platform, so no
+    // separate permission_handler dependency is needed (that plugin pulled in
+    // permission_handler_android, which demanded compileSdk 37 and broke the
+    // release build under AGP 9.1).
     try {
+      if (!await _recorder.hasPermission()) return false;
       await _recorder.stop();
       await _recorder.start(
         const RecordConfig(),

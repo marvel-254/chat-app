@@ -41,4 +41,29 @@ void main() {
     
     expect(profile.autoLockTimer, const Duration(minutes: 5));
   });
+
+  test('Message exposes deletion state so the UI can render a tombstone', () {
+    final message = Message.fromJson({
+      'id': 'message-1',
+      'conversation_id': 'conversation-1',
+      'sender_id': 'user-1',
+      'content': 'This message was deleted',
+      'created_at': '2026-11-12T10:00:00.000Z',
+      'deleted_at': '2026-11-12T10:05:00.000Z',
+    });
+
+    expect(message.deletedAt, DateTime.utc(2026, 11, 12, 10, 5));
+  });
+
+  test('Conversation defaults isLocked to false for older RPC payloads', () {
+    final conversation = Conversation.fromJson({
+      'id': 'conversation-2',
+      'created_at': '2026-10-30T10:00:00.000Z',
+      'updated_at': '2026-10-30T10:05:00.000Z',
+      'unread_count': 0,
+    });
+
+    expect(conversation.isLocked, isFalse);
+    expect(conversation.peerId, isNull);
+  });
 }

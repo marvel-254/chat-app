@@ -80,6 +80,23 @@ Pushing to `main` or `master` starts three workflows:
 
 Repository Actions secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY` must be set for the app builds. The GitHub token needs permission to create releases; the Pages deployment also requires GitHub Pages to be enabled for the repository. Cloudflare Worker deployment is a separate Wrangler operation; the GitHub workflows do not deploy it.
 
+### Release signing (required)
+
+The APK workflow also requires `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD`. Create them once with `./scripts/generate_keystore.sh`, keep the keystore backed up, and never replace it: Android only installs an update signed by the same certificate, so a new key means every installed copy must be uninstalled first.
+
+The workflow refuses to build without those secrets, `android/app/build.gradle.kts` refuses to fall back to the debug key when `REQUIRE_RELEASE_SIGNING=true`, and the release step runs `apksigner verify --print-certs` and fails on a debug certificate. Releases `v63`–`v71` either failed to build or (from runs before the keystore step existed, e.g. `v62`) shipped debug-signed, so they cannot be updated in place.
+
+### Why the v63–v71 builds failed
+
+| Run | Cause |
+| --- | --- |
+| `v63` | Dart compile errors: `_P.volt` was missing from the palette and a `children: [` list was unterminated. |
+| `v64`–`v69` | Follow-on compile failures and plugin configuration errors. |
+| `v70` | `permission_handler_android` required `compileSdk 37`; AGP 9.1.0 warns that 36 is its maximum supported value. |
+| `v71` | `flutter_windowmanager 0.2.0` calls `jcenter()`, removed in Gradle 9, so project evaluation aborted. |
+
+Fixed by removing the unused `flutter_windowmanager` (FLAG_SECURE is now handled by a `bro/secure` method channel in `MainActivity.kt`), replacing `permission_handler` with the `record` plugin's own `hasPermission()`, and dropping the unused `archive`, `path_provider` and `swipe` dependencies.
+
 After pushing, check the repository’s Actions page for all three runs. The release workflow should attach the three ABI APK files; the Pages workflow should finish its deployment. If a run fails, inspect the failed step’s logs before retrying.
 
 ## Operational notes
@@ -103,21 +120,29 @@ Uncommitted work in progress: a code review was completed against these changes,
 - **Verification:** `flutter analyze` reports no issues; all three widget tests pass.
 - **Deferred by decision:** offline *queued sends* (compose offline → queue → auto-flush on reconnect) are part of Phase B1, not this workstream; they require `PendingMessage`.
 
-### Outstanding review findings
+### Resolved review findings
 
-Blocking:
+1. ~~No UPDATE policy on `conversations`~~ — `20261111000000_fix_conversations_update_rls.sql`.
+2. ~~Pin offered on peer messages / rejected by the trigger~~ — `20261111010000_fix_pin_message_security.sql` adds `pin_message()`, and the client only offers Pin on own messages.
+3. ~~`updateProfileDetails` wrote `'0 seconds'` for a null expiry~~ — the update map is conditional.
+4. ~~`delete_expired_messages()` never scheduled~~ — `pg_cron` schedule in `20261106000000_privacy_and_fixes.sql`.
+5. ~~Privacy columns not enforced~~ — reads go through the `visible_profiles` view.
+6. ~~Pin call site omitted `conversationId`~~ — passes `widget.conversationId`; `setMessagePinned` also enforces the 5-pin cap early.
+7. ~~`last_seen` only on resume~~ — recorded from `_BroAppState.initState` too.
 
-1. The `conversations` table has no UPDATE RLS policy, so `Supa.setMessageExpiry` and `Supa.getOrCreateDm` writes silently no-op. Fix with a narrow UPDATE policy or a SECURITY DEFINER function.
-2. "Pin message" is offered on peer messages (client-side), but the "Sender updates own message" policy plus the `guard_message_update` trigger reject non-author updates. Gate the client action per-message, or add a SECURITY DEFINER `pin_message()` function (keeping the 5-pin limit).
-3. `Supa.updateProfileDetails` unconditionally writes `default_message_expiry`, so a null value overwrites the stored default with `'0 seconds'`. Make the update map conditional.
+Additional fixes in the release-hardening pass:
 
-Non-blocking:
+- `messages` had **no DELETE policy**, so both delete actions affected zero rows. Deletion is now tombstone-based (`deleted_at`, `hidden_for`) behind `delete_message_for_everyone()` / `hide_message_for_me()` (`20261112000000_message_delete.sql`).
+- `blocked_users`, `user_reports` and `contacts` were queried by the client but **never created**; any block, report or message-request check raised "relation does not exist". Added in `20261112010000_block_report_contacts.sql`, with a trigger that stops blocked users messaging.
+- `mark_messages_read` ignored `read_receipts_enabled`; receipts are now gated (`20261112020000_read_receipt_privacy.sql`).
+- Two migrations shared the timestamp `20261111020000`, which makes migration ordering ambiguous; the config-validation one is now `20261111020001`.
+- The app-lock PIN was a "not implemented" snackbar, the lock overlay had no `Directionality` ancestor, and App Lock could be switched off without authentication.
 
-4. `delete_expired_messages()` is never scheduled; `pg_cron` is not in any migration.
-5. Privacy columns (`photo_visibility`, `status_visibility`, `about_visibility`) are stored but not enforced in `get_conversations_for_user`, `getProfile`, or `record_last_seen`.
-6. The pin call site omits `conversationId`, so the client-side 5-pin guard is skipped.
-7. `last_seen` is recorded on app resume only, not on cold start.
-8. Minor: `watchMessages` re-queries `message_reads` per snapshot via asyncMap; follower counts load all follows instead of using `.count()`; there is no settings UI for `read_receipts_enabled`/`default_message_expiry`; `expires_at` is set with the client clock (skew risk).
+### Still open
+
+- `watchMessages` re-queries `message_reads` per snapshot via `asyncMap`; follower counts load all follows instead of using `.count()`; `expires_at` uses the client clock (skew risk).
+- Attachment uploads, voice notes and WebRTC calls have not been exercised against a live Supabase project from this environment.
+- `voice_note.dart` writes to a relative `audioplayerscache/` path, which is not a valid absolute temp path on Android; it needs `path_provider` (deliberately dropped here) before voice notes work.
 
 ### Remaining plan
 

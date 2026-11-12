@@ -167,6 +167,7 @@ class Message {
   final bool readByPeer;
   final String? replyToId;
   final List<Map<String, dynamic>> reactions;
+  final DateTime? deletedAt;
 
   Message({
     required this.id,
@@ -182,7 +183,12 @@ class Message {
     this.readByPeer = false,
     this.replyToId,
     this.reactions = const [],
+    this.deletedAt,
   });
+
+  /// A message deleted for everyone keeps its row (so Realtime stays coherent)
+  /// but its content is a tombstone the UI should render without actions.
+  bool get isDeleted => deletedAt != null;
 
   factory Message.fromJson(Map<String, dynamic> json) => Message(
         id: json['id'] as String,
@@ -209,6 +215,9 @@ class Message {
                 ?.map((e) => e as Map<String, dynamic>)
                 .toList() ??
             [],
+        deletedAt: json['deleted_at'] == null
+            ? null
+            : DateTime.parse(json['deleted_at'] as String),
       );
 
   Map<String, dynamic> toJson() => {
@@ -222,6 +231,7 @@ class Message {
         'pinned_at': pinnedAt?.toIso8601String(),
         'edited_at': editedAt?.toIso8601String(),
         'original_content': originalContent,
+        'deleted_at': deletedAt?.toIso8601String(),
       };
 }
 
