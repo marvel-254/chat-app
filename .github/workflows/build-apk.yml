@@ -22,29 +22,22 @@ jobs:
           java-version: '17'
       - run: flutter pub get
       - run: dart run flutter_launcher_icons
-      - name: Install Android NDK
+      - uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r28c
+          add-to-path: false
+      - name: Link NDK into the Android SDK
         run: |
           set -euo pipefail
-          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          echo "ANDROID_SDK=$SDK"
-          mkdir -p "$SDK"
-          SM=""
-          for candidate in \
-            "$SDK/cmdline-tools/latest/bin/sdkmanager" \
-            "$SDK/cmdline-tools/bin/sdkmanager" \
-            "$(command -v sdkmanager || true)"; do
-            if [[ -n "$candidate" && -x "$candidate" ]]; then
-              SM="$candidate"
-              break
-            fi
-          done
-          if [[ -z "$SM" ]]; then
-            echo "sdkmanager not found; Flutter will try to install the NDK itself."
-            exit 0
-          fi
-          yes | "$SM" --sdk_root="$SDK" --licenses >/dev/null || true
-          "$SM" --sdk_root="$SDK" --install "ndk;28.2.13676358"
-          ls -la "$SDK/ndk" || true
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          mkdir -p "$SDK/ndk"
+          DEST="$SDK/ndk/28.2.13676358"
+          rm -rf "$DEST"
+          ln -s "${{ steps.setup-ndk.outputs.ndk-path }}" "$DEST"
+          echo "ANDROID_HOME=$SDK"
+          echo "NDK -> $DEST"
+          ls -la "$DEST" | head
       - name: Set up release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -88,16 +81,35 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           if [[ -z "${SUPABASE_URL}" || -z "${SUPABASE_ANON_KEY}" ]]; then
             echo "SUPABASE_URL and SUPABASE_ANON_KEY secrets are required."
             exit 1
           fi
+          flutter doctor -v
+          set +e
           flutter build apk --release --split-per-abi \
             --dart-define=SUPABASE_URL="${SUPABASE_URL}" \
             --dart-define=SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}" \
-            --dart-define=BUILD_NUMBER="${{ github.run_number }}"
+            --dart-define=BUILD_NUMBER="${{ github.run_number }}" \
+            2>&1 | tee apk-build.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [[ "$status" -ne 0 ]]; then
+            {
+              echo "APK build failed on ${GITHUB_SHA}"
+              echo
+              echo '```'
+              tail -n 120 apk-build.log
+              echo '```'
+            } > /tmp/apk-fail.md
+            gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+              -f body="$(cat /tmp/apk-fail.md)" || true
+            exit "$status"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: chat-app-apk
