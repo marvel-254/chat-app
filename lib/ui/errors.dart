@@ -151,6 +151,10 @@ String _softenKnown(String raw, String fallback) {
       message.contains('not authenticated')) {
     return 'Please sign in again to continue.';
   }
+  if (message.contains('last_message_at') ||
+      message.contains('schema cache')) {
+    return "That message didn't land cleanly. Try sending it once more.";
+  }
   if (message.contains('socket') ||
       message.contains('failed host lookup') ||
       message.contains('connection refused') ||

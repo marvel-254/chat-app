@@ -31,6 +31,40 @@ class StatusScreen extends StatefulWidget {
 class _StatusScreenState extends State<StatusScreen> {
   int _token = 0;
 
+  Future<void> _compose(BuildContext context) async {
+    final source = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: _C.surface,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined, color: _C.primary),
+              title: const Text('Camera', style: TextStyle(color: _C.text)),
+              onTap: () => Navigator.pop(ctx, 'camera'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_outlined, color: _C.primary),
+              title: const Text('Photo library',
+                  style: TextStyle(color: _C.text)),
+              onTap: () => Navigator.pop(ctx, 'gallery'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.text_fields, color: _C.primary),
+              title: const Text('Text status',
+                  style: TextStyle(color: _C.text)),
+              onTap: () => Navigator.pop(ctx, 'text'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (!context.mounted || source == null) return;
+    context.push('/status/new?source=$source');
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (context, constraints) {
@@ -52,7 +86,7 @@ class _StatusScreenState extends State<StatusScreen> {
           backgroundColor: _C.primary,
           foregroundColor: _C.darkOnAccent,
           tooltip: 'New status',
-          onPressed: () => context.push('/status/new'),
+          onPressed: () => _compose(context),
           child: const Icon(Icons.camera_alt_outlined),
         ),
         bottomNavigationBar: wide ? null : const HomeNavBar(index: 1),
@@ -174,7 +208,7 @@ class _MyStatusTile extends StatelessWidget {
       ),
       trailing: IconButton(
         tooltip: 'New status',
-        onPressed: () => context.push('/status/new'),
+        onPressed: () => context.push('/status/new?source=text'),
         icon: const Icon(Icons.add_circle_outline, color: _C.primary),
       ),
     );

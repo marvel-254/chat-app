@@ -720,6 +720,7 @@ class Supa {
       conversationId: conversationId,
       content: content,
       replyToId: replyToId,
+      expiry: expiry,
     );
   }
 
@@ -1031,6 +1032,7 @@ class Supa {
     required String conversationId,
     required String content,
     String? replyToId,
+    Duration? expiry,
   }) async {
     // Anti-spam validation
     final validationError = _validateMessageContent(content);
@@ -1038,31 +1040,29 @@ class Supa {
       throw StateError(validationError);
     }
     final me = currentUser!;
-    final now = DateTime.now().toUtc().toIso8601String();
+    final now = DateTime.now().toUtc();
 
     final insert = {
       'conversation_id': conversationId,
       'sender_id': me.id,
       'content': content,
-      'created_at': now,
+      'created_at': now.toIso8601String(),
       if (replyToId != null) 'reply_to_id': replyToId,
+      if (expiry != null && expiry > Duration.zero)
+        'expires_at': now.add(expiry).toIso8601String(),
     };
 
-    final res = await client
-        .from('messages')
-        .insert(insert)
-        .select()
-        .single();
+    final res = await client.from('messages').insert(insert).select().single();
 
-    final msg = Message.fromJson(res);
+    // conversations.last_message_at is not on older schemas; a DB trigger
+    // now maintains it. Never fail the send if the bump 400s.
+    try {
+      await client
+          .from('conversations')
+          .update({'updated_at': now.toIso8601String()}).eq('id', conversationId);
+    } catch (_) {}
 
-    // Update conversation last_message_at
-    await client
-        .from('conversations')
-        .update({'last_message_at': now})
-        .eq('id', conversationId);
-
-    return msg;
+    return Message.fromJson(res);
   }
 
   static Future<Message?> getReplyPreview(String messageId) async {
