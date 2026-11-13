@@ -333,6 +333,46 @@ class Supa {
     await client.from('statuses').delete().eq('id', statusId);
   }
 
+  static Future<String> uploadStatusMedia(
+      Uint8List bytes, String filename) async {
+    if (bytes.length > 5 * 1024 * 1024) {
+      throw ArgumentError('Status photos must be 5 MB or smaller.');
+    }
+    final uid = currentUser!.id;
+    final extension = path.extension(filename).toLowerCase();
+    final safeExt = switch (extension) {
+      '.png' => '.png',
+      '.webp' => '.webp',
+      '.gif' => '.gif',
+      _ => '.jpg',
+    };
+    final contentType = switch (safeExt) {
+      '.png' => 'image/png',
+      '.webp' => 'image/webp',
+      '.gif' => 'image/gif',
+      _ => 'image/jpeg',
+    };
+    final objectPath = '$uid/status/${const Uuid().v4()}$safeExt';
+    await client.storage.from('avatars').uploadBinary(
+          objectPath,
+          bytes,
+          fileOptions: FileOptions(
+            upsert: false,
+            cacheControl: '3600',
+            contentType: contentType,
+          ),
+        );
+    return client.storage.from('avatars').getPublicUrl(objectPath);
+  }
+
+  static String? statusMediaUrl(String? mediaPath) {
+    if (mediaPath == null || mediaPath.trim().isEmpty) return null;
+    if (mediaPath.startsWith('http://') || mediaPath.startsWith('https://')) {
+      return mediaPath;
+    }
+    return client.storage.from('avatars').getPublicUrl(mediaPath);
+  }
+
   // Conversation lock
   static Future<bool> isConversationLocked(String conversationId) async {
     final me = currentUser;

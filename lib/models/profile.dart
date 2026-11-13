@@ -124,6 +124,7 @@ class Conversation {
         lastMessageAt: json['last_message_at'] == null
             ? null
             : DateTime.parse(json['last_message_at'] as String),
+        peerId: json['peer_id'] as String?,
         peerUsername: json['peer_username'] as String?,
         peerDisplayName: json['peer_display_name'] as String?,
         peerAvatarUrl: json['peer_avatar_url'] as String?,
@@ -303,5 +304,28 @@ class StatusPost {
       userDisplayName: profile?['display_name'] as String?,
       userAvatarUrl: profile?['avatar_url'] as String?,
     );
+  }
+
+  String get userLabel {
+    final name = userDisplayName?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    final user = userUsername?.trim();
+    if (user != null && user.isNotEmpty) return user;
+    return 'Someone';
+  }
+
+  String get userInitial {
+    final name = userLabel.trim();
+    return name.isNotEmpty ? name[0].toUpperCase() : '?';
+  }
+
+  bool get hasMedia {
+    final path = mediaPath?.trim();
+    return path != null && path.isNotEmpty;
+  }
+
+  bool get hasText {
+    final text = content?.trim();
+    return text != null && text.isNotEmpty;
   }
 }

@@ -15,7 +15,12 @@ import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/secure_screen.dart';
 import 'screens/call_screen.dart';
+import 'screens/status_composer.dart';
+import 'screens/status_screen.dart';
+import 'screens/status_viewer.dart';
 import 'followers_following_screen.dart';
+import 'widgets/home_nav_bar.dart';
+import 'widgets/status_ring_avatar.dart';
 import 'services/supabase.dart';
 import 'services/push_notifications.dart';
 import 'services/connection_monitor.dart';
@@ -174,6 +179,19 @@ final _router = GoRouter(
     GoRoute(
         path: '/conversations',
         builder: (_, __) => const ConversationListScreen()),
+    GoRoute(path: '/status', builder: (_, __) => const StatusScreen()),
+    GoRoute(
+        path: '/status/new', builder: (_, __) => const StatusComposerScreen()),
+    GoRoute(
+      path: '/status/view/:userId',
+      builder: (_, state) => StatusViewerScreen(
+        userId: state.pathParameters['userId']!,
+        peerUserIds: switch (state.extra) {
+          final List list => list.whereType<String>().toList(),
+          _ => const <String>[],
+        },
+      ),
+    ),
     GoRoute(
         path: '/settings', builder: (_, __) => const AccountSettingsScreen()),
     GoRoute(
@@ -1141,6 +1159,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   final _searchFocusNode = FocusNode();
   final _refreshKey = GlobalKey<RefreshIndicatorState>();
   Timer? _autoRefreshTimer;
+  StreamSubscription<List<StatusPost>>? _statusSub;
+  Set<String> _statusUserIds = {};
   
   late final Future<List<Profile>> _suggestions = Supa.searchUsers('');
   List<Profile> _searchResults = [];
@@ -1154,6 +1174,10 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   void initState() {
     super.initState();
     _autoRefresh();
+    _statusSub = Supa.watchStatuses().listen((posts) {
+      if (!mounted) return;
+      setState(() => _statusUserIds = {for (final p in posts) p.userId});
+    }, onError: (_) {});
   }
 
   void _onSearchChanged(String value) {
@@ -1195,10 +1219,39 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   void dispose() {
     _searchRequestId++;
     _autoRefreshTimer?.cancel();
+    _statusSub?.cancel();
     _searchDebounce?.cancel();
     _search.dispose();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  Widget _conversationAvatar(BuildContext context, Conversation conv) {
+    final hasStatus =
+        conv.peerId != null && _statusUserIds.contains(conv.peerId);
+    final avatar = conv.peerId != null
+        ? FutureBuilder<bool>(
+            future: Supa.isPeerOnline(conv.peerId!),
+            builder: (_, snap) => _Avatar(
+                name: conv.peerInitial,
+                url: conv.peerAvatarUrl,
+                size: 46,
+                showOnlineDot: snap.data == true),
+          )
+        : _Avatar(name: conv.peerInitial, url: conv.peerAvatarUrl, size: 46);
+    if (hasStatus) {
+      return StatusRingAvatar(
+        size: 46,
+        onTap: () => context.push('/status/view/${conv.peerId}'),
+        child: avatar,
+      );
+    }
+    return GestureDetector(
+      onTap: conv.peerId != null
+          ? () => context.push('/profile/${conv.peerId}')
+          : null,
+      child: avatar,
+    );
   }
 
   Future<void> _startDM(Profile other) async {
@@ -1217,49 +1270,49 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Image.asset(
-              'assets/images/bro_logo.png',
-              height: 26,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) =>
-                  const Icon(Icons.flash_on, color: _P.primary, size: 24),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth > _adaptiveBreakpoint;
+        return Scaffold(
+          appBar: AppBar(
+            title: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Image.asset(
+                  'assets/images/bro_logo.png',
+                  height: 26,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) =>
+                      const Icon(Icons.flash_on, color: _P.primary, size: 24),
+                ),
+                const SizedBox(width: 10),
+                const Text('BRO',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+              ],
             ),
-            const SizedBox(width: 10),
-            const Text('BRO',
-                style:
-                    TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.5)),
-          ],
-        ),
-        actions: [
-          IconButton(
-              icon: const Icon(Icons.settings_outlined),
-              tooltip: 'Settings',
-              onPressed: () => context.push('/settings')),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Sign out',
-            onPressed: () async {
-              await PushNotifications.unregisterCurrentToken();
-              await Supa.signOut();
-              if (context.mounted) context.go('/login');
-            },
+            actions: [
+              IconButton(
+                  icon: const Icon(Icons.settings_outlined),
+                  tooltip: 'Settings',
+                  onPressed: () => context.push('/settings')),
+              IconButton(
+                icon: const Icon(Icons.logout),
+                tooltip: 'Sign out',
+                onPressed: () async {
+                  await PushNotifications.unregisterCurrentToken();
+                  await Supa.signOut();
+                  if (context.mounted) context.go('/login');
+                },
+              ),
+            ],
           ),
-        ],
-      ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          if (constraints.maxWidth > _adaptiveBreakpoint) {
-            return _buildLargeScreenLayout(context);
-          } else {
-            return _buildSmallScreenLayout(context);
-          }
-        },
-      ),
+          body: wide
+              ? _buildLargeScreenLayout(context)
+              : _buildSmallScreenLayout(context),
+          bottomNavigationBar: wide ? null : const HomeNavBar(index: 0),
+        );
+      },
     );
   }
 
@@ -1513,24 +1566,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                       final lastMessageAt = conv.lastMessageAt;
                       final unread = conv.unreadCount > 0;
                       return ListTile(
-                        leading: GestureDetector(
-                          onTap: conv.peerId != null
-                              ? () => context.push('/profile/${conv.peerId}')
-                              : null,
-                          child: conv.peerId != null
-                              ? FutureBuilder<bool>(
-                                  future: Supa.isPeerOnline(conv.peerId!),
-                                  builder: (_, snap) => _Avatar(
-                                      name: conv.peerInitial,
-                                      url: conv.peerAvatarUrl,
-                                      size: 46,
-                                      showOnlineDot: snap.data == true),
-                                )
-                              : _Avatar(
-                                  name: conv.peerInitial,
-                                  url: conv.peerAvatarUrl,
-                                  size: 46),
-                        ),
+                        leading: _conversationAvatar(context, conv),
                         title: Text(
                           conv.peerLabel,
                           style: TextStyle(
@@ -5223,6 +5259,10 @@ class _NavSidebar extends StatelessWidget {
             icon: Icons.forum_outlined,
             label: 'Chats',
             onTap: () => context.go('/conversations')),
+        _NavItem(
+            icon: Icons.slow_motion_video_outlined,
+            label: 'Status',
+            onTap: () => context.go('/status')),
         _NavItem(icon: Icons.search, label: 'Discover', onTap: () {}),
         _NavItem(
             icon: Icons.settings_outlined,
