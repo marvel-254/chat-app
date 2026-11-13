@@ -61,6 +61,17 @@ void main() {
       );
     });
 
+    test('maps schema-cache writes to missing columns', () {
+      expect(
+        friendlyErrorMessage(PostgrestException(
+          message:
+              "Could not find the 'peer_avatar_url' column of 'conversation_participants' in the schema cache",
+          code: 'PGRST204',
+        )),
+        "That didn't land cleanly. Try once more.",
+      );
+    });
+
     test('falls back instead of dumping JSON', () {
       expect(
         friendlyErrorMessage('{error: true, stack: [...]}'),
