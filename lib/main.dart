@@ -409,11 +409,18 @@ class AuthGate extends StatelessWidget {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
               body: Center(
-                  child: Text('BRO',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 2,
-                          fontSize: 22))));
+                  child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('BRO',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 2,
+                      fontSize: 22)),
+              SizedBox(height: 18),
+              BroSpinner(size: 22),
+            ],
+          )));
         }
         if (snapshot.hasError) {
           return _AuthErrorState(error: friendlyErrorMessage(snapshot.error));
@@ -705,11 +712,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           alignment: Alignment.center,
                           child: _loading
-                              ? SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2.5, color: darkOnAccent),
+                              ? BroSpinner(
+                                  size: 22,
+                                  strokeWidth: 2.5,
+                                  color: darkOnAccent,
                                 )
                               : Text(_isSignUp ? 'Create Account' : 'Sign In',
                                   style: TextStyle(
@@ -1050,11 +1056,7 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
                   child: OutlinedButton.icon(
                     onPressed: _resending ? null : _resend,
                     icon: _resending
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: _P.text))
+                        ? const BroSpinner(size: 18, color: _P.text)
                         : const Icon(Icons.mark_email_read_outlined,
                             color: _P.text),
                     label: Text(_resending ? 'Sending…' : 'Resend Confirmation',
@@ -1306,7 +1308,11 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
         if (_search.text.trim().isNotEmpty && _searchLoading)
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16),
-            child: LinearProgressIndicator(minHeight: 2),
+            child: LinearProgressIndicator(
+              minHeight: 2,
+              color: _P.primary,
+              backgroundColor: _P.surfaceHigh,
+            ),
           ),
         if (_search.text.trim().isNotEmpty && _searchError != null)
           Padding(
@@ -2683,7 +2689,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: Builder(builder: (context) {
                   if (snapshot.connectionState == ConnectionState.waiting &&
                       messages.isEmpty) {
-                    return const ListSkeleton(label: 'Loading messages');
+                    return const BubbleSkeleton();
                   }
                   if (snapshot.hasError) {
                     return _ErrorState(
@@ -2810,8 +2816,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         if (snapshot.connectionState ==
                                 ConnectionState.waiting &&
                             messages.isEmpty) {
-                          return const Center(
-                              child: CircularProgressIndicator());
+                          return const BubbleSkeleton();
                         }
                         if (snapshot.hasError) {
                           return _ErrorState(
@@ -3485,9 +3490,7 @@ class _AttachmentContent extends StatelessWidget {
         }
         if (!snapshot.hasData) {
           return const SizedBox(
-              width: 180,
-              height: 54,
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+              width: 180, height: 54, child: Center(child: BroSpinner(size: 18)));
         }
         final url = Uri.parse(snapshot.data!);
         if (attachment['kind'] == 'image') {
@@ -3967,7 +3970,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                 icon: const Icon(Icons.arrow_back),
                 onPressed: () => context.pop())),
         body: _loading
-            ? const ListSkeleton(label: 'Loading settings')
+            ? const FormSkeleton(label: 'Loading settings')
             : Center(
                 child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 560),
@@ -3989,11 +3992,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     TextButton.icon(
                         onPressed: _uploadingAvatar ? null : _pickAvatar,
                         icon: _uploadingAvatar
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2))
+                            ? const BroSpinner(size: 16)
                             : const Icon(Icons.photo_camera_outlined),
                         label: Text(_uploadingAvatar
                             ? 'Uploading…'
@@ -4299,11 +4298,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                             fontSize: 16, fontWeight: FontWeight.w700),
                       ),
                       child: _saving
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: _P.darkOnAccent))
+                          ? const BroSpinner(
+                              size: 20, color: _P.darkOnAccent)
                           : const Text('Save changes')),
                   const SizedBox(height: 12),
                   Center(
@@ -4508,7 +4504,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               ),
       ),
       body: _loading
-          ? const ListSkeleton(label: 'Loading profile')
+          ? const FormSkeleton(label: 'Loading profile')
           : _error != null
               ? Center(
                   child: Column(
@@ -4655,13 +4651,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                       ),
                       onPressed: _followLoading ? null : _toggleFollow,
                       icon: _followLoading
-                          ? SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: _isFollowing ? _P.text : _P.darkOnAccent,
-                              ),
+                          ? BroSpinner(
+                              size: 16,
+                              color:
+                                  _isFollowing ? _P.text : _P.darkOnAccent,
                             )
                           : Icon(
                               _isFollowing
@@ -4961,7 +4954,7 @@ class _FollowersFollowingSheetState extends State<_FollowersFollowingSheet>
   Widget _buildList(
       List<Profile>? profiles, bool loading, ScrollController scrollCtrl) {
     if (loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const ListSkeleton(label: 'Loading people');
     }
     if (profiles == null || profiles.isEmpty) {
       return Center(
@@ -5048,20 +5041,12 @@ class _FollowToggleButtonState extends State<_FollowToggleButton> {
   @override
   Widget build(BuildContext context) {
     if (_following == null) {
-      return const SizedBox(
-          width: 18,
-          height: 18,
-          child: CircularProgressIndicator(strokeWidth: 2));
+      return const BroSpinner(size: 18);
     }
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 180),
       child: _busy
-          ? const SizedBox(
-              key: ValueKey('busy'),
-              width: 18,
-              height: 18,
-              child:
-                  CircularProgressIndicator(strokeWidth: 2, color: _P.primary))
+          ? const BroSpinner(key: ValueKey('busy'), size: 18)
           : OutlinedButton(
               key: ValueKey(_following),
               onPressed: _toggle,
@@ -5345,11 +5330,7 @@ class _PinnedMessagesSheetState extends State<_PinnedMessagesSheet> {
                     style: TextStyle(fontSize: 11, color: _P.muted),
                   ),
                   trailing: isUnpinning
-                      ? SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: _P.muted))
+                      ? const BroSpinner(size: 18, color: _P.muted)
                       : IconButton(
                           icon: Icon(Icons.push_pin, size: 18, color: _P.muted),
                           tooltip: 'Unpin',

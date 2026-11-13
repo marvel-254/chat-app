@@ -96,7 +96,7 @@ class _StatusScreenState extends State<StatusScreen> {
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting &&
                 !snapshot.hasData) {
-              return const AppLoader();
+              return const ListSkeleton(label: 'Loading statuses');
             }
             if (snapshot.hasError) {
               return AppErrorState(

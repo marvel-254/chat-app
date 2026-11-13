@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 
 import 'services/supabase.dart';
 import 'models/profile.dart';
+import 'ui/states.dart';
 
 /// Color palette matching the app's design tokens.
 /// Duplicated here to avoid importing private _P from main.dart.
@@ -283,6 +284,7 @@ class _FollowersFollowingScreenState extends State<FollowersFollowingScreen>
   }) {
     final controller = _getScrollController(tabIndex);
     final isEmpty = profiles.isEmpty && !loading;
+    final showSkeleton = profiles.isEmpty && loading;
 
     return RefreshIndicator(
       onRefresh: onRefresh,
@@ -304,7 +306,12 @@ class _FollowersFollowingScreenState extends State<FollowersFollowingScreen>
             ),
           ),
           // List content
-          if (isEmpty)
+          if (showSkeleton)
+            const SliverFillRemaining(
+              hasScrollBody: false,
+              child: ListSkeleton(label: 'Loading people'),
+            )
+          else if (isEmpty)
             SliverFillRemaining(
               hasScrollBody: false,
               child: _EmptyState(
@@ -342,11 +349,7 @@ class _FollowersFollowingScreenState extends State<FollowersFollowingScreen>
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 child: Center(
                   child: loading
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
+                      ? const BroSpinner(size: 22)
                       : const SizedBox.shrink(),
                 ),
               ),
@@ -489,14 +492,7 @@ class _LoadingMoreIndicator extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: _FollowColors.primary,
-          ),
-        ),
+        child: const BroSpinner(size: 22),
       ),
     );
   }
@@ -675,19 +671,12 @@ class _FollowToggleButtonState extends State<_FollowToggleButton> {
   @override
   Widget build(BuildContext context) {
     if (_following == null) {
-      return const SizedBox(
-          width: 18,
-          height: 18,
-          child: CircularProgressIndicator(strokeWidth: 2));
+      return const BroSpinner(size: 18);
     }
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 180),
       child: _busy
-          ? const SizedBox(
-              key: ValueKey('busy'),
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2, color: _FollowColors.primary))
+          ? const BroSpinner(key: ValueKey('busy'), size: 18)
           : OutlinedButton(
               key: ValueKey(_following),
               onPressed: _toggle,

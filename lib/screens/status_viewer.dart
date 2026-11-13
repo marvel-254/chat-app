@@ -8,6 +8,7 @@ import '../models/profile.dart';
 import '../services/status_feed.dart';
 import '../services/supabase.dart';
 import '../ui/errors.dart';
+import '../ui/states.dart';
 
 class _C {
   static const bg = Color(0xFF050505);
@@ -193,7 +194,7 @@ class _StatusViewerScreenState extends State<StatusViewerScreen>
       child: Scaffold(
         backgroundColor: _C.bg,
         body: _loading
-            ? const Center(child: CircularProgressIndicator())
+            ? const AppLoader()
             : _error != null
                 ? Center(
                     child: Padding(

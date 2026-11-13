@@ -150,18 +150,112 @@ class AppErrorState extends StatelessWidget {
   }
 }
 
-/// Standard centered loading indicator.
-class AppLoader extends StatelessWidget {
-  const AppLoader({super.key});
+/// Compact branded spinner for buttons, tiles, and inline waits.
+class BroSpinner extends StatelessWidget {
+  const BroSpinner({
+    super.key,
+    this.size = 22,
+    this.strokeWidth = 2.4,
+    this.color,
+  });
 
-  /// Returns the centered circular progress spinner.
-  factory AppLoader.standard() => const AppLoader._();
-
-  const AppLoader._();
+  final double size;
+  final double strokeWidth;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    return const Center(child: CircularProgressIndicator());
+    final tint = color ?? Theme.of(context).colorScheme.primary;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CircularProgressIndicator(
+        strokeWidth: strokeWidth,
+        color: tint,
+        backgroundColor: tint.withValues(alpha: 0.18),
+      ),
+    );
+  }
+}
+
+/// Centered screen loader. Prefer [ListSkeleton] / [BubbleSkeleton] /
+/// [FormSkeleton] when the destination has a list or form shape.
+class AppLoader extends StatelessWidget {
+  const AppLoader({super.key, this.label});
+
+  final String? label;
+
+  factory AppLoader.standard() => const AppLoader();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const BroSpinner(size: 28),
+          if (label != null) ...[
+            const SizedBox(height: 14),
+            Text(
+              label!,
+              style: TextStyle(
+                color: scheme.onSurface.withValues(alpha: 0.55),
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Soft shine that travels across skeleton placeholders.
+class Shimmer extends StatefulWidget {
+  const Shimmer({super.key, required this.child});
+  final Widget child;
+
+  @override
+  State<Shimmer> createState() => _ShimmerState();
+}
+
+class _ShimmerState extends State<Shimmer> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        return ShaderMask(
+          blendMode: BlendMode.srcATop,
+          shaderCallback: (rect) {
+            return LinearGradient(
+              begin: Alignment(-1.2 + _ctrl.value * 2.4, 0),
+              end: Alignment(-0.2 + _ctrl.value * 2.4, 0),
+              colors: [
+                Colors.white.withValues(alpha: 0.28),
+                Colors.white,
+                Colors.white.withValues(alpha: 0.28),
+              ],
+              stops: const [0.2, 0.5, 0.8],
+            ).createShader(rect);
+          },
+          child: child,
+        );
+      },
+      child: widget.child,
+    );
   }
 }
 
@@ -219,10 +313,69 @@ class ListSkeleton extends StatelessWidget {
     return Semantics(
       label: label,
       excludeSemantics: true,
-      child: ListView.builder(
-        itemCount: 6,
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemBuilder: (context, _) => row(),
+      child: Shimmer(
+        child: ListView.builder(
+          itemCount: 7,
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemBuilder: (context, _) => row(),
+        ),
+      ),
+    );
+  }
+}
+
+/// Settings / profile placeholder: avatar plus field bars.
+class FormSkeleton extends StatelessWidget {
+  const FormSkeleton({super.key, this.label = 'Loading'});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final block = scheme.onSurface.withValues(alpha: 0.08);
+    Widget bar({double width = double.infinity, double height = 48}) {
+      return Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: block,
+          borderRadius: BorderRadius.circular(14),
+        ),
+      );
+    }
+
+    return Semantics(
+      label: label,
+      excludeSemantics: true,
+      child: Shimmer(
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+          children: [
+            Center(
+              child: Container(
+                width: 96,
+                height: 96,
+                decoration:
+                    BoxDecoration(color: block, shape: BoxShape.circle),
+              ),
+            ),
+            const SizedBox(height: 28),
+            bar(),
+            const SizedBox(height: 14),
+            bar(),
+            const SizedBox(height: 14),
+            bar(),
+            const SizedBox(height: 22),
+            bar(width: 160, height: 12),
+            const SizedBox(height: 14),
+            bar(),
+            const SizedBox(height: 14),
+            bar(),
+          ],
+        ),
       ),
     );
   }
@@ -285,16 +438,19 @@ class BubbleSkeleton extends StatelessWidget {
     return Semantics(
       label: label,
       excludeSemantics: true,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (var i = 0; i < 5; i++) ...[
-              bubble(i.isEven),
-              const SizedBox(height: 6),
+      child: Shimmer(
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < 6; i++) ...[
+                bubble(i.isEven),
+                const SizedBox(height: 8),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
