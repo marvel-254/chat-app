@@ -11,10 +11,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
-import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/secure_screen.dart';
+import 'services/app_lock.dart';
+import 'services/app_update.dart';
 import 'screens/call_screen.dart';
+import 'screens/lock_gate.dart';
 import 'screens/status_composer.dart';
 import 'screens/status_screen.dart';
 import 'screens/status_viewer.dart';
@@ -167,7 +169,10 @@ class BackendConfigurationApp extends StatelessWidget {
   }
 }
 
+final _rootNav = GlobalKey<NavigatorState>();
+
 final _router = GoRouter(
+  navigatorKey: _rootNav,
   initialLocation: '/',
   routes: [
     GoRoute(path: '/', builder: (_, __) => const AuthGate()),
@@ -181,7 +186,10 @@ final _router = GoRouter(
         builder: (_, __) => const ConversationListScreen()),
     GoRoute(path: '/status', builder: (_, __) => const StatusScreen()),
     GoRoute(
-        path: '/status/new', builder: (_, __) => const StatusComposerScreen()),
+        path: '/status/new',
+        builder: (_, state) => StatusComposerScreen(
+              initialSource: state.uri.queryParameters['source'],
+            )),
     GoRoute(
       path: '/status/view/:userId',
       builder: (_, state) => StatusViewerScreen(
@@ -205,8 +213,10 @@ final _router = GoRouter(
             )),
     GoRoute(
       path: '/chat/:conversationId',
-      builder: (_, state) =>
-          ChatScreen(conversationId: state.pathParameters['conversationId']!),
+      builder: (_, state) => ChatScreen(
+        conversationId: state.pathParameters['conversationId']!,
+        initialPeer: state.extra is Profile ? state.extra as Profile : null,
+      ),
     ),
     GoRoute(
       path: '/profile/:userId',
@@ -233,8 +243,7 @@ class BroApp extends StatefulWidget {
 
 class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
   bool _appLocked = false;
-  bool _appLockEnabled = false;
-  Timer? _lockTimer;
+  DateTime? _pausedAt;
 
   @override
   void initState() {
@@ -244,22 +253,30 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
     PushNotifications.setOpenHandler(
       (conversationId) => _router.go('/chat/$conversationId'),
     );
-    _loadAppLockSettings();
+    AppLock.enabled.addListener(_onLockPref);
+    unawaited(AppLock.bootstrap());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybePromptUpdate());
   }
 
-  Future<void> _loadAppLockSettings() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (mounted) {
-        setState(() {
-          _appLockEnabled = prefs.getBool('app_lock_enabled') ?? false;
-        });
-      }
-    } catch (_) {}
+  void _onLockPref() {
+    if (!mounted) return;
+    if (AppLock.enabled.value) {
+      setState(() => _appLocked = true);
+    } else {
+      setState(() => _appLocked = false);
+    }
+  }
+
+  Future<void> _maybePromptUpdate() async {
+    await Future<void>.delayed(const Duration(seconds: 2));
+    final ctx = _rootNav.currentContext;
+    if (ctx == null || !ctx.mounted) return;
+    await AppUpdate.promptIfNeeded(context: ctx, buildNumber: buildNumber);
   }
 
   @override
   void dispose() {
+    AppLock.enabled.removeListener(_onLockPref);
     WidgetsBinding.instance.removeObserver(this);
     unawaited(ConnectionMonitor.dispose());
     super.dispose();
@@ -269,62 +286,22 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(Supa.recordLastSeen());
-      if (_appLockEnabled) {
-        _lockApp();
-      }
-    } else if (state == AppLifecycleState.paused ||
-               state == AppLifecycleState.inactive) {
-      if (_appLockEnabled) {
-        _startLockTimer();
-      }
+      unawaited(_lockIfTimedOut());
+    } else if (state == AppLifecycleState.paused) {
+      _pausedAt = DateTime.now();
     }
   }
 
-  void _startLockTimer() {
-    _lockTimer?.cancel();
-    _lockTimer = Timer(const Duration(seconds: 5), () {
-      if (mounted) _lockApp();
-    });
-  }
-
-  void _lockApp() {
-    if (mounted) setState(() => _appLocked = true);
-  }
-
-  Future<void> _unlockApp() async {
-    final auth = LocalAuthentication();
-    final canCheck = await auth.canCheckBiometrics;
-    final isAvailable = await auth.isDeviceSupported();
-    if (!canCheck || !isAvailable) {
-      _showPinDialog();
-      return;
+  Future<void> _lockIfTimedOut() async {
+    if (!AppLock.enabled.value) return;
+    final timeout = await AppLock.timeoutSeconds();
+    final pausedAt = _pausedAt;
+    final elapsed = pausedAt == null
+        ? Duration.zero
+        : DateTime.now().difference(pausedAt);
+    if (elapsed >= Duration(seconds: timeout) && mounted) {
+      setState(() => _appLocked = true);
     }
-    try {
-      final didAuthenticate = await auth.authenticate(
-        localizedReason: 'Unlock BRO',
-        options: const AuthenticationOptions(
-          stickyAuth: true,
-          biometricOnly: false,
-        ),
-      );
-      if (didAuthenticate && mounted) {
-        setState(() => _appLocked = false);
-      }
-    } catch (_) {
-      if (mounted) {
-        _showPinDialog();
-      }
-    }
-  }
-
-  void _showPinDialog() {
-    appScaffoldMessengerKey.currentState?.showSnackBar(
-      const SnackBar(
-        content: Text(
-            "Unlock with biometrics didn't work on this device. You can turn off app lock in Settings."),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
   }
 
   @override
@@ -373,54 +350,16 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
         ),
       ),
     ),
-    if (_appLocked) _AppLockScreen(onUnlock: _unlockApp),
+    if (_appLocked)
+      LockGate(
+        title: 'BRO is locked',
+        reason: 'Unlock BRO',
+        onUnlocked: () {
+          if (mounted) setState(() => _appLocked = false);
+        },
+      ),
   ],
 );
-  }
-}
-
-class _AppLockScreen extends StatelessWidget {
-  const _AppLockScreen({required this.onUnlock});
-  final VoidCallback onUnlock;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _P.bg,
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.lock_outline_rounded,
-                  size: 80, color: _P.primary),
-              const SizedBox(height: 24),
-              Text('App Locked',
-                  style: TextStyle(
-                      color: _P.text,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700)),
-              const SizedBox(height: 8),
-              Text('Authenticate to unlock',
-                  style: TextStyle(color: _P.muted, fontSize: 16)),
-              const SizedBox(height: 32),
-              FilledButton.icon(
-                icon: const Icon(Icons.fingerprint),
-                label: const Text('Unlock with Biometrics'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _P.primary,
-                  foregroundColor: _P.darkOnAccent,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                ),
-                onPressed: onUnlock,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
 
@@ -455,7 +394,12 @@ class AuthGate extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-              body: Center(child: CircularProgressIndicator()));
+              body: Center(
+                  child: Text('BRO',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 2,
+                          fontSize: 22))));
         }
         if (snapshot.hasError) {
           return _AuthErrorState(error: friendlyErrorMessage(snapshot.error));
@@ -1257,7 +1201,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   Future<void> _startDM(Profile other) async {
     try {
       final conv = await Supa.getOrCreateDM(other.id);
-      if (mounted) context.go('/chat/${conv.id}');
+      if (mounted) context.go('/chat/${conv.id}', extra: other);
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1495,8 +1439,9 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
             child: StreamBuilder<List<Conversation>>(
               stream: Supa.watchConversations(),
               builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData) {
+                return const ListSkeleton(label: 'Loading chats');
               }
               if (snapshot.hasError) {
                 return _ErrorState(
@@ -1646,7 +1591,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                         ),
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 4),
-                        onTap: () => context.go('/chat/${conv.id}'),
+                        onTap: () => context.go('/chat/${conv.id}',
+                            extra: conv.toPeerProfile()),
                         onLongPress: conv.peerId != null
                             ? () => context.push('/profile/${conv.peerId}')
                             : null,
@@ -1693,7 +1639,9 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
-  const ChatScreen({super.key, required this.conversationId});
+  final Profile? initialPeer;
+  const ChatScreen(
+      {super.key, required this.conversationId, this.initialPeer});
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
@@ -1704,7 +1652,10 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _typing = false;
   bool _sendingMessage = false;
   Timer? _typingTimer;
-  Profile? _peer;
+  late Profile? _peer = widget.initialPeer;
+  bool _conversationLocked = false;
+  bool _conversationUnlocked = false;
+  bool _lockReady = false;
   String? _peerTyping;
   Timer? _peerTypingTimer;
   RealtimeChannel? _callChannel;
@@ -1738,10 +1689,16 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _checkConversationLock() async {
     try {
       final isLocked = await Supa.isConversationLocked(widget.conversationId);
-      if (isLocked && mounted) {
-        await SecureScreen.enable();
+      if (mounted) {
+        setState(() {
+          _conversationLocked = isLocked;
+          _lockReady = true;
+        });
+        if (isLocked) await SecureScreen.enable();
       }
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) setState(() => _lockReady = true);
+    }
   }
 
   Future<void> _loadMessageExpiry() async {
@@ -1786,95 +1743,81 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _authenticateAndLock() async {
-    final auth = LocalAuthentication();
-    final canCheck = await auth.canCheckBiometrics;
-    final isAvailable = await auth.isDeviceSupported();
-    if (!canCheck || !isAvailable) {
-      _unsupported("This device doesn't support biometric unlock.");
-      return;
-    }
-    try {
-      final didAuthenticate = await auth.authenticate(
-        localizedReason: 'Lock this conversation',
-        options: const AuthenticationOptions(
-          stickyAuth: true,
-          biometricOnly: true,
-        ),
-      );
-      if (didAuthenticate && mounted) {
-        await Supa.setConversationLocked(widget.conversationId, true);
-        if (mounted) {
-          setState(() {});
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Conversation locked'),
-            behavior: SnackBarBehavior.floating,
-          ));
-        }
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("We couldn't confirm it's you. Try again?"),
-          behavior: SnackBarBehavior.floating,
-        ));
-      }
-    }
+  Future<bool> _confirmIdentity(String reason) async {
+    final ok = await AppLock.authenticate(reason: reason);
+    if (ok) return true;
+    if (!mounted) return false;
+    var passed = false;
+    await Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => LockGate(
+        title: reason,
+        reason: reason,
+        onUnlocked: () {
+          passed = true;
+          Navigator.of(context).pop();
+        },
+      ),
+    ));
+    return passed;
   }
 
   Future<void> _lockConversation() async {
-    await _authenticateAndLock();
+    if (!await _confirmIdentity('Lock this conversation')) return;
+    try {
+      await Supa.setConversationLocked(widget.conversationId, true);
+      if (!mounted) return;
+      setState(() {
+        _conversationLocked = true;
+        _conversationUnlocked = false;
+      });
+      await SecureScreen.enable();
+      _unsupported('This chat is locked on this device.');
+    } catch (e) {
+      _unsupported(friendlyErrorMessage(e,
+          fallback: "We couldn't lock this chat. Try again?"));
+    }
   }
 
   Future<void> _unlockConversation() async {
-    final auth = LocalAuthentication();
-    final canCheck = await auth.canCheckBiometrics;
-    final isAvailable = await auth.isDeviceSupported();
-    if (!canCheck || !isAvailable) {
-      _unsupported("This device doesn't support biometric unlock.");
-      return;
-    }
+    if (!await _confirmIdentity('Unlock this conversation')) return;
     try {
-      final didAuthenticate = await auth.authenticate(
-        localizedReason: 'Unlock this conversation',
-        options: const AuthenticationOptions(
-          stickyAuth: true,
-          biometricOnly: true,
-        ),
-      );
-      if (didAuthenticate && mounted) {
-        await Supa.setConversationLocked(widget.conversationId, false);
-        if (mounted) {
-          setState(() {});
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Conversation unlocked'),
-            behavior: SnackBarBehavior.floating,
-          ));
-        }
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("We couldn't confirm it's you. Try again?"),
-          behavior: SnackBarBehavior.floating,
-        ));
-      }
+      await Supa.setConversationLocked(widget.conversationId, false);
+      if (!mounted) return;
+      setState(() {
+        _conversationLocked = false;
+        _conversationUnlocked = true;
+      });
+      await SecureScreen.disable();
+      _unsupported('Chat unlocked.');
+    } catch (e) {
+      _unsupported(friendlyErrorMessage(e,
+          fallback: "We couldn't unlock this chat. Try again?"));
     }
   }
 
   Future<void> _loadChatBackground() async {
-    final profile = await Supa.getProfile(Supa.currentUser!.id);
-    if (profile == null) return;
-    final imagePath = profile.chatBackgroundImagePath;
-    final imageUrl = profile.chatBackground == 'custom' && imagePath != null
-        ? await Supa.chatBackgroundUrl(imagePath)
-        : null;
-    if (mounted) {
-      setState(() {
-        _chatBackground = profile.chatBackground;
-        _chatBackgroundImageUrl = imageUrl;
-      });
-    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString('chat_background');
+      if (cached != null && mounted) {
+        setState(() => _chatBackground = cached);
+      }
+      final profile = await Supa.getProfile(Supa.currentUser!.id);
+      if (profile == null) return;
+      final imagePath = profile.chatBackgroundImagePath;
+      String? imageUrl;
+      if (profile.chatBackground == 'custom' && imagePath != null) {
+        imageUrl = await Supa.chatBackgroundUrl(imagePath);
+      }
+      await prefs.setString('chat_background', profile.chatBackground);
+      if (mounted) {
+        setState(() {
+          _chatBackground = profile.chatBackground;
+          _chatBackgroundImageUrl = imageUrl;
+        });
+      }
+    } catch (_) {}
   }
 
   void _listenForCalls() {
@@ -1971,6 +1914,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _loadPeer() async {
     // Resolve the other participant of this DM so the header shows their
     // real identity instead of a hardcoded placeholder.
+    try {
     final ids = await Supa.client
         .from('conversation_participants')
         .select('user_id')
@@ -1984,12 +1928,13 @@ class _ChatScreenState extends State<ChatScreen> {
     if (uid == null) return;
     final profile = await Supa.getProfile(uid);
     if (mounted) {
-      setState(() => _peer = profile);
+      setState(() => _peer = profile ?? _peer);
       _presenceSub?.cancel();
       _presenceSub = Supa.watchPeerPresence(uid).listen((presence) {
         if (mounted) setState(() => _peerIsOnline = presence == 'online');
       });
     }
+    } catch (_) {}
   }
 
   @override
@@ -2109,31 +2054,46 @@ class _ChatScreenState extends State<ChatScreen> {
               onTap: () {
                 Navigator.pop(context);
                 final peer = _peer;
-                if (peer != null) context.push('/profile/${peer.id}');
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  if (peer == null) {
+                    _unsupported("That profile is still loading. Try again in a moment.");
+                    return;
+                  }
+                  context.push('/profile/${peer.id}');
+                });
               },
             ),
-            _MenuTile(
-              icon: Icons.lock_outlined,
-              label: 'Lock conversation',
-              onTap: () {
-                Navigator.pop(context);
-                _lockConversation();
-              },
-            ),
-            _MenuTile(
-              icon: Icons.lock_open_outlined,
-              label: 'Unlock conversation',
-              onTap: () {
-                Navigator.pop(context);
-                _unlockConversation();
-              },
-            ),
+            if (!_conversationLocked)
+              _MenuTile(
+                icon: Icons.lock_outlined,
+                label: 'Lock conversation',
+                onTap: () {
+                  Navigator.pop(context);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _lockConversation();
+                  });
+                },
+              )
+            else
+              _MenuTile(
+                icon: Icons.lock_open_outlined,
+                label: 'Unlock conversation',
+                onTap: () {
+                  Navigator.pop(context);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _unlockConversation();
+                  });
+                },
+              ),
             _MenuTile(
               icon: Icons.report_outlined,
               label: 'Report user',
               onTap: () {
                 Navigator.pop(context);
-                _reportUser();
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _reportUser();
+                });
               },
             ),
             _MenuTile(
@@ -2141,7 +2101,9 @@ class _ChatScreenState extends State<ChatScreen> {
               label: 'Block user',
               onTap: () {
                 Navigator.pop(context);
-                _blockUser();
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _blockUser();
+                });
               },
             ),
             const SizedBox(height: 8),
@@ -2153,26 +2115,83 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _reportUser() async {
     final peer = _peer;
-    if (peer == null) return;
-    final reason = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _P.surface,
-        title: Text('Report @${peer.username}', style: const TextStyle(color: _P.text)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(title: const Text('Spam', style: TextStyle(color: _P.text)), onTap: () => Navigator.pop(ctx, 'spam')),
-            ListTile(title: const Text('Harassment', style: TextStyle(color: _P.text)), onTap: () => Navigator.pop(ctx, 'harassment')),
-            ListTile(title: const Text('Other', style: TextStyle(color: _P.text)), onTap: () => Navigator.pop(ctx, 'other')),
-          ],
+    if (peer == null) {
+      _unsupported("That profile is still loading. Try again in a moment.");
+      return;
+    }
+    final detailsCtrl = TextEditingController();
+    String chosen = 'spam';
+    try {
+      final submitted = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setLocal) => AlertDialog(
+            backgroundColor: _P.surface,
+            title: Text('Report @${peer.username}',
+                style: const TextStyle(color: _P.text)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Why are you reporting this person?',
+                      style: TextStyle(color: _P.muted, fontSize: 13)),
+                  const SizedBox(height: 8),
+                  for (final option in const [
+                    ('spam', 'Spam'),
+                    ('harassment', 'Harassment'),
+                    ('hate', 'Hate or abuse'),
+                    ('other', 'Something else'),
+                  ])
+                    RadioListTile<String>(
+                      dense: true,
+                      value: option.$1,
+                      groupValue: chosen,
+                      title: Text(option.$2,
+                          style: const TextStyle(color: _P.text)),
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setLocal(() => chosen = v);
+                      },
+                    ),
+                  TextField(
+                    controller: detailsCtrl,
+                    maxLines: 3,
+                    style: const TextStyle(color: _P.text),
+                    decoration: const InputDecoration(
+                      labelText: 'Details (optional)',
+                      hintText: 'What happened?',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Submit report')),
+            ],
+          ),
         ),
-      ),
-    );
-    if (reason == null) return;
-    await Supa.reportUser(userId: peer.id, reason: reason);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Report submitted')));
+      );
+      if (submitted != true) return;
+      await Supa.reportUser(
+        userId: peer.id,
+        reason: chosen,
+        details: detailsCtrl.text.trim().isEmpty ? null : detailsCtrl.text.trim(),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Thanks. We received your report.')));
+      }
+    } catch (e) {
+      _unsupported(friendlyErrorMessage(e,
+          fallback: "We couldn't send that report. Try again?"));
+    } finally {
+      detailsCtrl.dispose();
     }
   }
 
@@ -2498,6 +2517,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_lockReady && _conversationLocked && !_conversationUnlocked) {
+      return LockGate(
+        title: 'This chat is locked',
+        reason: 'Unlock this conversation',
+        onUnlocked: () => setState(() => _conversationUnlocked = true),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
@@ -2696,7 +2722,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: Builder(builder: (context) {
                   if (snapshot.connectionState == ConnectionState.waiting &&
                       messages.isEmpty) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const ListSkeleton(label: 'Loading messages');
                   }
                   if (snapshot.hasError) {
                     return _ErrorState(
@@ -3741,6 +3767,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       final path =
           await Supa.uploadChatBackground(await file.readAsBytes(), file.name);
       final url = await Supa.chatBackgroundUrl(path);
+      await Supa.updateChatBackground('custom', imagePath: path);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('chat_background', 'custom');
       if (mounted) {
         setState(() {
           _error = null;
@@ -3838,7 +3867,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                 icon: const Icon(Icons.arrow_back),
                 onPressed: () => context.pop())),
         body: _loading
-            ? const Center(child: CircularProgressIndicator())
+            ? const ListSkeleton(label: 'Loading settings')
             : Center(
                 child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 560),
@@ -3972,39 +4001,39 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       DropdownMenuItem(
                           value: Duration(hours: 1), child: Text('1 hour')),
                     ],
-                    onChanged: (v) => setState(() => _autoLockTimer = v),
+                    onChanged: (v) async {
+                      setState(() => _autoLockTimer = v);
+                      await AppLock.setTimeoutSeconds(
+                          v?.inSeconds ?? 15);
+                    },
                   ),
                   const SizedBox(height: 20),
                   Text('Security',
                       style: TextStyle(
                           color: _P.muted, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
-                  FutureBuilder<bool>(
-                    future: SharedPreferences.getInstance()
-                        .then((prefs) => prefs.getBool('app_lock_enabled') ?? false),
-                    builder: (context, snapshot) {
-                      final enabled = snapshot.data ?? false;
-                      // Get appState reference before async gap
-                      final appState =
-                          context.findAncestorStateOfType<_BroAppState>();
+                  ValueListenableBuilder<bool>(
+                    valueListenable: AppLock.enabled,
+                    builder: (context, enabled, _) {
                       return SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: const Text('App Lock'),
                         subtitle: Text(
-                          'Require biometric or PIN to open the app',
+                          'Require biometrics or a PIN when you come back',
                           style: TextStyle(color: _P.muted, fontSize: 12),
                         ),
                         value: enabled,
                         onChanged: (v) async {
-                          final prefs = await SharedPreferences.getInstance();
-                          await prefs.setBool('app_lock_enabled', v);
-                          if (appState != null && appState.mounted) {
-                            appState.setState(() => appState._appLockEnabled = v);
-                            if (v) {
-                              appState._lockApp();
-                            }
+                          if (v && !await AppLock.hasPin()) {
+                            final set = await promptSetPin(context);
+                            if (!set) return;
                           }
-                          // No setState needed - FutureBuilder will rebuild
+                          await AppLock.setEnabled(v);
+                          if (v) {
+                            final seconds = _autoLockTimer?.inSeconds ?? 15;
+                            await AppLock.setTimeoutSeconds(
+                                seconds == 0 ? 15 : seconds);
+                          }
                         },
                       );
                     },
@@ -4018,8 +4047,16 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     for (final option in _chatBackgroundOptions)
                       InkWell(
                         borderRadius: BorderRadius.circular(14),
-                        onTap: () =>
-                            setState(() => _chatBackground = option.$1),
+                        onTap: () async {
+                          setState(() => _chatBackground = option.$1);
+                          try {
+                            await Supa.updateChatBackground(option.$1);
+                            final prefs =
+                                await SharedPreferences.getInstance();
+                            await prefs.setString(
+                                'chat_background', option.$1);
+                          } catch (_) {}
+                        },
                         child: Container(
                           width: 112,
                           padding: const EdgeInsets.all(8),
@@ -4316,7 +4353,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   Future<void> _openDM() async {
     try {
       final conv = await Supa.getOrCreateDM(widget.userId);
-      if (mounted) context.go('/chat/${conv.id}');
+      if (mounted) context.go('/chat/${conv.id}', extra: _profile);
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -4356,7 +4393,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               ),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const ListSkeleton(label: 'Loading profile')
           : _error != null
               ? Center(
                   child: Column(

@@ -152,6 +152,24 @@ class Conversation {
     final name = peerLabel;
     return name.isNotEmpty ? name.trim()[0].toUpperCase() : '?';
   }
+
+  /// Enough of a Profile to render the chat header before the full fetch.
+  Profile? toPeerProfile() {
+    final id = peerId;
+    if (id == null || id.isEmpty) return null;
+    return Profile(
+      id: id,
+      username: (peerUsername ?? '').trim().isEmpty ? 'user' : peerUsername!,
+      displayName: peerDisplayName,
+      avatarUrl: peerAvatarUrl,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      photoVisibility: 'everyone',
+      statusVisibility: 'everyone',
+      aboutVisibility: 'everyone',
+      readReceiptsEnabled: true,
+    );
+  }
 }
 
 class Message {
