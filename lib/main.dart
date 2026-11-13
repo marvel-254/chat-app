@@ -3698,6 +3698,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   final _about = TextEditingController();
   Profile? _profile;
   XFile? _avatarFile;
+  String? _avatarUrlOverride;
+  bool _uploadingAvatar = false;
   String _chatBackground = 'default';
   String? _chatBackgroundImagePath;
   String? _chatBackgroundImageUrl;
@@ -3750,9 +3752,33 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   }
 
   Future<void> _pickAvatar() async {
+    if (_uploadingAvatar) return;
     final file = await ImagePicker().pickImage(
         source: ImageSource.gallery, imageQuality: 85, maxWidth: 1200);
-    if (file != null && mounted) setState(() => _avatarFile = file);
+    if (file == null || !mounted) return;
+    setState(() {
+      _avatarFile = file;
+      _error = null;
+      _uploadingAvatar = true;
+    });
+    try {
+      final url =
+          await Supa.uploadAvatar(await file.readAsBytes(), file.name);
+      if (!mounted) return;
+      setState(() {
+        _avatarUrlOverride = url;
+        _avatarFile = null;
+        _uploadingAvatar = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _uploadingAvatar = false;
+        _error = friendlyErrorMessage(e,
+            fallback:
+                "We couldn't update your photo. Try a JPEG, PNG, WebP, or GIF under 5 MB.");
+      });
+    }
   }
 
   Future<void> _pickChatBackground() async {
@@ -3815,7 +3841,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
           statusVisibility: _statusVisibility,
           aboutVisibility: _aboutVisibility,
           readReceiptsEnabled: _readReceiptsEnabled,
-          defaultMessageExpiry: _defaultMessageExpiry);
+          defaultMessageExpiry: _defaultMessageExpiry,
+          autoLockTimer: _autoLockTimer);
       await Supa.updateChatBackground(
         _chatBackground,
         imagePath:
@@ -3832,6 +3859,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       _password.clear();
       _confirmPassword.clear();
       _avatarFile = null;
+      _avatarUrlOverride = null;
       await _loadProfile();
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -3883,13 +3911,21 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                                   MemoryImage(Uint8List.fromList(snap.data!)))
                           : _Avatar(
                               name: _profile?.peerInitial ?? '?',
-                              url: _profile?.avatarUrl,
+                              url: _avatarUrlOverride ?? _profile?.avatarUrl,
                               size: 96),
                     ),
                     TextButton.icon(
-                        onPressed: _pickAvatar,
-                        icon: const Icon(Icons.photo_camera_outlined),
-                        label: const Text('Change profile picture')),
+                        onPressed: _uploadingAvatar ? null : _pickAvatar,
+                        icon: _uploadingAvatar
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.photo_camera_outlined),
+                        label: Text(_uploadingAvatar
+                            ? 'Uploading…'
+                            : 'Change profile picture')),
                   ])),
                   const SizedBox(height: 16),
                   _SettingsField(

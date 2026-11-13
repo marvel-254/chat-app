@@ -134,30 +134,29 @@ class Supa {
         .updateUser(UserAttributes(data: {'username': username.trim()}));
   }
 
+  static String _intervalLiteral(Duration? value) {
+    if (value == null || value == Duration.zero) return '0 seconds';
+    return '${value.inSeconds} seconds';
+  }
+
   static Future<void> updateProfileDetails(
       {required String about,
       required String photoVisibility,
       required String statusVisibility,
       required String aboutVisibility,
       bool readReceiptsEnabled = true,
-      Duration? defaultMessageExpiry}) async {
-    final updates = <String, dynamic>{
+      Duration? defaultMessageExpiry,
+      Duration? autoLockTimer}) async {
+    await client.from('profiles').update({
       'about': about.trim().isEmpty ? null : about.trim(),
       'photo_visibility': photoVisibility,
       'status_visibility': statusVisibility,
       'about_visibility': aboutVisibility,
       'read_receipts_enabled': readReceiptsEnabled,
+      'default_message_expiry': _intervalLiteral(defaultMessageExpiry),
+      'auto_lock_timer': _intervalLiteral(autoLockTimer),
       'updated_at': DateTime.now().toUtc().toIso8601String(),
-    };
-
-    // Only include if explicitly set (not null)
-    if (defaultMessageExpiry != null) {
-      updates['default_message_expiry'] = defaultMessageExpiry == Duration.zero
-          ? '0 seconds'
-          : '${defaultMessageExpiry.inSeconds} seconds';
-    }
-
-    await client.from('profiles').update(updates).eq('id', currentUser!.id);
+    }).eq('id', currentUser!.id);
   }
 
   static Future<void> recordLastSeen() async {
@@ -479,21 +478,14 @@ class Supa {
           fileOptions: FileOptions(
               upsert: true, cacheControl: '3600', contentType: contentType),
         );
-    final url = client.storage.from('avatars').getPublicUrl(objectPath);
+    final publicUrl = client.storage.from('avatars').getPublicUrl(objectPath);
+    // Cache-bust so peers and this device pick up the new object immediately.
+    // peer_avatar_url is RPC output only — never write it onto participants.
+    final url = '$publicUrl?v=${DateTime.now().millisecondsSinceEpoch}';
     await client.from('profiles').update({
-      'avatar_url': '$url?v=${DateTime.now().millisecondsSinceEpoch}',
+      'avatar_url': url,
       'updated_at': DateTime.now().toIso8601String(),
     }).eq('id', uid);
-    final rows = await client
-        .from('conversation_participants')
-        .select('conversation_id')
-        .eq('user_id', uid);
-    for (final row in rows) {
-      await client
-          .from('conversation_participants')
-          .update({'peer_avatar_url': url})
-          .eq('conversation_id', row['conversation_id'] as String);
-    }
     return url;
   }
 
@@ -559,28 +551,35 @@ class Supa {
         id: convId, createdAt: DateTime.now(), updatedAt: DateTime.now());
   }
 
-  // Message Requests - check if users are contacts
+  // Message Requests — "contacts" means we already share a conversation.
+  // There is no `contacts` table; privacy uses shares_conversation() the same way.
   static Future<bool> areContacts(String userId1, String userId2) async {
+    if (userId1 == userId2) return true;
     try {
-      final res = await client
-          .from('contacts')
-          .select('id')
-          .or(
-              'and(user_id.eq.$userId1,contact_id.eq.$userId2),and(user_id.eq.$userId2,contact_id.eq.$userId1)')
+      final mine = await client
+          .from('conversation_participants')
+          .select('conversation_id')
+          .eq('user_id', userId1);
+      final ids = (mine as List)
+          .map((row) => row['conversation_id'] as String)
+          .toList();
+      if (ids.isEmpty) return false;
+      final theirs = await client
+          .from('conversation_participants')
+          .select('conversation_id')
+          .eq('user_id', userId2)
+          .inFilter('conversation_id', ids)
           .limit(1);
-      return (res as List).isNotEmpty;
+      return (theirs as List).isNotEmpty;
     } catch (_) {
       return false;
     }
   }
 
   static Future<void> addContact(String contactId) async {
-    final me = currentUser!.id;
-    await client.from('contacts').upsert({
-      'user_id': me,
-      'contact_id': contactId,
-      'status': 'accepted',
-    });
+    // Accepting a request already shares a conversation row; nothing to upsert.
+    // contactId is kept so callers (acceptMessageRequest) stay unchanged.
+    assert(contactId.isNotEmpty);
   }
 
   static Stream<List<Map<String, dynamic>>> watchMessageRequests() {
