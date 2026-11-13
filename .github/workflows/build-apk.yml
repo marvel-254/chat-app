@@ -22,6 +22,29 @@ jobs:
           java-version: '17'
       - run: flutter pub get
       - run: dart run flutter_launcher_icons
+      - name: Install Android NDK
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_SDK=$SDK"
+          mkdir -p "$SDK"
+          SM=""
+          for candidate in \
+            "$SDK/cmdline-tools/latest/bin/sdkmanager" \
+            "$SDK/cmdline-tools/bin/sdkmanager" \
+            "$(command -v sdkmanager || true)"; do
+            if [[ -n "$candidate" && -x "$candidate" ]]; then
+              SM="$candidate"
+              break
+            fi
+          done
+          if [[ -z "$SM" ]]; then
+            echo "sdkmanager not found; Flutter will try to install the NDK itself."
+            exit 0
+          fi
+          yes | "$SM" --sdk_root="$SDK" --licenses >/dev/null || true
+          "$SM" --sdk_root="$SDK" --install "ndk;28.2.13676358"
+          ls -la "$SDK/ndk" || true
       - name: Set up release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
