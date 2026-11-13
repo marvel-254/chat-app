@@ -44,7 +44,8 @@ dependencies:
   image_picker: ^1.2.4
   record: ^7.1.2
   audioplayers: ^6.8.1
-  permission_handler: ^13.0.2
+  # 13.x requires compileSdk 37; AGP 9.1.0 (Flutter 3.47) only supports 36.
+  permission_handler: ^12.0.1
   flutter_webrtc: ^1.6.3
   url_launcher: ^6.3.2
   connectivity_plus: ^7.3.2
