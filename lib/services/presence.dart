@@ -11,7 +11,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class Presence {
   Presence._();
 
-  static const onlineFor = Duration(seconds: 45);
+  static const onlineFor = Duration(seconds: 60);
 
   static final epoch = ValueNotifier<int>(0);
 
@@ -37,8 +37,7 @@ class Presence {
     _poll = null;
     _listPeers = {};
     _focus.clear();
-    _lastSeen.clear();
-    _hidden.clear();
+    // Preserve _lastSeen and _hidden so presence survives auth rebind.
   }
 
   static void resume() {
@@ -58,7 +57,9 @@ class Presence {
     if (client.auth.currentUser == null) return;
     try {
       await client.rpc('record_last_seen');
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Presence._ping failed: $e');
+    }
   }
 
   static void startHeartbeat() {
@@ -117,9 +118,11 @@ class Presence {
           .from('visible_profiles')
           .select('id,last_seen_at,status_visibility')
           .filter('id', 'in', ids);
+      final fetchedIds = <String>{};
       _hidden.removeWhere((id) => ids.contains(id));
       for (final row in rows as List) {
         final id = row['id'] as String;
+        fetchedIds.add(id);
         final vis = row['status_visibility'] as String? ?? 'everyone';
         if (vis == 'nobody') {
           _hidden.add(id);
@@ -130,8 +133,17 @@ class Presence {
         _lastSeen[id] =
             raw == null ? null : DateTime.parse(raw).toLocal();
       }
+      // Clear stale entries for peers no longer in the result set.
+      for (final id in ids) {
+        if (!fetchedIds.contains(id)) {
+          _lastSeen.remove(id);
+          _hidden.remove(id);
+        }
+      }
       epoch.value++;
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Presence.refresh failed: $e');
+    }
   }
 
   static void _ensurePoll() {

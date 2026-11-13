@@ -5,7 +5,6 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import '../models/profile.dart';
-import 'presence.dart';
 import 'search_safety.dart';
 
 class Supa {
@@ -874,23 +873,6 @@ class Supa {
     final channel = _typingChannels.remove(conversationId);
     if (channel != null) client.removeChannel(channel);
   }
-
-  static Future<bool> isPeerOnline(String userId) async {
-    Presence.focus(userId);
-    await Presence.refresh();
-    return Presence.isOnline(userId);
-  }
-
-  static Stream<String?> watchPeerPresence(String userId) async* {
-    Presence.focus(userId);
-    await Presence.refresh();
-    yield Presence.label(userId);
-    yield* Stream.periodic(
-        const Duration(seconds: 12), (_) => Presence.label(userId));
-  }
-
-  static String formatLastSeen(DateTime lastSeen) =>
-      formatPresenceLabel(lastSeen);
 
   // ===== Reactions =====
 

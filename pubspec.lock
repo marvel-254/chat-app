@@ -464,14 +464,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.6.3"
-  flutter_windowmanager:
-    dependency: "direct main"
-    description:
-      name: flutter_windowmanager
-      sha256: b4d0bc06f6777952b729c0cdb7ce9ad1ecabd8b8b1cb0acb57a36621457dab1b
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.0"
   functions_client:
     dependency: transitive
     description:
@@ -844,18 +836,18 @@ packages:
     dependency: "direct main"
     description:
       name: permission_handler
-      sha256: e6bcecadfe40df6b888141f23cbaf6ba6c3da49fb33f6ff887d060dd48544fbd
+      sha256: fe54465bcc62a4564c6e4db337bbaded6c0c0fa6e10487414436d163114784f6
       url: "https://pub.dev"
     source: hosted
-    version: "13.0.2"
+    version: "12.0.3"
   permission_handler_android:
     dependency: transitive
     description:
       name: permission_handler_android
-      sha256: baf93fbf80008c240b2cf5e6d62e9495ea7727fe327444d135c44bfff9af6b6e
+      sha256: "1e3bc410ca1bf84662104b100eb126e066cb55791b7451307f9708d4007350e6"
       url: "https://pub.dev"
     source: hosted
-    version: "14.1.1"
+    version: "13.0.1"
   permission_handler_apple:
     dependency: transitive
     description:
@@ -1149,14 +1141,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.18.3"
-  swipe:
-    dependency: "direct main"
-    description:
-      name: swipe
-      sha256: e2f823093ef0161698cc380f5f868a6be380cb5c90c1c0ddc7fa2b0a7eadfa0e
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.0.1"
   synchronized:
     dependency: transitive
     description:
