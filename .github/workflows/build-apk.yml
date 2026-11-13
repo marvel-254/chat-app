@@ -16,6 +16,10 @@ jobs:
         with:
           flutter-version: '3.47.7'
           channel: stable
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
       - run: flutter pub get
       - run: dart run flutter_launcher_icons
       - name: Set up release keystore
@@ -25,20 +29,48 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
-          echo "key.properties" > android/app/key.properties
-          cat >> android/app/key.properties <<EOF
-          storeFile=release.keystore
-          storePassword=$KEYSTORE_PASSWORD
-          keyAlias=$KEY_ALIAS
-          keyPassword=$KEY_PASSWORD
-          EOF
+          set -euo pipefail
+          if [[ -z "${KEYSTORE_BASE64}" || -z "${KEYSTORE_PASSWORD}" || -z "${KEY_ALIAS}" || -z "${KEY_PASSWORD}" ]]; then
+            echo "Release signing secrets are missing (KEYSTORE_BASE64 / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD)."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import base64, os, pathlib, sys
+          raw = os.environ["KEYSTORE_BASE64"].strip().replace("\n", "").replace("\r", "")
+          try:
+              data = base64.b64decode(raw, validate=False)
+          except Exception as exc:
+              sys.exit(f"KEYSTORE_BASE64 is not valid base64: {exc}")
+          if len(data) < 64:
+              sys.exit(f"Decoded keystore is too small ({len(data)} bytes)")
+          path = pathlib.Path("android/app/release.keystore")
+          path.write_bytes(data)
+          props = pathlib.Path("android/app/key.properties")
+          # Write without interpolating special characters in the password.
+          lines = [
+              "storeFile=release.keystore\n",
+              f"storePassword={os.environ['KEYSTORE_PASSWORD']}\n",
+              f"keyAlias={os.environ['KEY_ALIAS']}\n",
+              f"keyPassword={os.environ['KEY_PASSWORD']}\n",
+          ]
+          props.write_text("".join(lines), encoding="utf-8")
+          print(f"Wrote {path} ({len(data)} bytes)")
+          PY
+          keytool -list \
+            -keystore android/app/release.keystore \
+            -storepass "${KEYSTORE_PASSWORD}" \
+            -alias "${KEY_ALIAS}"
 
       - name: Build APK
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
+          set -euo pipefail
+          if [[ -z "${SUPABASE_URL}" || -z "${SUPABASE_ANON_KEY}" ]]; then
+            echo "SUPABASE_URL and SUPABASE_ANON_KEY secrets are required."
+            exit 1
+          fi
           flutter build apk --release --split-per-abi \
             --dart-define=SUPABASE_URL="${SUPABASE_URL}" \
             --dart-define=SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}" \
@@ -49,15 +81,21 @@ jobs:
           path: build/app/outputs/flutter-apk/*-release.apk
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
         with:
           tag_name: v${{ github.run_number }}
           name: BRO v${{ github.run_number }}
           body: |
-            Release build #${{ github.run_number }}
-            - app-arm64-v8a-release.apk
-            - app-armeabi-v7a-release.apk
-            - app-x86_64-release.apk
+            BRO 1.0.1 (build ${{ github.run_number }})
+
+            Security and reliability
+            - Recipients can no longer rewrite other people's messages
+            - Reactions, blocks, and attachment downloads enforce membership
+            - Search input can no longer inject PostgREST filters
+            - Signed release APKs with the app release keystore
+
+            UX
+            - Calmer, human error copy instead of raw exceptions
           files: build/app/outputs/flutter-apk/*-release.apk
           draft: false
           prerelease: false

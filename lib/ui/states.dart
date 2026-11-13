@@ -88,7 +88,7 @@ class AppErrorState extends StatelessWidget {
   /// Creates an error block; pass [onRetry] to show the refresh button.
   const AppErrorState({
     super.key,
-    this.title = 'Something went wrong',
+    this.title = "That didn't go through",
     this.detail,
     this.onRetry,
   });
@@ -111,10 +111,12 @@ class AppErrorState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline, color: scheme.error, size: 48),
+            Icon(Icons.cloud_off_outlined,
+                color: scheme.onSurface.withValues(alpha: 0.55), size: 48),
             const SizedBox(height: 12),
             Text(
               title,
+              textAlign: TextAlign.center,
               style: TextStyle(
                 color: scheme.onSurface,
                 fontSize: 16,
@@ -138,7 +140,7 @@ class AppErrorState extends StatelessWidget {
               OutlinedButton.icon(
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh),
-                label: const Text('Retry'),
+                label: const Text('Try again'),
               ),
             ],
           ],
@@ -343,7 +345,7 @@ class OfflineBanner extends StatelessWidget {
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                'You are offline. Some features may not work.',
+                                "You're offline right now.",
                                 style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w500,

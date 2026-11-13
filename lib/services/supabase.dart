@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import '../models/profile.dart';
+import 'search_safety.dart';
 
 class Supa {
   static SupabaseClient get client => Supabase.instance.client;
@@ -29,10 +30,14 @@ class Supa {
           if (contentType != null) 'Content-Type': contentType,
         },
         body: bytes);
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    var body = <String, dynamic>{};
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) body = decoded;
+    } catch (_) {}
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw StateError(body['error'] as String? ??
-          'Cloud storage request failed (${response.statusCode}).');
+          "We couldn't upload that file. Please try again.");
     }
     return body;
   }
@@ -110,9 +115,9 @@ class Supa {
     var request = client.from('visible_profiles').select();
     final me = currentUser?.id;
     if (me != null) request = request.neq('id', me);
-    if (query.trim().isNotEmpty) {
-      request = request.or(
-          'username.ilike.%${query.trim()}%,display_name.ilike.%${query.trim()}%');
+    final term = sanitizeSearchTerm(query);
+    if (term.isNotEmpty) {
+      request = request.or('username.ilike.%$term%,display_name.ilike.%$term%');
     }
     final res = await request.order('username').limit(limit);
     return (res as List).map((e) => Profile.fromJson(e)).toList();
@@ -230,8 +235,10 @@ class Supa {
       if (ids.isEmpty) return [];
 
       var profileQuery = client.from('visible_profiles').select().filter('id', 'in', ids) as dynamic;
-      if (search != null && search.isNotEmpty) {
-        profileQuery = profileQuery.or('username.ilike.%$search%,label.ilike.%$search%');
+      final term = sanitizeSearchTerm(search ?? '');
+      if (term.isNotEmpty) {
+        profileQuery = profileQuery.or(
+            'username.ilike.%$term%,display_name.ilike.%$term%');
       }
       final profs = await profileQuery;
       return (profs as List)
@@ -262,8 +269,10 @@ class Supa {
       if (ids.isEmpty) return [];
 
       var profileQuery = client.from('visible_profiles').select().filter('id', 'in', ids) as dynamic;
-      if (search != null && search.isNotEmpty) {
-        profileQuery = profileQuery.or('username.ilike.%$search%,label.ilike.%$search%');
+      final term = sanitizeSearchTerm(search ?? '');
+      if (term.isNotEmpty) {
+        profileQuery = profileQuery.or(
+            'username.ilike.%$term%,display_name.ilike.%$term%');
       }
       final profs = await profileQuery;
       return (profs as List)
@@ -410,6 +419,9 @@ class Supa {
   }
 
   static Future<String> uploadAvatar(Uint8List bytes, String filename) async {
+    if (bytes.length > 5 * 1024 * 1024) {
+      throw ArgumentError('Profile photos must be 5 MB or smaller.');
+    }
     final uid = currentUser!.id;
     final extension = path.extension(filename).toLowerCase();
     final objectPath = '$uid/avatar${extension.isEmpty ? '.jpg' : extension}';
@@ -603,6 +615,7 @@ class Supa {
           final messageIds = rows.map((r) => r['id'] as String).toList();
           final readByPeerSet = <String>{};
           final reactionsMap = <String, List<Map<String, dynamic>>>{};
+          final hiddenIds = <String>{};
           if (messageIds.isNotEmpty && currentUser != null) {
             try {
               final reads = await client
@@ -622,13 +635,22 @@ class Supa {
                 final mid = row['message_id'] as String;
                 reactionsMap.putIfAbsent(mid, () => []).add(row);
               }
+              final hides = await client
+                  .from('message_hides')
+                  .select('message_id')
+                  .eq('user_id', currentUser!.id)
+                  .filter('message_id', 'in', messageIds);
+              for (final row in hides as List) {
+                hiddenIds.add(row['message_id'] as String);
+              }
             } catch (_) {}
           }
           final now = DateTime.now();
           return rows
               .where((r) =>
-                  r['expires_at'] == null ||
-                  DateTime.parse(r['expires_at'] as String).isAfter(now))
+                  !hiddenIds.contains(r['id'] as String) &&
+                  (r['expires_at'] == null ||
+                  DateTime.parse(r['expires_at'] as String).isAfter(now)))
               .map((r) {
                 final id = r['id'] as String;
                 final msg = Message.fromJson(r);
@@ -685,11 +707,10 @@ class Supa {
   static Future<void> deleteMessage(String messageId) async {
     final me = currentUser;
     if (me == null) return;
-    await client
-        .from('messages')
-        .delete()
-        .eq('id', messageId)
-        .eq('sender_id', me.id);
+    await client.from('message_hides').upsert({
+      'message_id': messageId,
+      'user_id': me.id,
+    }, onConflict: 'message_id,user_id');
   }
 
   static Future<void> deleteMessageForEveryone(String messageId) async {
@@ -782,7 +803,8 @@ class Supa {
     final previous = _typingChannels.remove(conversationId);
     if (previous != null) client.removeChannel(previous);
 
-    final channel = client.channel(_typingTopic(conversationId));
+    final channel = client.channel(_typingTopic(conversationId),
+        opts: const RealtimeChannelConfig(private: true));
     _typingChannels[conversationId] = channel;
     channel
         .onBroadcast(
@@ -951,16 +973,16 @@ class Supa {
 
   static String? _validateMessageContent(String content) {
     if (content.trim().isEmpty) {
-      return 'Message cannot be empty';
+      return 'Write a little something before sending.';
     }
     if (content.length > _maxMessageLength) {
-      return 'Message too long (max $_maxMessageLength characters)';
+      return "That's a bit long — try shortening it to $_maxMessageLength characters.";
     }
     if (!_checkRateLimit()) {
-      return 'Rate limit exceeded. Please slow down.';
+      return "You're sending a bit fast. Take a breath and try again in a moment.";
     }
     if (_containsSuspiciousLinks(content)) {
-      return 'Message contains suspicious links and was blocked';
+      return "That message looks like it might be unsafe, so we held it back.";
     }
     return null;
   }

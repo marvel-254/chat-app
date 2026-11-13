@@ -65,14 +65,16 @@ class _CallScreenState extends State<CallScreen> {
           } catch (_) {
             _endCall(
                 notifyPeer: false,
-                error: 'Could not access the microphone or camera.');
+                error:
+                    "We couldn't access the microphone or camera. Check your permissions and try again.");
           }
         }
       });
     } catch (_) {
       _endCall(
           notifyPeer: false,
-          error: 'Could not start the call. Check your device permissions.');
+          error:
+              "We couldn't start the call. Check your device permissions and try again.");
     }
   }
 
@@ -116,7 +118,7 @@ class _CallScreenState extends State<CallScreen> {
         setState(() => _status = 'Connected');
       }
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
-        setState(() => _status = 'Connection failed');
+        setState(() => _status = "Couldn't connect");
       }
     };
     _ready = true;
@@ -170,7 +172,9 @@ class _CallScreenState extends State<CallScreen> {
         await _endCall(notifyPeer: false);
       }
     } catch (_) {
-      _endCall(notifyPeer: false, error: 'The call could not connect.');
+      _endCall(
+          notifyPeer: false,
+          error: "That call didn't connect. You can try again in a moment.");
     }
   }
 
@@ -267,7 +271,9 @@ class _CallScreenState extends State<CallScreen> {
                       decoration: BoxDecoration(
                         color: _status == 'Connected'
                             ? const Color(0xFF22C55E)
-                            : (_status == 'Connecting…'
+                            : (_status == 'Connecting…' ||
+                                    _status.startsWith('Calling') ||
+                                    _status == 'Joining call…'
                                 ? Colors.amber
                                 : Colors.redAccent),
                         shape: BoxShape.circle,

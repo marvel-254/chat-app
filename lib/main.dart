@@ -13,7 +13,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_windowmanager/flutter_windowmanager.dart';
+import 'services/secure_screen.dart';
 import 'screens/call_screen.dart';
 import 'followers_following_screen.dart';
 import 'services/supabase.dart';
@@ -21,6 +21,7 @@ import 'services/push_notifications.dart';
 import 'services/connection_monitor.dart';
 import 'models/profile.dart';
 import 'ui/states.dart';
+import 'ui/errors.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -299,8 +300,12 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
   }
 
   void _showPinDialog() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('PIN fallback not implemented')),
+    appScaffoldMessengerKey.currentState?.showSnackBar(
+      const SnackBar(
+        content: Text(
+            "Unlock with biometrics didn't work on this device. You can turn off app lock in Settings."),
+        behavior: SnackBarBehavior.floating,
+      ),
     );
   }
 
@@ -435,7 +440,7 @@ class AuthGate extends StatelessWidget {
               body: Center(child: CircularProgressIndicator()));
         }
         if (snapshot.hasError) {
-          return _AuthErrorState(error: snapshot.error.toString());
+          return _AuthErrorState(error: friendlyErrorMessage(snapshot.error));
         }
         final session = snapshot.data?.session;
         if (session != null) {
@@ -459,21 +464,21 @@ class _AuthErrorState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.error_outline, color: Colors.red, size: 48),
+              Icon(Icons.cloud_off_outlined, color: _P.muted, size: 48),
               const SizedBox(height: 16),
-              Text('Connection Error',
+              Text("We can't reach BRO right now",
                   style: TextStyle(
                       color: _P.text,
                       fontSize: 20,
                       fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
               Text(error,
-                  style: TextStyle(color: _P.muted, fontSize: 14),
+                  style: TextStyle(color: _P.muted, fontSize: 14, height: 1.4),
                   textAlign: TextAlign.center),
               const SizedBox(height: 24),
               FilledButton(
                 onPressed: () => runApp(const BroApp()),
-                child: const Text('Retry'),
+                child: const Text('Try again'),
               ),
             ],
           ),
@@ -507,16 +512,16 @@ class _LoginScreenState extends State<LoginScreen> {
       final email = _email.text.trim();
       final password = _password.text;
       if (!email.contains('@') || !email.contains('.')) {
-        throw 'Enter a valid email address';
+        throw "That email doesn't look quite right.";
       }
       if (password.length < 6) {
-        throw 'Password must be at least 6 characters';
+        throw 'Use at least 6 characters for your password.';
       }
       if (_isSignUp) {
         final username = _username.text.trim();
         if (username.length < 3 ||
             !RegExp(r'^[a-zA-Z0-9_.-]+$').hasMatch(username)) {
-          throw 'Use at least 3 letters, numbers, dots, dashes, or underscores for your username.';
+          throw 'Usernames need at least 3 letters, numbers, dots, dashes, or underscores.';
         }
         final res = await Supa.signUp(email, password, username);
         // Supabase may require email confirmation before sign-in is allowed.
@@ -543,32 +548,34 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       if (e is AuthRetryableFetchException) {
         if (mounted) {
-          setState(() => _error =
-              "Can't reach the server. Check your internet connection and try again.");
+          setState(() => _error = friendlyErrorMessage(e));
         }
         return;
       }
-            if (e is AuthException) {
-        // Server message is already human readable (e.g. "Invalid login
-        // credentials"); never show the raw AuthApiException toString().
-        if (mounted) setState(() => _error = e.message);
+      if (e is AuthException) {
+        if (mounted) {
+          setState(() => _error = friendlyErrorMessage(
+                e,
+                fallback: "We couldn't sign you in. Please try again.",
+              ));
+        }
         return;
       }
       if (e is StateError) {
-        if (mounted) setState(() => _error = e.message);
+        if (mounted) setState(() => _error = friendlyErrorMessage(e));
         return;
       }
       if (e is PostgrestException) {
-        // Sign-up used to abort on the profiles INSERT (RLS 42501) and strand
-        // the auth user (#43). The database trigger now creates the profile,
-        // but keep a friendly recovery path if it ever fails again.
         if (mounted) {
-          setState(() => _error =
-              'Could not finish creating your account. Please try again.');
+          setState(() => _error = friendlyErrorMessage(
+                e,
+                fallback:
+                    "We couldn't finish creating your account. Please try again.",
+              ));
         }
         return;
       }
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = friendlyErrorMessage(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -661,32 +668,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Error banner
-                    if (_error != null)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        margin: const EdgeInsets.only(bottom: 16),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withValues(alpha: 0.12),
-                          border: Border.all(
-                              color: Colors.red.withValues(alpha: 0.35)),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.error_outline,
-                                color: Colors.red, size: 20),
-                            const SizedBox(width: 10),
-                            Expanded(
-                                child: Text(_error!,
-                                    style: const TextStyle(
-                                        color: Colors.red,
-                                        fontSize: 13,
-                                        height: 1.3))),
-                          ],
-                        ),
-                      ),
+                    if (_error != null) SoftErrorBanner(message: _error!),
 
                     // Fields
                     if (_isSignUp) ...[
@@ -1036,7 +1018,13 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
       await Supa.resendConfirmation(widget.email);
       if (mounted) setState(() => _error = null);
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) {
+        setState(() => _error = friendlyErrorMessage(
+              e,
+              fallback:
+                  "We couldn't resend that email just now. Please try again in a moment.",
+            ));
+      }
     } finally {
       if (mounted) setState(() => _resending = false);
     }
@@ -1079,21 +1067,7 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 32),
-                if (_error != null)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withValues(alpha: 0.1),
-                      border:
-                          Border.all(color: Colors.red.withValues(alpha: 0.3)),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(_error!,
-                        style:
-                            const TextStyle(color: Colors.red, fontSize: 14)),
-                  ),
+                if (_error != null) SoftErrorBanner(message: _error!),
                 SizedBox(
                   width: double.infinity,
                   height: 52,
@@ -1208,7 +1182,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
       } catch (_) {
         if (!mounted || requestId != _searchRequestId) return;
         setState(() {
-          _searchError = 'Could not search users. Please try again.';
+          _searchError =
+              "We couldn't search just now. Check your connection and try again.";
           _searchLoading = false;
           _searchCompleted = true;
         });
@@ -1235,7 +1210,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content:
-                Text('Could not open this conversation. Please try again.')),
+                Text("We couldn't open that chat. Please try again.")),
       );
     }
   }
@@ -1329,7 +1304,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(_searchError!,
-                style: const TextStyle(color: Colors.redAccent)),
+                style: const TextStyle(color: _P.muted, height: 1.35)),
           ),
         if (_search.text.trim().isNotEmpty &&
             _searchCompleted &&
@@ -1472,7 +1447,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
               }
               if (snapshot.hasError) {
                 return _ErrorState(
-                    message: 'Failed to load conversations',
+                    message: "Your chats didn't load",
+                    detail: 'Give it another try — they usually come right back.',
                     onRetry: () => setState(() {}));
               }
               final conversations = snapshot.data ?? [];
@@ -1727,7 +1703,7 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final isLocked = await Supa.isConversationLocked(widget.conversationId);
       if (isLocked && mounted) {
-        await FlutterWindowManager.addFlags(FlutterWindowManager.FLAG_SECURE);
+        await SecureScreen.enable();
       }
     } catch (_) {}
   }
@@ -1770,7 +1746,7 @@ class _ChatScreenState extends State<ChatScreen> {
             () => _messageExpiry = selected == Duration.zero ? null : selected);
       }
     } catch (_) {
-      _unsupported('Could not update the message timer.');
+      _unsupported("We couldn't update the disappearing-message timer.");
     }
   }
 
@@ -1779,7 +1755,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final canCheck = await auth.canCheckBiometrics;
     final isAvailable = await auth.isDeviceSupported();
     if (!canCheck || !isAvailable) {
-      _unsupported('Biometric authentication not available on this device.');
+      _unsupported("This device doesn't support biometric unlock.");
       return;
     }
     try {
@@ -1803,7 +1779,7 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Authentication failed'),
+          content: Text("We couldn't confirm it's you. Try again?"),
           behavior: SnackBarBehavior.floating,
         ));
       }
@@ -1819,7 +1795,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final canCheck = await auth.canCheckBiometrics;
     final isAvailable = await auth.isDeviceSupported();
     if (!canCheck || !isAvailable) {
-      _unsupported('Biometric authentication not available on this device.');
+      _unsupported("This device doesn't support biometric unlock.");
       return;
     }
     try {
@@ -1843,7 +1819,7 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Authentication failed'),
+          content: Text("We couldn't confirm it's you. Try again?"),
           behavior: SnackBarBehavior.floating,
         ));
       }
@@ -1983,7 +1959,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     // Remove secure flag when leaving chat
-    FlutterWindowManager.clearFlags(FlutterWindowManager.FLAG_SECURE);
+    unawaited(SecureScreen.disable());
     Supa.unsubscribeTyping(widget.conversationId);
     _presenceSub?.cancel();
     _ctrl.dispose();
@@ -2010,9 +1986,11 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) return;
       if (_ctrl.text == draft) _ctrl.clear();
       _rollToBottom();
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        _unsupported('Message failed to send. Your draft is still here.');
+        _unsupported(friendlyErrorMessage(e,
+            fallback:
+                "That message didn't go through. It's still in the box if you want to retry."));
       }
     } finally {
       if (mounted) setState(() => _sendingMessage = false);
@@ -2363,15 +2341,9 @@ class _ChatScreenState extends State<ChatScreen> {
         _showReactionPicker(message);
       }
     } catch (e) {
-      if (e is StateError) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(e.message),
-            behavior: SnackBarBehavior.floating,
-          ));
-        }
-      } else {
-        _unsupported('Could not update this message.');
+      if (mounted) {
+        _unsupported(friendlyErrorMessage(e,
+            fallback: "We couldn't update that message. Please try again."));
       }
     }
   }
@@ -2429,8 +2401,10 @@ class _ChatScreenState extends State<ChatScreen> {
       await Supa.sendMessage(
           widget.conversationId, 'attachment:${jsonEncode(attachment)}');
       _rollToBottom();
-    } catch (_) {
-      _unsupported('Upload failed. Check your connection and try again.');
+    } catch (e) {
+      _unsupported(friendlyErrorMessage(e,
+          fallback:
+              "We couldn't upload that file. Check your connection and try again."));
     } finally {
       if (mounted) setState(() => _sendingMessage = false);
     }
@@ -2465,7 +2439,7 @@ class _ChatScreenState extends State<ChatScreen> {
       await _sendAttachment(
           await file.readAsBytes(), file.name, _mimeType(file.name));
     } catch (_) {
-      _unsupported('Could not open the photo picker.');
+      _unsupported("We couldn't open your photos. Please try again.");
     }
   }
 
@@ -2482,7 +2456,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final bytes = await file.readAsBytes();
       await _sendAttachment(bytes, file.name, _mimeType(file.name));
     } catch (_) {
-      _unsupported('Could not open that document.');
+      _unsupported("We couldn't open that file. Please try again.");
     }
   }
 
@@ -2690,7 +2664,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   }
                   if (snapshot.hasError) {
                     return _ErrorState(
-                        message: 'Failed to load messages',
+                        message: "Couldn't load this chat",
+                        detail: 'A quick retry usually does the trick.',
                         onRetry: () => setState(() {}));
                   }
                   if (messages.isEmpty) {
@@ -2822,8 +2797,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         }
                         if (snapshot.hasError) {
                           return _ErrorState(
-                              message: 'Failed to load messages',
-onRetry: _onRetry);
+                              message: "Couldn't load this chat",
+                              detail: 'A quick retry usually does the trick.',
+                              onRetry: _onRetry);
                         }
                         if (messages.isEmpty) {
                           return _EmptyState(
@@ -2945,8 +2921,10 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _ErrorState extends StatelessWidget {
-  const _ErrorState({required this.message, required this.onRetry});
+  const _ErrorState(
+      {required this.message, this.detail, required this.onRetry});
   final String message;
+  final String? detail;
   final VoidCallback onRetry;
 
   @override
@@ -2957,18 +2935,26 @@ class _ErrorState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.cloud_off, color: _P.muted, size: 48),
+            Icon(Icons.cloud_off_outlined, color: _P.muted, size: 48),
             const SizedBox(height: 12),
             Text(message,
+                textAlign: TextAlign.center,
                 style: const TextStyle(
                     color: _P.text,
                     fontSize: 16,
                     fontWeight: FontWeight.w600)),
+            if (detail != null) ...[
+              const SizedBox(height: 6),
+              Text(detail!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color: _P.muted, fontSize: 13, height: 1.4)),
+            ],
             const SizedBox(height: 20),
             OutlinedButton.icon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
+              label: const Text('Try again'),
             ),
           ],
         ),
@@ -3352,13 +3338,14 @@ class _AttachmentContent extends StatelessWidget {
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                          content: Text('Attachment is still unavailable.')),
+                          content: Text(
+                              "This file isn't ready yet. Try again in a moment.")),
                     );
                   }
                 }
               },
               icon: const Icon(Icons.refresh),
-              label: const Text('Could not load attachment'),
+              label: const Text("Couldn't open this file"),
             ),
           );
         }
@@ -3693,7 +3680,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = 'Could not load your profile.';
+          _error = "We couldn't load your settings right now.";
           _loading = false;
         });
       }
@@ -3729,7 +3716,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     } catch (_) {
       if (mounted) {
         setState(() => _error =
-            'Could not upload that image. Choose a JPEG, PNG, WebP, or GIF under 10 MB.');
+            'We need a JPEG, PNG, WebP, or GIF under 10 MB for that background.');
       }
     }
   }
@@ -3739,15 +3726,15 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     if (username.length < 3 ||
         !RegExp(r'^[a-zA-Z0-9_.-]+$').hasMatch(username)) {
       setState(() => _error =
-          'Use at least 3 letters, numbers, dots, dashes, or underscores for your username.');
+          'Usernames need at least 3 letters, numbers, dots, dashes, or underscores.');
       return;
     }
     if (_password.text.isNotEmpty && _password.text.length < 6) {
-      setState(() => _error = 'Password must be at least 6 characters.');
+      setState(() => _error = 'Use at least 6 characters for your password.');
       return;
     }
     if (_password.text != _confirmPassword.text) {
-      setState(() => _error = 'The passwords do not match.');
+      setState(() => _error = "Those passwords don't match yet.");
       return;
     }
     setState(() {
@@ -3788,7 +3775,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _error =
-            'Could not save changes. Check whether that username is already taken.');
+            friendlyErrorMessage(e,
+                fallback:
+                    "We couldn't save those changes. If you picked a new username, it might already be taken."));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -4115,8 +4104,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   if (_error != null)
                     Padding(
                         padding: const EdgeInsets.only(top: 16),
-                        child: Text(_error!,
-                            style: const TextStyle(color: Colors.redAccent))),
+                        child: SoftErrorBanner(message: _error!)),
                   const SizedBox(height: 22),
                   FilledButton(
                       onPressed: _saving ? null : _save,
@@ -4260,7 +4248,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = 'Could not load profile.';
+          _error = "We couldn't open this profile right now.";
           _loading = false;
         });
       }
@@ -4280,7 +4268,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Could not update follow status. Please try again.'),
+          content: Text("We couldn't update that follow. Please try again."),
           behavior: SnackBarBehavior.floating,
         ));
       }
@@ -4296,7 +4284,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Could not open conversation.'),
+          content: Text("We couldn't open that chat. Please try again."),
           behavior: SnackBarBehavior.floating,
         ));
       }
@@ -4345,7 +4333,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                           style: TextStyle(color: _P.muted, fontSize: 15)),
                       const SizedBox(height: 16),
                       FilledButton(
-                          onPressed: _load, child: const Text('Retry')),
+                          onPressed: _load, child: const Text('Try again')),
                     ],
                   ),
                 )
