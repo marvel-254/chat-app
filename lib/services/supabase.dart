@@ -412,12 +412,8 @@ class Supa {
     }).eq('id', currentUser!.id);
   }
 
-  static Future<void> refreshConversations() async {
-    await client
-        .from('conversation_participants')
-        .select('conversation_id')
-        .eq('user_id', currentUser!.id);
-  }
+  static Future<List<Conversation>> refreshConversations() =>
+      fetchConversations();
 
   static Future<String> uploadChatBackground(
       Uint8List bytes, String filename) async {
@@ -582,24 +578,23 @@ class Supa {
     assert(contactId.isNotEmpty);
   }
 
-  static Stream<List<Map<String, dynamic>>> watchMessageRequests() {
-    return Stream.periodic(const Duration(seconds: 30), (_) => null)
-        .asyncMap((_) async {
-      final me = currentUser!.id;
-      final res = await client.rpc('get_conversations_for_user');
-      final rows = (res as List).cast<Map<String, dynamic>>();
-      final requests = <Map<String, dynamic>>[];
-      for (final r in rows) {
-        final peerId = r['peer_id'] as String?;
-        if (peerId != null) {
-          final isContact = await areContacts(me, peerId);
-          if (!isContact) {
-            requests.add(r);
-          }
-        }
+  static Future<List<Map<String, dynamic>>> _messageRequests() async {
+    final me = currentUser!.id;
+    final rows = await fetchConversationRows();
+    final requests = <Map<String, dynamic>>[];
+    for (final r in rows) {
+      final peerId = r['peer_id'] as String?;
+      if (peerId != null && !await areContacts(me, peerId)) {
+        requests.add(r);
       }
-      return requests;
-    });
+    }
+    return requests;
+  }
+
+  static Stream<List<Map<String, dynamic>>> watchMessageRequests() async* {
+    yield await _messageRequests();
+    yield* Stream.periodic(const Duration(seconds: 30))
+        .asyncMap((_) => _messageRequests());
   }
 
   static Future<void> acceptMessageRequest(
@@ -616,29 +611,42 @@ class Supa {
         .eq('user_id', me);
   }
 
-  static Stream<List<Conversation>> watchConversations() {
-    return Stream.periodic(const Duration(seconds: 30), (_) => null)
-        .asyncMap((_) async {
-      final res = await client.rpc('get_conversations_for_user');
-      final rows = (res as List).cast<Map<String, dynamic>>();
-      return rows
-          .map((r) => Conversation(
-                id: r['conversation_id'] as String,
-                createdAt: DateTime.parse(r['created_at'] as String),
-                updatedAt: DateTime.parse(r['updated_at'] as String),
-                peerId: r['peer_id'] as String?,
-                peerUsername: r['peer_username'] as String?,
-                peerDisplayName: r['peer_display_name'] as String?,
-                peerAvatarUrl: r['peer_avatar_url'] as String?,
-                lastMessage: r['last_message'] as String?,
-                lastMessageAt: r['last_message_at'] == null
-                    ? null
-                    : DateTime.parse(r['last_message_at'] as String),
-                unreadCount: (r['unread_count'] as num?)?.toInt() ?? 0,
-                isLocked: (r['is_locked'] as bool?) ?? false,
-              ))
-          .toList();
-    });
+  static Future<List<Map<String, dynamic>>> fetchConversationRows() async {
+    final res = await client.rpc('get_conversations_for_user');
+    return (res as List).cast<Map<String, dynamic>>();
+  }
+
+  static List<Conversation> conversationsFromRows(
+      List<Map<String, dynamic>> rows) {
+    return rows
+        .map((r) => Conversation(
+              id: r['conversation_id'] as String,
+              createdAt: DateTime.parse(r['created_at'] as String),
+              updatedAt: DateTime.parse(r['updated_at'] as String),
+              peerId: r['peer_id'] as String?,
+              peerUsername: r['peer_username'] as String?,
+              peerDisplayName: r['peer_display_name'] as String?,
+              peerAvatarUrl: r['peer_avatar_url'] as String?,
+              lastMessage: r['last_message'] as String?,
+              lastMessageAt: r['last_message_at'] == null
+                  ? null
+                  : DateTime.parse(r['last_message_at'] as String),
+              unreadCount: (r['unread_count'] as num?)?.toInt() ?? 0,
+              isLocked: (r['is_locked'] as bool?) ?? false,
+            ))
+        .toList();
+  }
+
+  static Future<List<Conversation>> fetchConversations() async {
+    return conversationsFromRows(await fetchConversationRows());
+  }
+
+  // Stream.periodic delays the first tick by [period]. Yield once immediately
+  // so the chat list is not stuck on a skeleton for 30 seconds.
+  static Stream<List<Conversation>> watchConversations() async* {
+    yield await fetchConversations();
+    yield* Stream.periodic(const Duration(seconds: 30))
+        .asyncMap((_) => fetchConversations());
   }
 
   // Messages

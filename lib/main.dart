@@ -1102,7 +1102,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   final _search = TextEditingController();
   final _searchFocusNode = FocusNode();
   final _refreshKey = GlobalKey<RefreshIndicatorState>();
-  Timer? _autoRefreshTimer;
+  int _conversationsTick = 0;
   StreamSubscription<List<StatusPost>>? _statusSub;
   Set<String> _statusUserIds = {};
   
@@ -1117,7 +1117,6 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   @override
   void initState() {
     super.initState();
-    _autoRefresh();
     _statusSub = Supa.watchStatuses().listen((posts) {
       if (!mounted) return;
       setState(() => _statusUserIds = {for (final p in posts) p.userId});
@@ -1162,7 +1161,6 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   @override
   void dispose() {
     _searchRequestId++;
-    _autoRefreshTimer?.cancel();
     _statusSub?.cancel();
     _searchDebounce?.cancel();
     _search.dispose();
@@ -1437,6 +1435,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
             color: _P.primary,
             backgroundColor: _P.primary.withValues(alpha: 0.12),
             child: StreamBuilder<List<Conversation>>(
+              key: ValueKey(_conversationsTick),
               stream: Supa.watchConversations(),
               builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting &&
@@ -1447,7 +1446,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                 return _ErrorState(
                     message: "Your chats didn't load",
                     detail: 'Give it another try — they usually come right back.',
-                    onRetry: () => setState(() {}));
+                    onRetry: () => setState(() => _conversationsTick++));
               }
               final conversations = snapshot.data ?? [];
               if (conversations.isEmpty) {
@@ -1611,18 +1610,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
 
 
   Future<void> _onRefresh() async {
-    try {
-      await Supa.refreshConversations();
-    } catch (e) {
-      debugPrint('Auto-refresh error: $e');
-    }
-  }
-
-  void _autoRefresh() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
-      if (mounted) _refreshKey.currentState?.show();
-    });
+    if (mounted) setState(() => _conversationsTick++);
   }
 
   Widget _buildLargeScreenLayout(BuildContext context) {
