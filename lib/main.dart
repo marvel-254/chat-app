@@ -24,6 +24,7 @@ import 'followers_following_screen.dart';
 import 'widgets/home_nav_bar.dart';
 import 'widgets/status_ring_avatar.dart';
 import 'services/supabase.dart';
+import 'services/presence.dart';
 import 'services/push_notifications.dart';
 import 'services/connection_monitor.dart';
 import 'models/profile.dart';
@@ -244,12 +245,21 @@ class BroApp extends StatefulWidget {
 class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
   bool _appLocked = false;
   DateTime? _pausedAt;
+  StreamSubscription<AuthState>? _authSub;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     ConnectionMonitor.start();
+    Presence.bind();
+    _authSub = Supa.authStateChanges.listen((state) {
+      if (state.session != null) {
+        Presence.resume();
+      } else {
+        Presence.unbind();
+      }
+    });
     PushNotifications.setOpenHandler(
       (conversationId) => _router.go('/chat/$conversationId'),
     );
@@ -276,6 +286,8 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _authSub?.cancel();
+    Presence.unbind();
     AppLock.enabled.removeListener(_onLockPref);
     WidgetsBinding.instance.removeObserver(this);
     unawaited(ConnectionMonitor.dispose());
@@ -285,10 +297,12 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      unawaited(Supa.recordLastSeen());
+      Presence.resume();
       unawaited(_lockIfTimedOut());
-    } else if (state == AppLifecycleState.paused) {
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
       _pausedAt = DateTime.now();
+      Presence.pause();
     }
   }
 
@@ -1171,16 +1185,15 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   Widget _conversationAvatar(BuildContext context, Conversation conv) {
     final hasStatus =
         conv.peerId != null && _statusUserIds.contains(conv.peerId);
-    final avatar = conv.peerId != null
-        ? FutureBuilder<bool>(
-            future: Supa.isPeerOnline(conv.peerId!),
-            builder: (_, snap) => _Avatar(
-                name: conv.peerInitial,
-                url: conv.peerAvatarUrl,
-                size: 46,
-                showOnlineDot: snap.data == true),
-          )
-        : _Avatar(name: conv.peerInitial, url: conv.peerAvatarUrl, size: 46);
+    final avatar = ValueListenableBuilder<int>(
+      valueListenable: Presence.epoch,
+      builder: (_, __, ___) => _Avatar(
+        name: conv.peerInitial,
+        url: conv.peerAvatarUrl,
+        size: 46,
+        showOnlineDot: Presence.isOnline(conv.peerId),
+      ),
+    );
     if (hasStatus) {
       return StatusRingAvatar(
         size: 46,
@@ -1449,6 +1462,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                     onRetry: () => setState(() => _conversationsTick++));
               }
               final conversations = snapshot.data ?? [];
+              Presence.setListPeers(conversations.map((c) => c.peerId));
               if (conversations.isEmpty) {
                 return Center(
                   child: Padding(
@@ -1637,7 +1651,8 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final _ctrl = TextEditingController();
   final _scroll = ScrollController();
-  bool _typing = false;
+  bool _selfTyping = false;
+  DateTime? _lastTypingPulse;
   bool _sendingMessage = false;
   Timer? _typingTimer;
   late Profile? _peer = widget.initialPeer;
@@ -1653,8 +1668,6 @@ class _ChatScreenState extends State<ChatScreen> {
   Duration? _messageExpiry;
   bool _pinnedBannerDismissed = false;
   int _pinnedBannerIndex = 0;
-  bool _peerIsOnline = false;
-  StreamSubscription<String?>? _presenceSub;
 
   String _expiryLabel(Duration value) => switch (value.inDays) {
         1 => '24 hours',
@@ -1666,6 +1679,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    Presence.focus(widget.initialPeer?.id);
     _loadPeer();
     _loadChatBackground();
     _loadMessageExpiry();
@@ -1891,17 +1905,16 @@ class _ChatScreenState extends State<ChatScreen> {
     if (isTyping) {
       setState(() => _peerTyping = userId);
       _peerTypingTimer?.cancel();
-      _peerTypingTimer = Timer(const Duration(seconds: 3), () {
+      _peerTypingTimer = Timer(const Duration(seconds: 4), () {
         if (mounted) setState(() => _peerTyping = null);
       });
     } else {
+      _peerTypingTimer?.cancel();
       if (mounted && _peerTyping == userId) setState(() => _peerTyping = null);
     }
   }
 
   Future<void> _loadPeer() async {
-    // Resolve the other participant of this DM so the header shows their
-    // real identity instead of a hardcoded placeholder.
     try {
     final ids = await Supa.client
         .from('conversation_participants')
@@ -1914,23 +1927,19 @@ class _ChatScreenState extends State<ChatScreen> {
         .cast<Map<String, dynamic>>()
         .firstOrNull?['user_id'] as String?;
     if (uid == null) return;
+    Presence.focus(uid);
     final profile = await Supa.getProfile(uid);
     if (mounted) {
       setState(() => _peer = profile ?? _peer);
-      _presenceSub?.cancel();
-      _presenceSub = Supa.watchPeerPresence(uid).listen((presence) {
-        if (mounted) setState(() => _peerIsOnline = presence == 'online');
-      });
     }
     } catch (_) {}
   }
 
   @override
   void dispose() {
-    // Remove secure flag when leaving chat
     unawaited(SecureScreen.disable());
     Supa.unsubscribeTyping(widget.conversationId);
-    _presenceSub?.cancel();
+    Presence.unfocus(_peer?.id ?? widget.initialPeer?.id);
     _ctrl.dispose();
     _scroll.dispose();
     _typingTimer?.cancel();
@@ -1946,9 +1955,9 @@ class _ChatScreenState extends State<ChatScreen> {
     if (content.isEmpty || _sendingMessage) return;
 
     setState(() => _sendingMessage = true);
-    Supa.broadcastTyping(widget.conversationId, false);
     _typingTimer?.cancel();
-    setState(() => _typing = false);
+    _selfTyping = false;
+    unawaited(Supa.broadcastTyping(widget.conversationId, false));
     try {
       await Supa.sendMessage(widget.conversationId, content,
           expiry: _messageExpiry);
@@ -1975,16 +1984,27 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _onTypingChanged(String text) {
-    if (text.isNotEmpty && !_typing) {
-      setState(() => _typing = true);
-      Supa.broadcastTyping(widget.conversationId, true);
+    if (text.trim().isEmpty) {
+      _typingTimer?.cancel();
+      if (_selfTyping) {
+        _selfTyping = false;
+        unawaited(Supa.broadcastTyping(widget.conversationId, false));
+      }
+      return;
+    }
+    final now = DateTime.now();
+    final pulse = !_selfTyping ||
+        _lastTypingPulse == null ||
+        now.difference(_lastTypingPulse!) >= const Duration(milliseconds: 1500);
+    if (pulse) {
+      _selfTyping = true;
+      _lastTypingPulse = now;
+      unawaited(Supa.broadcastTyping(widget.conversationId, true));
     }
     _typingTimer?.cancel();
     _typingTimer = Timer(const Duration(seconds: 2), () {
-      if (mounted) {
-        setState(() => _typing = false);
-        Supa.broadcastTyping(widget.conversationId, false);
-      }
+      _selfTyping = false;
+      unawaited(Supa.broadcastTyping(widget.conversationId, false));
     });
   }
 
@@ -2536,11 +2556,15 @@ class _ChatScreenState extends State<ChatScreen> {
             padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
             child: Row(
               children: [
-                _Avatar(
-                  name: _peer?.peerInitial ?? '?',
-                  url: _peer?.avatarUrl,
-                  size: 38,
-                  showOnlineDot: _peerIsOnline,
+                ValueListenableBuilder<int>(
+                  valueListenable: Presence.epoch,
+                  builder: (_, __, ___) => _Avatar(
+                    name: _peer?.peerInitial ?? '?',
+                    url: _peer?.avatarUrl,
+                    size: 38,
+                    showOnlineDot:
+                        _peerTyping == null && Presence.isOnline(_peer?.id),
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -2557,64 +2581,13 @@ class _ChatScreenState extends State<ChatScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      if (_peerTyping != null)
-                        Text(
-                          'typing…',
-                          style: const TextStyle(
-                              fontSize: 12, color: _P.primary),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        )
-                      else if (_peer != null)
-                        StreamBuilder<String?>(
-                          key: ValueKey(_peer!.id),
-                          stream: Supa.watchPeerPresence(_peer!.id),
-                          builder: (_, snap) {
-                            final presence = snap.data;
-                            final isOnline = presence == 'online';
-                            return Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (isOnline) ...[
-                                  Container(
-                                    width: 7,
-                                    height: 7,
-                                    margin: const EdgeInsets.only(right: 5),
-                                    decoration: BoxDecoration(
-                                      color: _P.success,
-                                      shape: BoxShape.circle,
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: _P.success
-                                              .withValues(alpha: 0.5),
-                                          blurRadius: 4,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                                Flexible(
-                                  child: Text(
-                                    presence ?? '@${_peer!.username}',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: isOnline ? _P.success : _P.muted,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
-                        )
-                      else
-                        Text(
-                          'Direct message',
-                          style: TextStyle(fontSize: 12, color: _P.muted),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                      _PeerStatusLine(
+                        typing: _peerTyping != null,
+                        peerId: _peer?.id,
+                        fallback: _peer != null
+                            ? '@${_peer!.username}'
+                            : 'Direct message',
+                      ),
                     ],
                   ),
                 ),
@@ -2750,12 +2723,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 }),
               ),
             ),
-            if (_typing || _peerTyping != null)
-              _TypingIndicator(
-                label: _peerTyping != null
-                    ? '${_peer?.label ?? 'Someone'} is typing…'
-                    : 'Typing…',
-              ),
+            if (_peerTyping != null) const _TypingIndicator(),
             _Composer(
               controller: _ctrl,
               onSend: _send,
@@ -2884,12 +2852,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       }),
                     ),
                   ),
-                  if (_typing || _peerTyping != null)
-                    _TypingIndicator(
-                      label: _peerTyping != null
-                          ? '${_peer?.label ?? 'Someone'} is typing…'
-                          : 'Typing…',
-                    ),
+                  if (_peerTyping != null) const _TypingIndicator(),
                   _Composer(
                     controller: _ctrl,
                     onSend: _send,
@@ -3013,18 +2976,139 @@ class _ErrorState extends StatelessWidget {
   }
 }
 
+class _PeerStatusLine extends StatelessWidget {
+  const _PeerStatusLine({
+    required this.typing,
+    required this.peerId,
+    required this.fallback,
+  });
+  final bool typing;
+  final String? peerId;
+  final String fallback;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 180),
+      child: typing
+          ? const Row(
+              key: ValueKey('typing'),
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('typing',
+                    style: TextStyle(fontSize: 12, color: _P.primary)),
+                SizedBox(width: 4),
+                _TypingDots(color: _P.primary, size: 4),
+              ],
+            )
+          : ValueListenableBuilder<int>(
+              key: const ValueKey('presence'),
+              valueListenable: Presence.epoch,
+              builder: (_, __, ___) {
+                final presence = Presence.label(peerId) ?? fallback;
+                final online = Presence.isOnline(peerId);
+                return Text(
+                  presence,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: online ? _P.success : _P.muted,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                );
+              },
+            ),
+    );
+  }
+}
+
+class _TypingDots extends StatefulWidget {
+  const _TypingDots({this.color = _P.muted, this.size = 6});
+  final Color color;
+  final double size;
+
+  @override
+  State<_TypingDots> createState() => _TypingDotsState();
+}
+
+class _TypingDotsState extends State<_TypingDots>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 900))
+      ..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < 3; i++) ...[
+              if (i > 0) SizedBox(width: widget.size * 0.45),
+              _dot(i),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _dot(int index) {
+    final t = (_ctrl.value + index / 3) % 1;
+    final bounce = (t < 0.5 ? t : 1 - t) * 2;
+    final lift = (bounce * 3) - 0.4;
+    final opacity = 0.35 + bounce * 0.65;
+    return Transform.translate(
+      offset: Offset(0, -lift),
+      child: Container(
+        width: widget.size,
+        height: widget.size,
+        decoration: BoxDecoration(
+          color: widget.color.withValues(alpha: opacity),
+          shape: BoxShape.circle,
+        ),
+      ),
+    );
+  }
+}
+
 class _TypingIndicator extends StatelessWidget {
-  const _TypingIndicator({required this.label});
-  final String label;
+  const _TypingIndicator();
+
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
       child: Align(
         alignment: Alignment.centerLeft,
-        child: Text(label,
-            style: const TextStyle(
-                color: _P.muted, fontSize: 12, fontStyle: FontStyle.italic)),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: _P.surfaceHigh,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(16),
+              topRight: Radius.circular(16),
+              bottomRight: Radius.circular(16),
+              bottomLeft: Radius.circular(4),
+            ),
+            border: Border.all(color: _P.border),
+          ),
+          child: const _TypingDots(color: _P.muted, size: 7),
+        ),
       ),
     );
   }
@@ -4319,7 +4403,14 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   @override
   void initState() {
     super.initState();
+    Presence.focus(widget.userId);
     _load();
+  }
+
+  @override
+  void dispose() {
+    Presence.unfocus(widget.userId);
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -4484,15 +4575,14 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             '@${profile.username}',
             style: TextStyle(color: _P.muted, fontSize: 14),
           ),
-          // Last seen / online indicator
           if (!isMe) ...[
             const SizedBox(height: 6),
-            StreamBuilder<String?>(
-              stream: Supa.watchPeerPresence(profile.id),
-              builder: (_, snap) {
-                final presence = snap.data;
+            ValueListenableBuilder<int>(
+              valueListenable: Presence.epoch,
+              builder: (_, __, ___) {
+                final presence = Presence.label(profile.id);
                 if (presence == null) return const SizedBox.shrink();
-                final isOnline = presence == 'online';
+                final online = Presence.isOnline(profile.id);
                 return Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -4501,9 +4591,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                       height: 7,
                       margin: const EdgeInsets.only(right: 5),
                       decoration: BoxDecoration(
-                        color: isOnline ? _P.success : _P.muted,
+                        color: online ? _P.success : _P.muted,
                         shape: BoxShape.circle,
-                        boxShadow: isOnline
+                        boxShadow: online
                             ? [
                                 BoxShadow(
                                   color: _P.success.withValues(alpha: 0.5),
@@ -4516,7 +4606,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     Text(
                       presence,
                       style: TextStyle(
-                        color: isOnline ? _P.success : _P.muted,
+                        color: online ? _P.success : _P.muted,
                         fontSize: 13,
                       ),
                     ),
