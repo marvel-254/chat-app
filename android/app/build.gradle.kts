@@ -51,18 +51,27 @@ android {
 
     signingConfigs {
         create("release") {
-            if (keystorePropertiesFile.exists()) {
-                storeFile = file(keystoreProperties["storeFile"] as String)
-                storePassword = keystoreProperties["storePassword"] as String
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
+            val store = keystoreProperties["storeFile"]
+            val storePasswordValue = keystoreProperties["storePassword"]
+            val alias = keystoreProperties["keyAlias"]
+            val keyPasswordValue = keystoreProperties["keyPassword"]
+            if (!store.isNullOrBlank() &&
+                !storePasswordValue.isNullOrBlank() &&
+                !alias.isNullOrBlank() &&
+                !keyPasswordValue.isNullOrBlank()
+            ) {
+                storeFile = file(store)
+                storePassword = storePasswordValue
+                keyAlias = alias
+                keyPassword = keyPasswordValue
             }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = if (keystorePropertiesFile.exists()) {
+            val releaseStore = signingConfigs.getByName("release").storeFile
+            signingConfig = if (releaseStore != null && releaseStore.exists()) {
                 signingConfigs.getByName("release")
             } else {
                 // Fallback so `flutter build apk --release` still works before
