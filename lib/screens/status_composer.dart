@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../services/status_feed.dart';
 import '../services/supabase.dart';
 import '../ui/errors.dart';
+import '../ui/states.dart';
 
 class _C {
   static const bg = Color(0xFF050505);
@@ -287,11 +288,8 @@ class _StatusComposerScreenState extends State<StatusComposerScreen> {
                           disabledBackgroundColor: Colors.white24,
                         ),
                         icon: _posting
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
+                            ? const BroSpinner(
+                                size: 16, color: _C.darkOnAccent)
                             : const Icon(Icons.send),
                         label: const Text('Post',
                             style: TextStyle(fontWeight: FontWeight.w800)),

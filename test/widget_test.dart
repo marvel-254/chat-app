@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:bro_chat/models/profile.dart';
+import 'package:bro_chat/services/presence.dart';
 
 void main() {
   test('Conversation reads the latest-message fields from its RPC row', () {
@@ -45,5 +46,21 @@ void main() {
     });
     
     expect(profile.autoLockTimer, const Duration(minutes: 5));
+  });
+
+  test('formatPresenceLabel treats a fresh ping as online', () {
+    final now = DateTime.utc(2026, 11, 13, 12, 0);
+    expect(
+      formatPresenceLabel(now.subtract(const Duration(seconds: 20)), now: now),
+      'online',
+    );
+    expect(
+      formatPresenceLabel(now.subtract(const Duration(seconds: 50)), now: now),
+      'last seen just now',
+    );
+    expect(
+      formatPresenceLabel(now.subtract(const Duration(minutes: 8)), now: now),
+      'last seen 8m ago',
+    );
   });
 }

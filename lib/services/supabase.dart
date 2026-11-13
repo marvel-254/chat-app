@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import '../models/profile.dart';
+import 'presence.dart';
 import 'search_safety.dart';
 
 class Supa {
@@ -412,12 +413,8 @@ class Supa {
     }).eq('id', currentUser!.id);
   }
 
-  static Future<void> refreshConversations() async {
-    await client
-        .from('conversation_participants')
-        .select('conversation_id')
-        .eq('user_id', currentUser!.id);
-  }
+  static Future<List<Conversation>> refreshConversations() =>
+      fetchConversations();
 
   static Future<String> uploadChatBackground(
       Uint8List bytes, String filename) async {
@@ -582,24 +579,23 @@ class Supa {
     assert(contactId.isNotEmpty);
   }
 
-  static Stream<List<Map<String, dynamic>>> watchMessageRequests() {
-    return Stream.periodic(const Duration(seconds: 30), (_) => null)
-        .asyncMap((_) async {
-      final me = currentUser!.id;
-      final res = await client.rpc('get_conversations_for_user');
-      final rows = (res as List).cast<Map<String, dynamic>>();
-      final requests = <Map<String, dynamic>>[];
-      for (final r in rows) {
-        final peerId = r['peer_id'] as String?;
-        if (peerId != null) {
-          final isContact = await areContacts(me, peerId);
-          if (!isContact) {
-            requests.add(r);
-          }
-        }
+  static Future<List<Map<String, dynamic>>> _messageRequests() async {
+    final me = currentUser!.id;
+    final rows = await fetchConversationRows();
+    final requests = <Map<String, dynamic>>[];
+    for (final r in rows) {
+      final peerId = r['peer_id'] as String?;
+      if (peerId != null && !await areContacts(me, peerId)) {
+        requests.add(r);
       }
-      return requests;
-    });
+    }
+    return requests;
+  }
+
+  static Stream<List<Map<String, dynamic>>> watchMessageRequests() async* {
+    yield await _messageRequests();
+    yield* Stream.periodic(const Duration(seconds: 30))
+        .asyncMap((_) => _messageRequests());
   }
 
   static Future<void> acceptMessageRequest(
@@ -616,29 +612,42 @@ class Supa {
         .eq('user_id', me);
   }
 
-  static Stream<List<Conversation>> watchConversations() {
-    return Stream.periodic(const Duration(seconds: 30), (_) => null)
-        .asyncMap((_) async {
-      final res = await client.rpc('get_conversations_for_user');
-      final rows = (res as List).cast<Map<String, dynamic>>();
-      return rows
-          .map((r) => Conversation(
-                id: r['conversation_id'] as String,
-                createdAt: DateTime.parse(r['created_at'] as String),
-                updatedAt: DateTime.parse(r['updated_at'] as String),
-                peerId: r['peer_id'] as String?,
-                peerUsername: r['peer_username'] as String?,
-                peerDisplayName: r['peer_display_name'] as String?,
-                peerAvatarUrl: r['peer_avatar_url'] as String?,
-                lastMessage: r['last_message'] as String?,
-                lastMessageAt: r['last_message_at'] == null
-                    ? null
-                    : DateTime.parse(r['last_message_at'] as String),
-                unreadCount: (r['unread_count'] as num?)?.toInt() ?? 0,
-                isLocked: (r['is_locked'] as bool?) ?? false,
-              ))
-          .toList();
-    });
+  static Future<List<Map<String, dynamic>>> fetchConversationRows() async {
+    final res = await client.rpc('get_conversations_for_user');
+    return (res as List).cast<Map<String, dynamic>>();
+  }
+
+  static List<Conversation> conversationsFromRows(
+      List<Map<String, dynamic>> rows) {
+    return rows
+        .map((r) => Conversation(
+              id: r['conversation_id'] as String,
+              createdAt: DateTime.parse(r['created_at'] as String),
+              updatedAt: DateTime.parse(r['updated_at'] as String),
+              peerId: r['peer_id'] as String?,
+              peerUsername: r['peer_username'] as String?,
+              peerDisplayName: r['peer_display_name'] as String?,
+              peerAvatarUrl: r['peer_avatar_url'] as String?,
+              lastMessage: r['last_message'] as String?,
+              lastMessageAt: r['last_message_at'] == null
+                  ? null
+                  : DateTime.parse(r['last_message_at'] as String),
+              unreadCount: (r['unread_count'] as num?)?.toInt() ?? 0,
+              isLocked: (r['is_locked'] as bool?) ?? false,
+            ))
+        .toList();
+  }
+
+  static Future<List<Conversation>> fetchConversations() async {
+    return conversationsFromRows(await fetchConversationRows());
+  }
+
+  // Stream.periodic delays the first tick by [period]. Yield once immediately
+  // so the chat list is not stuck on a skeleton for 30 seconds.
+  static Stream<List<Conversation>> watchConversations() async* {
+    yield await fetchConversations();
+    yield* Stream.periodic(const Duration(seconds: 30))
+        .asyncMap((_) => fetchConversations());
   }
 
   // Messages
@@ -815,9 +824,8 @@ class Supa {
     return duration == Duration.zero ? null : duration;
   }
 
-  // Realtime typing broadcast.
-  // Broadcasts typing status on a per-conversation channel so the peer can
-  // see "Typing…". Uses a short-lived broadcast event (no persistence).
+  // Realtime typing broadcast on the conversation's private channel.
+  // Send over the joined websocket (not HTTP) and pulse while the peer types.
   static const _typingEvent = 'typing';
 
   static String _typingTopic(String conversationId) => 'typing:$conversationId';
@@ -827,13 +835,18 @@ class Supa {
       String conversationId, bool isTyping) async {
     final channel = _typingChannels[conversationId];
     if (channel == null) return;
-    await channel.httpSend(
-      event: _typingEvent,
-      payload: {
-        'user_id': currentUser?.id,
-        'is_typing': isTyping,
-      },
-    ).catchError((_) {}); // never throw on a best-effort typing signal
+    final payload = <String, dynamic>{
+      'user_id': currentUser?.id,
+      'is_typing': isTyping,
+    };
+    try {
+      await channel.sendBroadcastMessage(
+          event: _typingEvent, payload: payload);
+    } catch (_) {
+      try {
+        await channel.httpSend(event: _typingEvent, payload: payload);
+      } catch (_) {}
+    }
   }
 
   /// Subscribe to typing broadcasts for a conversation. Invokes [onTyping]
@@ -846,16 +859,15 @@ class Supa {
     final channel = client.channel(_typingTopic(conversationId),
         opts: const RealtimeChannelConfig(private: true));
     _typingChannels[conversationId] = channel;
-    channel
-        .onBroadcast(
-          event: _typingEvent,
-          callback: (payload) {
-            final uid = payload['user_id'] as String?;
-            final typing = payload['is_typing'] as bool? ?? false;
-            if (uid != null) onTyping(uid, typing);
-          },
-        )
-        .subscribe();
+    channel.onBroadcast(
+      event: _typingEvent,
+      callback: (payload) {
+        final uid = payload['user_id'] as String?;
+        final typing = payload['is_typing'] as bool? ?? false;
+        if (uid != null) onTyping(uid, typing);
+      },
+    );
+    channel.subscribe();
   }
 
   static void unsubscribeTyping(String conversationId) {
@@ -863,64 +875,22 @@ class Supa {
     if (channel != null) client.removeChannel(channel);
   }
 
-  // Presence / last seen
-
-  /// Returns true if [userId] is currently online (last_seen_at within 2 min
-  /// and statusVisibility is not 'nobody').
   static Future<bool> isPeerOnline(String userId) async {
-    final result = await _fetchPresence(userId);
-    return result == 'online';
+    Presence.focus(userId);
+    await Presence.refresh();
+    return Presence.isOnline(userId);
   }
 
-  /// Streams a human-readable presence string for [userId] every 30 seconds.
-  /// Returns null when the user has opted out (statusVisibility == 'nobody'),
-  /// or 'online' / 'last seen …' otherwise.
-  /// The current user's own statusVisibility is NOT applied here — the peer's
-  /// preference is what controls visibility for everyone else.
   static Stream<String?> watchPeerPresence(String userId) async* {
-    yield await _fetchPresence(userId);
-    yield* Stream.periodic(const Duration(seconds: 30))
-        .asyncMap((_) => _fetchPresence(userId));
+    Presence.focus(userId);
+    await Presence.refresh();
+    yield Presence.label(userId);
+    yield* Stream.periodic(
+        const Duration(seconds: 12), (_) => Presence.label(userId));
   }
 
-  static Future<String?> _fetchPresence(String userId) async {
-    try {
-      final row = await client
-          .from('visible_profiles')
-          .select('last_seen_at, status_visibility')
-          .eq('id', userId)
-          .single();
-      final visibility = row['status_visibility'] as String? ?? 'everyone';
-      if (visibility == 'nobody') return null;
-      // 'contacts' — peer is a DM contact if a conversation exists; treat as
-      // visible for simplicity (full enforcement requires server-side check).
-      final raw = row['last_seen_at'] as String?;
-      if (raw == null) return null;
-      final lastSeen = DateTime.parse(raw).toLocal();
-      return formatLastSeen(lastSeen);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// Returns 'online' if [lastSeen] is within the last 2 minutes, otherwise
-  /// a human-readable "last seen …" string.
-  static String formatLastSeen(DateTime lastSeen) {
-    final diff = DateTime.now().difference(lastSeen);
-    if (diff.inMinutes < 2) return 'online';
-    if (diff.inMinutes < 60) return 'last seen ${diff.inMinutes}m ago';
-    if (diff.inHours < 24) {
-      final h = lastSeen.hour == 0
-          ? 12
-          : (lastSeen.hour > 12 ? lastSeen.hour - 12 : lastSeen.hour);
-      final m = lastSeen.minute.toString().padLeft(2, '0');
-      final ap = lastSeen.hour >= 12 ? 'PM' : 'AM';
-      return 'last seen today at $h:$m $ap';
-    }
-    if (diff.inDays == 1) return 'last seen yesterday';
-    if (diff.inDays < 7) return 'last seen ${diff.inDays} days ago';
-    return 'last seen ${lastSeen.day}/${lastSeen.month}/${lastSeen.year}';
-  }
+  static String formatLastSeen(DateTime lastSeen) =>
+      formatPresenceLabel(lastSeen);
 
   // ===== Reactions =====
 
