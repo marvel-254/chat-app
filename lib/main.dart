@@ -5001,17 +5001,15 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                         ),
                         value: enabled,
                         onChanged: (v) async {
-                          if (v) {
-                            final ctx = context;
-                            if (!await AppLock.hasPin()) {
-                              if (!mounted) return;
-                              final set = await promptSetPin(ctx);
-                              if (!set) return;
-                            }
-                            await AppLock.setEnabled(v);
+                          if (v && !await AppLock.hasPin()) {
+                            if (!context.mounted) return;
+                            final set = await promptSetPin(context);
+                            if (!set) return;
                           }
+                          await AppLock.setEnabled(v);
                           if (v) {
-                            final seconds = _autoLockTimer == null ? 15 : _autoLockTimer!.inSeconds;
+                            final seconds =
+                                _autoLockTimer?.inSeconds ?? 15;
                             await AppLock.setTimeoutSeconds(
                                 seconds == 0 ? 15 : seconds);
                           }
