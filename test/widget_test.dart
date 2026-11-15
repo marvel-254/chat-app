@@ -56,7 +56,11 @@ void main() {
     );
     expect(
       formatPresenceLabel(now.subtract(const Duration(seconds: 50)), now: now),
-      'last seen just now',
+      'online',
+    );
+    expect(
+      formatPresenceLabel(now.subtract(const Duration(seconds: 61)), now: now),
+      'last seen 1m ago',
     );
     expect(
       formatPresenceLabel(now.subtract(const Duration(minutes: 8)), now: now),

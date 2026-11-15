@@ -33,6 +33,7 @@ import 'services/presence.dart';
 import 'services/push_notifications.dart';
 import 'services/connection_monitor.dart';
 import 'models/profile.dart';
+import 'models/pending_message.dart';
 import 'ui/states.dart';
 import 'ui/errors.dart';
 
@@ -1683,6 +1684,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _pinnedBannerDismissed = false;
   int _pinnedBannerIndex = 0;
   Message? _replyTo;
+  final _pendingMessages = <String, PendingMessage>{}; // keyed by localId
   Timer? _draftSaveTimer;
   int _lastMarkedMessageCount = 0;
   String? _lastMarkedMessageId;
@@ -1998,8 +2000,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _openVoiceNote() async {
     final result = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => _VoiceNoteDialog(
-          conversationId: widget.conversationId),
+      builder: (dialogContext) =>
+          _VoiceNoteDialog(conversationId: widget.conversationId),
     );
     if (result != null && result.isNotEmpty) {
       // The dialog already played a short confirmation; nothing further needed.
@@ -2016,9 +2018,23 @@ class _ChatScreenState extends State<ChatScreen> {
     _selfTyping = false;
     unawaited(Supa.broadcastTyping(widget.conversationId, false));
     final replyToId = _replyTo?.id;
+    final localId = const Uuid().v4();
+    final expiresAt =
+        _messageExpiry == null ? null : DateTime.now().add(_messageExpiry!);
     try {
+      final pending = PendingMessage(
+        localId: localId,
+        conversationId: widget.conversationId,
+        senderId: Supa.currentUser!.id,
+        content: content,
+        createdAt: DateTime.now(),
+        expiresAt: expiresAt,
+        replyToId: replyToId,
+      );
+      _addPending(pending);
       await Supa.sendMessage(widget.conversationId, content,
           expiry: _messageExpiry, replyToId: replyToId);
+      _removePending(localId);
       // Trigger chat list refresh so the sender sees the updated preview
       Supa.triggerConversationRefresh();
       if (!mounted) return;
@@ -2027,6 +2043,7 @@ class _ChatScreenState extends State<ChatScreen> {
       unawaited(Supa.saveDraft(widget.conversationId, ''));
       _rollToBottom();
     } catch (e) {
+      _markPendingFailed(localId);
       if (mounted) {
         _unsupported(friendlyErrorMessage(e,
             fallback:
@@ -2037,6 +2054,48 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// Pending (optimistic) messages keyed by their local id. These are the
+  /// messages sent before the server echoed them back, rendered as a pending
+  /// bubble until they reach the server.
+  void _addPending(PendingMessage pm) {
+    _pendingMessages[pm.localId] = pm;
+  }
+
+  void _removePending(String localId) {
+    _pendingMessages.remove(localId);
+  }
+
+  void _markPendingFailed(String localId) {
+    final pm = _pendingMessages[localId];
+    if (pm != null && pm.status != 'sent') {
+      pm.status = 'failed';
+      pm.retryCount += 1;
+      setState(() {});
+    }
+  }
+
+  /// The messages the UI should render: server rows merged with in-flight
+  /// pending rows, deduplicated and sorted oldest-to-newest.
+  List<Message> _displayMessages(List<Message> serverMessages) {
+    final pending = _pendingMessages.values
+        .where((pm) => pm.status == 'sending' || pm.status == 'failed')
+        .toList();
+    final byId = <String, Message>{};
+    for (final m in serverMessages) {
+      if (!byId.containsKey(m.id)) byId[m.id] = m;
+    }
+    for (final pm in pending) {
+      byId[pm.localId] = pm.toOptimisticMessage();
+    }
+    final merged = <Message>[];
+    final seen = <String>{};
+    for (final m in byId.values) {
+      if (seen.add(m.id)) merged.add(m);
+    }
+    merged.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    return merged;
+  }
+
   /// Mark unread messages as read. Called once when the chat opens and again
   /// when new messages arrive (detected by comparing the message count/id).
   void _markUnreadAsReadIfNeeded(List<Message> messages) {
@@ -2044,12 +2103,13 @@ class _ChatScreenState extends State<ChatScreen> {
     // Only mark if the message list changed since the last time we marked read.
     // This avoids calling the RPC on every rebuild.
     final lastId = messages.last.id;
-    if (messages.length == _lastMarkedMessageCount && lastId == _lastMarkedMessageId) {
+    if (messages.length == _lastMarkedMessageCount &&
+        lastId == _lastMarkedMessageId) {
       return;
     }
     // Check if there are any unread inbound messages
-    final hasUnread = messages.any(
-        (m) => m.senderId != Supa.currentUser!.id && m.readAt == null);
+    final hasUnread = messages
+        .any((m) => m.senderId != Supa.currentUser!.id && m.readAt == null);
     if (!hasUnread) return;
     _lastMarkedMessageCount = messages.length;
     _lastMarkedMessageId = lastId;
@@ -2714,18 +2774,18 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final now = DateTime.now();
     DateTime selectedDate = now.add(const Duration(hours: 1)).copyWith(
-      second: 0,
-      millisecond: 0,
-      microsecond: 0,
-    );
+          second: 0,
+          millisecond: 0,
+          microsecond: 0,
+        );
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
           backgroundColor: _P.surface,
-          title: const Text('Schedule message',
-              style: TextStyle(color: _P.text)),
+          title:
+              const Text('Schedule message', style: TextStyle(color: _P.text)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2796,9 +2856,12 @@ class _ChatScreenState extends State<ChatScreen> {
               Wrap(
                 spacing: 8,
                 children: [
-                  _SchedulePresetBtn('1 hr', const Duration(hours: 1), setLocal, now, (d) => selectedDate = d),
-                  _SchedulePresetBtn('Tomorrow', const Duration(days: 1), setLocal, now, (d) => selectedDate = d),
-                  _SchedulePresetBtn('Next week', const Duration(days: 7), setLocal, now, (d) => selectedDate = d),
+                  _SchedulePresetBtn('1 hr', const Duration(hours: 1), setLocal,
+                      now, (d) => selectedDate = d),
+                  _SchedulePresetBtn('Tomorrow', const Duration(days: 1),
+                      setLocal, now, (d) => selectedDate = d),
+                  _SchedulePresetBtn('Next week', const Duration(days: 7),
+                      setLocal, now, (d) => selectedDate = d),
                 ],
               ),
             ],
@@ -2899,16 +2962,32 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     setState(() => _sendingMessage = true);
+    final localId = const Uuid().v4();
+    final expiresAt =
+        _messageExpiry == null ? null : DateTime.now().add(_messageExpiry!);
     try {
       final attachment = await Supa.uploadAttachment(
           widget.conversationId, bytes, name, mimeType);
-      await Supa.sendMessage(
-          widget.conversationId, 'attachment:${jsonEncode(attachment)}');
-      _rollToBottom();
-    } catch (e) {
-      _unsupported(friendlyErrorMessage(e,
-          fallback:
-              "We couldn't upload that file. Check your connection and try again."));
+      final pending = PendingMessage(
+        localId: localId,
+        conversationId: widget.conversationId,
+        senderId: Supa.currentUser!.id,
+        content: 'attachment:${jsonEncode(attachment)}',
+        createdAt: DateTime.now(),
+        expiresAt: expiresAt,
+      );
+      _addPending(pending);
+      try {
+        await Supa.sendMessage(
+            widget.conversationId, 'attachment:${jsonEncode(attachment)}');
+        _removePending(localId);
+        _rollToBottom();
+      } catch (e) {
+        _markPendingFailed(localId);
+        _unsupported(friendlyErrorMessage(e,
+            fallback:
+                "We couldn't upload that file. Check your connection and try again."));
+      }
     } finally {
       if (mounted) setState(() => _sendingMessage = false);
     }
@@ -3073,6 +3152,7 @@ class _ChatScreenState extends State<ChatScreen> {
       stream: Supa.watchMessages(widget.conversationId),
       builder: (context, snapshot) {
         final messages = snapshot.data ?? [];
+        final display = _displayMessages(messages);
         final pinnedMessages = messages
             .where((m) => m.pinnedAt != null)
             .toList()
@@ -3134,7 +3214,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     imageUrl: _chatBackgroundImageUrl),
                 child: Builder(builder: (context) {
                   if (snapshot.connectionState == ConnectionState.waiting &&
-                      messages.isEmpty) {
+                      display.isEmpty) {
                     return const BubbleSkeleton();
                   }
                   if (snapshot.hasError) {
@@ -3143,7 +3223,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         detail: 'A quick retry usually does the trick.',
                         onRetry: () => setState(() {}));
                   }
-                  if (messages.isEmpty) {
+                  if (display.isEmpty) {
                     return _EmptyState(
                       peerName: _peer?.label,
                       onSayHello: () {
@@ -3207,6 +3287,7 @@ class _ChatScreenState extends State<ChatScreen> {
             stream: Supa.watchMessages(widget.conversationId),
             builder: (context, snapshot) {
               final messages = snapshot.data ?? [];
+              final display = _displayMessages(messages);
               final pinnedMessages = messages
                   .where((m) => m.pinnedAt != null)
                   .toList()
@@ -3296,11 +3377,11 @@ class _ChatScreenState extends State<ChatScreen> {
                               controller: _scroll,
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 12, vertical: 12),
-                              itemCount: messages.length,
+                              itemCount: display.length,
                               itemBuilder: (_, i) => _MessageRow(
-                                msg: messages[i],
+                                msg: display[i],
                                 prev: i > 0 ? messages[i - 1] : null,
-                                next: i + 1 < messages.length
+                                next: i + 1 < display.length
                                     ? messages[i + 1]
                                     : null,
                                 me: Supa.currentUser!.id,
@@ -3794,7 +3875,8 @@ class _VoiceMessageState extends State<_VoiceMessage> {
   /// Extracts the object path from the "voice:<json>" message content.
   Future<void> _parse() async {
     try {
-      final meta = jsonDecode(widget.content.substring(6)) as Map<String, dynamic>;
+      final meta =
+          jsonDecode(widget.content.substring(6)) as Map<String, dynamic>;
       if (meta['path'] != null) {
         setState(() {
           _path = meta['path'] as String;
@@ -3879,22 +3961,16 @@ class _VoiceMessageState extends State<_VoiceMessage> {
                 child: Text(
                   _filename(),
                   style: TextStyle(
-                      color: widget.mine
-                          ? _P.darkOnAccent
-                          : _P.text,
+                      color: widget.mine ? _P.darkOnAccent : _P.text,
                       fontSize: 12,
                       fontWeight: FontWeight.w600),
                 ),
               ),
               IconButton(
                 icon: Icon(
-                  _playing
-                      ? Icons.pause_rounded
-                      : Icons.play_arrow_rounded,
+                  _playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
                   size: 20,
-                  color: widget.mine
-                      ? _P.darkOnAccent
-                      : _P.text,
+                  color: widget.mine ? _P.darkOnAccent : _P.text,
                 ),
                 onPressed: _toggle,
                 tooltip: _playing ? 'Pause' : 'Play',
@@ -3915,9 +3991,7 @@ class _VoiceMessageState extends State<_VoiceMessage> {
                               _playing
                                   ? Icons.pause_circle_filled
                                   : Icons.play_circle_fill,
-                              color: widget.mine
-                                  ? _P.darkOnAccent
-                                  : _P.text,
+                              color: widget.mine ? _P.darkOnAccent : _P.text,
                               size: 32),
                     )
                   : const SizedBox.shrink(),
@@ -3948,20 +4022,22 @@ class _VoiceNoteDialogState extends State<_VoiceNoteDialog> {
         _error = null;
         _sending = true;
       });
-      final messageId = await VoiceNoteService.stopAndUpload(
-          widget.conversationId);
+      final messageId =
+          await VoiceNoteService.stopAndUpload(widget.conversationId);
       if (!mounted) return;
       setState(() => _sending = false);
       if (messageId.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text('Voice note sent.'), behavior: SnackBarBehavior.floating),
+              content: Text('Voice note sent.'),
+              behavior: SnackBarBehavior.floating),
         );
         Navigator.of(context).pop(messageId);
       } else {
         setState(() {
           _recording = true;
-          _error = 'Could not send that voice note. Check your connection and try again.';
+          _error =
+              'Could not send that voice note. Check your connection and try again.';
         });
       }
     } else {
@@ -4053,9 +4129,7 @@ class _VoiceNoteDialogState extends State<_VoiceNoteDialog> {
                       )
                     : Center(
                         child: Icon(
-                          _recording
-                              ? Icons.stop_rounded
-                              : Icons.mic_outlined,
+                          _recording ? Icons.stop_rounded : Icons.mic_outlined,
                           color: _recording ? _P.darkOnAccent : _P.text,
                           size: 44,
                         ),
@@ -7763,17 +7837,21 @@ class _SchedulePresetBtn extends StatelessWidget {
   final void Function(VoidCallback) setState;
   final DateTime now;
   final void Function(DateTime) onSelected;
-  const _SchedulePresetBtn(this.label, this.duration, this.setState, this.now, this.onSelected);
+  const _SchedulePresetBtn(
+      this.label, this.duration, this.setState, this.now, this.onSelected);
 
   @override
   Widget build(BuildContext context) {
     return TextButton(
       onPressed: () {
-        final d = now.add(duration).copyWith(second: 0, millisecond: 0, microsecond: 0);
+        final d = now
+            .add(duration)
+            .copyWith(second: 0, millisecond: 0, microsecond: 0);
         onSelected(d);
         setState(() {});
       },
-      child: Text(label, style: const TextStyle(color: _P.primary, fontSize: 13)),
+      child:
+          Text(label, style: const TextStyle(color: _P.primary, fontSize: 13)),
     );
   }
 }

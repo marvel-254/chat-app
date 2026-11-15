@@ -14,7 +14,7 @@ void main() {
       friendlyErrorMessage(
         'Could not find the \'last_message_at\' column of \'conversations\' in the schema cache',
       ),
-      "That message didn't land cleanly. Try sending it once more.",
+      "That didn't land cleanly. Try once more.",
     );
   });
 }

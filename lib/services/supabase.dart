@@ -1,11 +1,17 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
+import 'dart:async';
 import 'dart:typed_data';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import '../models/profile.dart';
 import 'search_safety.dart';
+import 'reactions.dart' as reactions;
+import 'message_safety.dart' as message_safety;
+import 'read_receipts.dart' as read_receipts;
+import 'block_report.dart' as block_report;
+import 'e2ee.dart' as e2ee;
 
 class Supa {
   static SupabaseClient get client => Supabase.instance.client;
@@ -96,8 +102,11 @@ class Supa {
 
   // Profiles
   static Future<Profile?> getProfile(String uid) async {
-    final res =
-        await client.from('visible_profiles').select().eq('id', uid).maybeSingle();
+    final res = await client
+        .from('visible_profiles')
+        .select()
+        .eq('id', uid)
+        .maybeSingle();
     return res != null ? Profile.fromJson(res) : null;
   }
 
@@ -147,16 +156,22 @@ class Supa {
       bool readReceiptsEnabled = true,
       Duration? defaultMessageExpiry,
       Duration? autoLockTimer}) async {
-    await client.from('profiles').update({
+    final updates = <String, dynamic>{
       'about': about.trim().isEmpty ? null : about.trim(),
       'photo_visibility': photoVisibility,
       'status_visibility': statusVisibility,
       'about_visibility': aboutVisibility,
       'read_receipts_enabled': readReceiptsEnabled,
-      'default_message_expiry': _intervalLiteral(defaultMessageExpiry),
-      'auto_lock_timer': _intervalLiteral(autoLockTimer),
       'updated_at': DateTime.now().toUtc().toIso8601String(),
-    }).eq('id', currentUser!.id);
+    };
+    // Only include if explicitly set (not null) to avoid overwriting with '0 seconds'
+    if (defaultMessageExpiry != null) {
+      updates['default_message_expiry'] = _intervalLiteral(defaultMessageExpiry);
+    }
+    if (autoLockTimer != null) {
+      updates['auto_lock_timer'] = _intervalLiteral(autoLockTimer);
+    }
+    await client.from('profiles').update(updates).eq('id', currentUser!.id);
   }
 
   static Future<void> recordLastSeen() async {
@@ -305,27 +320,39 @@ class Supa {
         .stream(primaryKey: ['id'])
         .order('created_at', ascending: false)
         .asyncMap((rows) async {
-          final now = DateTime.now();
-          final activeRows = rows.where((r) {
-            final exp = DateTime.tryParse(r['expires_at'] as String? ?? '');
-            return exp != null && exp.isAfter(now);
-          }).toList();
-          final userIds =
-              activeRows.map((r) => r['user_id'] as String).toSet().toList();
-          final profilesMap = <String, Map<String, dynamic>>{};
-          if (userIds.isNotEmpty) {
-            final profs =
-                await client.from('visible_profiles').select().filter('id', 'in', userIds);
-            for (final p in profs as List) {
-              profilesMap[p['id'] as String] = p as Map<String, dynamic>;
+          try {
+            final now = DateTime.now();
+            final activeRows = rows.where((r) {
+              final exp = DateTime.tryParse(r['expires_at'] as String? ?? '');
+              return exp != null && exp.isAfter(now);
+            }).toList();
+            final userIds =
+                activeRows.map((r) => r['user_id'] as String).toSet().toList();
+            final profilesMap = <String, Map<String, dynamic>>{};
+            if (userIds.isNotEmpty) {
+              final profs =
+                  await client.from('visible_profiles').select().filter('id', 'in', userIds);
+              for (final p in profs as List) {
+                profilesMap[p['id'] as String] = p as Map<String, dynamic>;
+              }
             }
+            return activeRows.map((r) {
+              final rowWithProfile = Map<String, dynamic>.from(r);
+              rowWithProfile['profiles'] = profilesMap[r['user_id']];
+              return StatusPost.fromJson(rowWithProfile);
+            }).toList();
+          } catch (e) {
+            // If profile fetch fails, return statuses without profile data
+            final now = DateTime.now();
+            return rows.where((r) {
+              final exp = DateTime.tryParse(r['expires_at'] as String? ?? '');
+              return exp != null && exp.isAfter(now);
+            }).map((r) => StatusPost.fromJson(Map<String, dynamic>.from(r)))
+                .toList();
           }
-          return activeRows.map((r) {
-            final rowWithProfile = Map<String, dynamic>.from(r);
-            rowWithProfile['profiles'] = profilesMap[r['user_id']];
-            return StatusPost.fromJson(rowWithProfile);
-          }).toList();
-        });
+        })
+        // Prevent stream errors from bubbling up to UI
+        .handleError((_) => <StatusPost>[]);
   }
 
   static Future<void> deleteStatus(String statusId) async {
@@ -482,6 +509,9 @@ class Supa {
       'avatar_url': url,
       'updated_at': DateTime.now().toIso8601String(),
     }).eq('id', uid);
+    // Force a refetch of the conversation list so the new avatar
+    // (from profiles.avatar_url) is surfaced to all conversation views.
+    triggerConversationRefresh();
     return url;
   }
 
@@ -524,7 +554,28 @@ class Supa {
     return client.storage.from('chat-files').createSignedUrl(objectPath, 3600);
   }
 
+  /// Download a GIF from a URL and upload it to storage as an attachment.
+  static Future<Map<String, dynamic>> uploadAttachmentFromUrl(
+      String conversationId, String url, String extension) async {
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode != 200) {
+      throw Exception('Failed to download attachment: ${response.statusCode}');
+    }
+    final filename = 'download.$extension';
+    return uploadAttachment(
+        conversationId, response.bodyBytes, filename, 'image/$extension');
+  }
+
   // Conversations
+  static Future<List<dynamic>> fetchConversationsWithCircles() async {
+    final dynamic result = await client
+        .rpc('get_all_conversations_for_user');
+    if (result is List) {
+      return result.cast<dynamic>();
+    }
+    return [];
+  }
+
   static Future<Conversation> getOrCreateDM(String otherUid) async {
     final me = currentUser!.id;
     final existing = await client
@@ -637,16 +688,69 @@ class Supa {
         .toList();
   }
 
-  static Future<List<Conversation>> fetchConversations() async {
-    return conversationsFromRows(await fetchConversationRows());
+  /// Broadcast controller that triggers a conversation list refresh.
+  /// Call [triggerConversationRefresh] to force an immediate refetch.
+  static final _convRefreshController = StreamController<void>.broadcast();
+
+  /// Trigger an immediate conversation list refresh.
+  /// Call this after sending a message or any operation that changes
+  /// the conversation list so the sender's chat list updates right away.
+  static void triggerConversationRefresh() {
+    _convRefreshController.add(null);
   }
 
-  // Stream.periodic delays the first tick by [period]. Yield once immediately
-  // so the chat list is not stuck on a skeleton for 30 seconds.
+  /// Internal: return a stream that emits a refetch event whenever
+  /// [triggerConversationRefresh] is called or every 5 seconds as a fallback.
+  static Stream<void> _conversationChanges() async* {
+    // Merge manual triggers with a periodic poll (5 seconds, down from 30).
+    final triggerStream = _convRefreshController.stream;
+    final pollStream = Stream.periodic(const Duration(seconds: 5));
+
+    // Simple merge using two subscriptions.
+    final merged = StreamController<void>.broadcast();
+    triggerStream.listen(merged.add);
+    pollStream.listen((_) => merged.add(null));
+
+    // Emit an initial event immediately so the first refetch happens right away.
+    merged.add(null);
+    yield* merged.stream;
+  }
+
+  // For backward compatibility
+  static Future<List<Conversation>> fetchConversations() async {
+    // Parse the union result into separate lists
+    final dynamic result = await fetchConversationsWithCircles();
+    if (result is List) {
+      return result
+          .whereType<Map<String, dynamic>>()
+          .where((r) => !r['is_circle'] as bool? ?? false)
+          .map((r) => Conversation(
+                id: r['conversation_id'] as String,
+                createdAt: DateTime.parse(r['created_at'] as String),
+                updatedAt: DateTime.parse(r['updated_at'] as String),
+                peerId: r['peer_id'] as String?,
+                peerUsername: r['peer_username'] as String?,
+                peerDisplayName: r['peer_display_name'] as String?,
+                peerAvatarUrl: r['peer_avatar_url'] as String?,
+                lastMessage: r['last_message'] as String?,
+                lastMessageAt:
+                    r['last_message_at'] == null
+                        ? null
+                        : DateTime.parse(r['last_message_at'] as String),
+                unreadCount: (r['unread_count'] as num?)?.toInt() ?? 0,
+                isLocked: (r['is_locked'] as bool?) ?? false,
+              ))
+          .toList();
+    }
+    return [];
+  }
+
+  /// Watch conversations with realtime updates.
+  /// Yields immediately, then refetches whenever messages, conversations,
+  /// or conversation_participants change (via Supabase Realtime).
   static Stream<List<Conversation>> watchConversations() async* {
     yield await fetchConversations();
-    yield* Stream.periodic(const Duration(seconds: 30))
-        .asyncMap((_) => fetchConversations());
+    yield* _conversationChanges().asyncMap((_) => fetchConversations());
   }
 
   // Messages
@@ -692,6 +796,10 @@ class Supa {
               }
             } catch (_) {}
           }
+
+          // Fetch E2EE key for this conversation (cached after first call)
+          final e2eeKey = await getConversationKey(conversationId);
+
           final now = DateTime.now();
           return rows
               .where((r) =>
@@ -701,11 +809,18 @@ class Supa {
               .map((r) {
                 final id = r['id'] as String;
                 final msg = Message.fromJson(r);
+                // Decrypt the content if it was encrypted
+                String content = msg.content;
+                final decrypted = decryptMessageContent(
+                    conversationId, msg.content, e2eeKey);
+                if (decrypted != null) {
+                  content = decrypted;
+                }
                 return Message(
                   id: msg.id,
                   conversationId: msg.conversationId,
                   senderId: msg.senderId,
-                  content: msg.content,
+                  content: content,
                   createdAt: msg.createdAt,
                   readAt: msg.readAt,
                   expiresAt: msg.expiresAt,
@@ -731,17 +846,48 @@ class Supa {
     );
   }
 
-  static Future<void> markRead(String conversationId, String messageId) async {
-    // Use the new SECURITY DEFINER RPC that handles read receipts atomically
+  /// Mark all unread inbound messages in [conversationId] as read.
+  /// Inserts read receipts into [message_reads] so the sender can see
+  /// the peer has read the messages (blue double-check).
+  static Future<void> markRead(String conversationId) async {
     await client.rpc('mark_messages_read', params: {
       'p_conversation_id': conversationId,
     });
   }
 
   static Future<void> updateMessage(String messageId, String content) async {
+    // Fetch current row to get conversation_id for re-encryption
+    final current = await client
+        .from('messages')
+        .select('content,conversation_id')
+        .eq('id', messageId)
+        .single();
+    final previousContent = current['content'] as String;
+    final conversationId = current['conversation_id'] as String;
+    // Re-encrypt the new content
+    final encryptedContent =
+        await encryptForConversation(conversationId, content);
+    // Record edit history (store the encrypted content for consistency)
+    await client.from('message_edit_history').insert({
+      'message_id': messageId,
+      'previous_content': previousContent,
+      'new_content': encryptedContent,
+    });
+    // Update the message (trigger sets edited_at)
     await client
         .from('messages')
-        .update({'content': content}).eq('id', messageId);
+        .update({'content': encryptedContent}).eq('id', messageId);
+  }
+
+  /// Fetch the edit history for a message.
+  static Future<List<Map<String, dynamic>>> fetchEditHistory(
+      String messageId) async {
+    final result = await client
+        .from('message_edit_history')
+        .select('previous_content, new_content, edited_at')
+        .eq('message_id', messageId)
+        .order('edited_at', ascending: true);
+    return List<Map<String, dynamic>>.from(result as List);
   }
 
   static Future<void> setMessagePinned(String messageId, bool pinned,
@@ -823,6 +969,32 @@ class Supa {
     return duration == Duration.zero ? null : duration;
   }
 
+  // ===== Drafts =====
+
+  /// Save a draft for the current user in a conversation.
+  static Future<void> saveDraft(String conversationId, String text) async {
+    final me = currentUser;
+    if (me == null) return;
+    await client.from('conversation_participants').upsert({
+      'conversation_id': conversationId,
+      'user_id': me.id,
+      'draft': text.isEmpty ? null : text,
+    }, onConflict: 'conversation_id,user_id');
+  }
+
+  /// Load the saved draft for the current user in a conversation.
+  static Future<String?> loadDraft(String conversationId) async {
+    final me = currentUser;
+    if (me == null) return null;
+    final row = await client
+        .from('conversation_participants')
+        .select('draft')
+        .eq('conversation_id', conversationId)
+        .eq('user_id', me.id)
+        .single();
+    return row['draft'] as String?;
+  }
+
   // Realtime typing broadcast on the conversation's private channel.
   // Send over the joined websocket (not HTTP) and pulse while the peer types.
   static const _typingEvent = 'typing';
@@ -874,233 +1046,133 @@ class Supa {
     if (channel != null) client.removeChannel(channel);
   }
 
-  // ===== Reactions =====
+  // ===== Reactions (delegated) =====
 
-  static Future<void> addReaction(String messageId, String emoji) async {
-    final me = currentUser;
-    if (me == null) return;
-    await client.from('message_reactions').upsert({
-      'message_id': messageId,
-      'user_id': me.id,
-      'emoji': emoji,
-    }, onConflict: 'message_id,user_id,emoji', ignoreDuplicates: true);
-  }
+  static Future<void> addReaction(String messageId, String emoji) =>
+      reactions.Reactions.add(messageId, emoji);
 
-  static Future<void> removeReaction(String messageId, String emoji) async {
-    final me = currentUser;
-    if (me == null) return;
-    await client
-        .from('message_reactions')
-        .delete()
-        .eq('message_id', messageId)
-        .eq('user_id', me.id)
-        .eq('emoji', emoji);
-  }
+  static Future<void> removeReaction(String messageId, String emoji) =>
+      reactions.Reactions.remove(messageId, emoji);
 
-  static Future<List<Map<String, dynamic>>> getReactions(String messageId) async {
-    final res = await client
-        .from('message_reactions')
-        .select('emoji,user_id,created_at')
-        .eq('message_id', messageId)
-        .order('created_at', ascending: true);
-    return (res as List).cast<Map<String, dynamic>>();
-  }
+  static Future<List<Map<String, dynamic>>> getReactions(String messageId) =>
+      reactions.Reactions.getAll(messageId);
 
-  static Stream<List<Map<String, dynamic>>> watchReactions(String messageId) {
-    return client
-        .from('message_reactions')
-        .stream(primaryKey: ['id'])
-        .eq('message_id', messageId)
-        .map((rows) => rows.toList());
-  }
+  static Stream<List<Map<String, dynamic>>> watchReactions(String messageId) =>
+      reactions.Reactions.watch(messageId);
 
-  // ===== Reply-to =====
+  // ===== Reply-to (delegated) =====
 
-  // Anti-spam protection
-  static DateTime? _lastMessageTime;
-  static int _messageCountInWindow = 0;
-  static const int _maxMessagesPerMinute = 30;
-  static const int _maxMessageLength = 4000;
-
-  static bool _checkRateLimit() {
-    final now = DateTime.now();
-    if (_lastMessageTime == null ||
-        now.difference(_lastMessageTime!).inMinutes >= 1) {
-      _lastMessageTime = now;
-      _messageCountInWindow = 1;
-      return true;
-    }
-    if (_messageCountInWindow >= _maxMessagesPerMinute) {
-      return false;
-    }
-    _messageCountInWindow++;
-    return true;
-  }
-
-  static bool _containsSuspiciousLinks(String content) {
-    // Check for known URL shorteners / spam domains
-    final suspiciousPatterns = [
-      r'bit\.ly',
-      r'tinyurl\.com',
-      r't\.co',
-      r'goo\.gl',
-      r'is\.gd',
-      r'v\.gd',
-      r'ow\.ly',
-      r'buff\.ly',
-      r'adf\.ly',
-      r'bc\.vc',
-      r'cutt\.ly',
-      r'shorte\.st',
-      r'clicky\.me',
-      r'tr\.im',
-    ];
-    for (final pattern in suspiciousPatterns) {
-      if (RegExp(pattern, caseSensitive: false).hasMatch(content)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  static String? _validateMessageContent(String content) {
-    if (content.trim().isEmpty) {
-      return 'Write a little something before sending.';
-    }
-    if (content.length > _maxMessageLength) {
-      return "That's a bit long — try shortening it to $_maxMessageLength characters.";
-    }
-    if (!_checkRateLimit()) {
-      return "You're sending a bit fast. Take a breath and try again in a moment.";
-    }
-    if (_containsSuspiciousLinks(content)) {
-      return "That message looks like it might be unsafe, so we held it back.";
-    }
-    return null;
-  }
+  static String? validateMessageContent(String content) =>
+      message_safety.MessageSafety.validateContent(content);
 
   static Future<Message> sendMessageWithReply({
     required String conversationId,
     required String content,
     String? replyToId,
     Duration? expiry,
-  }) async {
-    // Anti-spam validation
-    final validationError = _validateMessageContent(content);
-    if (validationError != null) {
-      throw StateError(validationError);
-    }
-    final me = currentUser!;
-    final now = DateTime.now().toUtc();
+  }) =>
+      message_safety.MessageSafety.send(
+        conversationId: conversationId,
+        content: content,
+        replyToId: replyToId,
+        expiry: expiry,
+      );
 
-    final insert = {
-      'conversation_id': conversationId,
-      'sender_id': me.id,
-      'content': content,
-      'created_at': now.toIso8601String(),
-      if (replyToId != null) 'reply_to_id': replyToId,
-      if (expiry != null && expiry > Duration.zero)
-        'expires_at': now.add(expiry).toIso8601String(),
-    };
+  static Future<Message?> getReplyPreview(String messageId) =>
+      message_safety.MessageSafety.getReplyPreview(messageId);
 
-    final res = await client.from('messages').insert(insert).select().single();
+  // ===== Read Receipts (delegated) =====
 
-    // conversations.last_message_at is not on older schemas; a DB trigger
-    // now maintains it. Never fail the send if the bump 400s.
-    try {
-      await client
-          .from('conversations')
-          .update({'updated_at': now.toIso8601String()}).eq('id', conversationId);
-    } catch (_) {}
+  static Future<bool> getReadReceiptsEnabled() =>
+      read_receipts.ReadReceipts.isEnabled();
 
-    return Message.fromJson(res);
-  }
+  static Future<void> setReadReceiptsEnabled(bool enabled) =>
+      read_receipts.ReadReceipts.setEnabled(enabled);
 
-  static Future<Message?> getReplyPreview(String messageId) async {
-    final res = await client
-        .from('messages')
-        .select('id,content,sender_id')
-        .eq('id', messageId)
-        .maybeSingle();
-    if (res == null) return null;
-    return Message.fromJson(res);
-  }
+  // ===== Block/Report (delegated) =====
 
-  // ===== Read Receipts (enhanced) =====
+  static Future<void> blockUser(String userId) =>
+      block_report.BlockReport.block(userId);
 
-  static Future<bool> getReadReceiptsEnabled() async {
-    final me = currentUser;
-    if (me == null) return true;
-    final profile = await getProfile(me.id);
-    return profile?.readReceiptsEnabled ?? true;
-  }
+  static Future<void> unblockUser(String userId) =>
+      block_report.BlockReport.unblock(userId);
 
-  static Future<void> setReadReceiptsEnabled(bool enabled) async {
-    final me = currentUser;
-    if (me == null) return;
-    await client
-        .from('profiles')
-        .update({'read_receipts_enabled': enabled})
-        .eq('id', me.id);
-  }
+  static Future<bool> isUserBlocked(String userId) =>
+      block_report.BlockReport.isBlocked(userId);
 
-  // ===== Block/Report =====
-
-  static Future<void> blockUser(String userId) async {
-    final me = currentUser;
-    if (me == null) return;
-    await client.from('blocked_users').upsert({
-      'blocker_id': me.id,
-      'blocked_id': userId,
-    }, onConflict: 'blocker_id,blocked_id', ignoreDuplicates: true);
-  }
-
-  static Future<void> unblockUser(String userId) async {
-    final me = currentUser;
-    if (me == null) return;
-    await client
-        .from('blocked_users')
-        .delete()
-        .eq('blocker_id', me.id)
-        .eq('blocked_id', userId);
-  }
-
-  static Future<bool> isUserBlocked(String userId) async {
-    final me = currentUser;
-    if (me == null) return false;
-    final res = await client
-        .from('blocked_users')
-        .select('blocked_id')
-        .eq('blocker_id', me.id)
-        .eq('blocked_id', userId)
-        .maybeSingle();
-    return res != null;
-  }
-
-  static Future<List<String>> getBlockedUserIds() async {
-    final me = currentUser;
-    if (me == null) return [];
-    final res = await client
-        .from('blocked_users')
-        .select('blocked_id')
-        .eq('blocker_id', me.id);
-    return (res as List).map((e) => e['blocked_id'] as String).toList();
-  }
+  static Future<List<String>> getBlockedUserIds() =>
+      block_report.BlockReport.blockedIds();
 
   static Future<void> reportUser({
     required String userId,
     required String reason,
     String? details,
-  }) async {
-    final me = currentUser;
-    if (me == null) return;
-    await client.from('user_reports').insert({
-      'reporter_id': me.id,
-      'reported_id': userId,
-      'reason': reason,
-      'details': details,
-      'created_at': DateTime.now().toIso8601String(),
-    });
+  }) =>
+      block_report.BlockReport.report(
+        userId: userId,
+        reason: reason,
+        details: details,
+      );
+
+  // ===== E2EE Helpers =====
+
+  /// Look up the peer user ID for a 1:1 conversation.
+  static Future<String?> getPeerUserId(String conversationId) async {
+    try {
+      final me = currentUser?.id;
+      if (me == null) return null;
+      final res = await client
+          .from('conversation_participants')
+          .select('user_id')
+          .eq('conversation_id', conversationId)
+          .neq('user_id', me);
+      if ((res as List).isEmpty) return null;
+      return res.first['user_id'] as String;
+    } catch (_) {
+      return null;
+    }
   }
 
+  /// Encrypt plaintext for a conversation, or return the original plaintext
+  /// if encryption is not available (fallback for backward compatibility).
+  static Future<String> encryptForConversation(
+    String conversationId,
+    String plaintext,
+  ) async {
+    try {
+      final me = currentUser?.id;
+      if (me == null) return plaintext;
+      final peer = await getPeerUserId(conversationId);
+      if (peer == null) return plaintext;
+      final key = await e2ee.getOrDeriveKey(conversationId, me, peer);
+      return e2ee.encrypt(key, plaintext);
+    } catch (_) {
+      return plaintext;
+    }
+  }
+
+  /// Decrypt a message's content, falling back to the original if decryption
+  /// fails (e.g. the message was sent before E2EE was enabled).
+  static String? decryptMessageContent(
+    String conversationId,
+    String content,
+    String? key,
+  ) {
+    if (key == null || key.isEmpty) return null;
+    if (!e2ee.isEncrypted(content)) return null;
+    return e2ee.decrypt(key, content);
+  }
+
+  /// Get or derive the E2EE key for a conversation.
+  static Future<String?> getConversationKey(String conversationId) async {
+    try {
+      final me = currentUser?.id;
+      if (me == null) return null;
+      final peer = await getPeerUserId(conversationId);
+      if (peer == null) return null;
+      return await e2ee.getOrDeriveKey(conversationId, me, peer);
+    } catch (_) {
+      return null;
+    }
+  }
 }

@@ -67,11 +67,12 @@ class AppLock {
 
   static String hashPin(String pin) {
     final bytes = utf8.encode('bro.lock.v1|$pin');
-    var hash = 0xcbf29ce484222325;
+    // FNV-1a 32-bit hash - works on both native and web (JS-safe integers)
+    var hash = 0x811c9dc5;
     for (final byte in bytes) {
       hash ^= byte;
-      hash = (hash * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF;
+      hash = (hash * 0x01000193) & 0xFFFFFFFF;
     }
-    return hash.toRadixString(16);
+    return hash.toRadixString(16).padLeft(8, '0');
   }
 }
