@@ -121,7 +121,10 @@ class _StatusScreenState extends State<StatusScreen> {
               color: _C.primary,
               backgroundColor: _C.surface,
               onRefresh: () async {
-                // Stream already live; a short delay lets the indicator finish.
+                // Recreate the stream subscription (new ValueKey) so the list
+                // re-queries immediately instead of waiting on a realtime
+                // event that may never arrive.
+                setState(() => _token++);
                 await Future<void>.delayed(const Duration(milliseconds: 400));
               },
               child: ListView(
