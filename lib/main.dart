@@ -3910,7 +3910,7 @@ class _VoiceMessageState extends State<_VoiceMessage> {
     try {
       final raw = widget.content.substring(6);
       final parts = raw.split('/');
-      final last = parts.last.split('}')?.first ?? 'voice';
+      final last = parts.last.split('}').first;
       return '$last.m4a';
     } catch (_) {
       return 'voice note';
@@ -5011,7 +5011,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                             await AppLock.setEnabled(v);
                           }
                           if (v) {
-                            final seconds = _autoLockTimer?.inSeconds ?? 15;
+                            final seconds = _autoLockTimer == null ? 15 : _autoLockTimer.inSeconds;
                             await AppLock.setTimeoutSeconds(
                                 seconds == 0 ? 15 : seconds);
                           }
