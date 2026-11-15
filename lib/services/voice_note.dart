@@ -1,12 +1,14 @@
 // Voice notes.
+//
 // Record a short audio clip and send it as an attachment. The message content
-// is "voice:<uuid>" and targets the same private R2 bucket + signed download
-// link pattern that chat files already use (R2 Worker
-// /upload/attachment and /sign, plus chat-media-migrations.sql for the
-// bucket layout).
-// Storage path: <conversationIdSafe>/voice/<userId>/<uuid>.m4a
-// Limits: 60 s, 20 MB (same cap as chat files).
+// is "voice:" followed by a tiny JSON object carrying the storage object path
+// and mime type (same pattern chat files use). The audio file is stored in the
+// chat-files bucket as <conversationId>/voice/<userId>/<messageId>.m4a and can
+// be fetched with [Supa.attachmentUrl].
+//
+// Limits: 60 s, 20 MB.
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -27,32 +29,24 @@ class VoiceNoteService {
   static final _player = AudioPlayer();
 
   /// Temporary path of the in-progress recording.
-  static String get _tmpPath =>
-      'audioplayerscache/${_uuid.v4()}.m4a';
-
-  /// Current recording file, if any.
+  static String get _tmpPath => 'audioplayerscache/${_uuid.v4()}.m4a';
 
   /// Starts the microphone. Returns true if permission is granted and
   /// recording can begin.
   static Future<bool> start() async {
-    // Permission is handled by the UI before this is called; request it here
-    // as a safety net so the recorder never starts with denied input.
     final status = await Permission.microphone.request();
     if (status != PermissionStatus.granted) return false;
     try {
       await _recorder.stop();
-      await _recorder.start(
-        const RecordConfig(),
-        path: _tmpPath,
-      );
+      await _recorder.start(const RecordConfig(), path: _tmpPath);
       return true;
     } catch (_) {
       return false;
     }
   }
 
-  /// Stops recording and uploads the clip. Returns the message id, or ''
-  /// on failure (oversized clip or upload error).
+  /// Stops recording, uploads the clip, and sends it. Returns the message id,
+  /// or '' on failure (oversized clip or upload error).
   static Future<String> stopAndUpload(String conversationId) async {
     final path = await _recorder.stop();
     if (path == null || !File(path).existsSync()) return '';
@@ -64,11 +58,13 @@ class VoiceNoteService {
     }
 
     final messageId = _uuid.v4();
-    final objectPath = _objectPath(conversationId, bytes);
+    final objectPath = _objectPath(conversationId, messageId);
     try {
       await _uploadToStorage(objectPath, bytes, 'audio/m4a');
-      await _sendMessage(conversationId, 'voice:$messageId',
-          objectPath: objectPath);
+      // Mirror the chat-file pattern: content carries the object path so the
+      // receiving device can reconstruct the download URL without a schema
+      // migration or a separate table.
+      await _sendMessage(conversationId, 'voice:${jsonEncode(_voiceMeta(objectPath))}');
       return messageId;
     } catch (_) {
       await File(path).delete();
@@ -83,13 +79,32 @@ class VoiceNoteService {
       final source = UrlSource(url);
       await _player.setSource(source);
       await _player.play(source);
-    } catch (_) {}
+    } catch (_) {
+      // Silently ignore playback failures so audio errors never break the UI.
+    }
   }
 
-  static String _objectPath(String conversationId, List<int> bytes) {
+  static String _objectPath(String conversationId, String messageId) {
     final safe = conversationId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
-    final ext = 'm4a';
-    return '$safe/voice/${Supa.currentUser!.id}/$_uuid.v4.$ext';
+    return '$safe/voice/${Supa.currentUser!.id}/$messageId.m4a';
+  }
+
+  static Map<String, String> _voiceMeta(String objectPath) =>
+      {'path': objectPath, 'mime': 'audio/m4a'};
+
+  static Future<void> _sendMessage(String conversationId, String content) async {
+    final me = Supa.currentUser!.id;
+    final now = DateTime.now().toIso8601String();
+    await Supa.client.from('messages').insert({
+      'id': _uuid.v4(),
+      'conversation_id': conversationId,
+      'sender_id': me,
+      'content': content,
+      'created_at': now,
+    });
+    await Supa.client
+        .from('conversations')
+        .update({'updated_at': now}).eq('id', conversationId);
   }
 
   static Future<void> _uploadToStorage(
@@ -103,25 +118,7 @@ class VoiceNoteService {
         .from('chat-files')
         .createSignedUrl(objectPath, 3600);
     await _player.stop();
-    final source = UrlSource(url);
-    await _player.setSource(source);
-    await _player.play(source);
-  }
-
-  static Future<void> _sendMessage(
-      String conversationId, String content,
-      {required String objectPath}) async {
-    final me = Supa.currentUser!.id;
-    final now = DateTime.now().toIso8601String();
-    await Supa.client.from('messages').insert({
-      'id': _uuid.v4(),
-      'conversation_id': conversationId,
-      'sender_id': me,
-      'content': content,
-      'created_at': now,
-    });
-    await Supa.client
-        .from('conversations')
-        .update({'updated_at': now}).eq('id', conversationId);
+    await _player.setSource(UrlSource(url));
+    await _player.play(UrlSource(url));
   }
 }
