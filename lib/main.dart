@@ -2152,23 +2152,30 @@ class _ChatScreenState extends State<ChatScreen> {
                   const Text('Why are you reporting this person?',
                       style: TextStyle(color: _P.muted, fontSize: 13)),
                   const SizedBox(height: 8),
-                  for (final option in const [
-                    ('spam', 'Spam'),
-                    ('harassment', 'Harassment'),
-                    ('hate', 'Hate or abuse'),
-                    ('other', 'Something else'),
-                  ])
-                    RadioListTile<String>(
-                      dense: true,
-                      value: option.$1,
-                      groupValue: chosen,
-                      title: Text(option.$2,
-                          style: const TextStyle(color: _P.text)),
-                      onChanged: (v) {
-                        if (v == null) return;
-                        setLocal(() => chosen = v);
-                      },
+                  RadioGroup<String>(
+                    groupValue: chosen,
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setLocal(() => chosen = v);
+                    },
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final option in const [
+                          ('spam', 'Spam'),
+                          ('harassment', 'Harassment'),
+                          ('hate', 'Hate or abuse'),
+                          ('other', 'Something else'),
+                        ])
+                          RadioListTile<String>(
+                            dense: true,
+                            value: option.$1,
+                            title: Text(option.$2,
+                                style: const TextStyle(color: _P.text)),
+                          ),
+                      ],
                     ),
+                  ),
                   TextField(
                     controller: detailsCtrl,
                     maxLines: 3,
@@ -4133,6 +4140,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                         value: enabled,
                         onChanged: (v) async {
                           if (v && !await AppLock.hasPin()) {
+                            if (!context.mounted) return;
                             final set = await promptSetPin(context);
                             if (!set) return;
                           }
