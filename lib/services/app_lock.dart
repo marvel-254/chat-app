@@ -66,11 +66,17 @@ class AppLock {
   }
 
   static String hashPin(String pin) {
+    // FNV-1a 64-bit. BigInt keeps the arithmetic exact on the web, where JS
+    // numbers can't represent the 64-bit constants (dart2js compile error).
+    // Produces identical hashes to the previous int-based version, so
+    // existing saved PINs keep working.
     final bytes = utf8.encode('bro.lock.v1|$pin');
-    var hash = 0xcbf29ce484222325;
+    var hash = BigInt.parse('cbf29ce484222325', radix: 16);
+    final prime = BigInt.parse('100000001b3', radix: 16);
+    final mask = BigInt.parse('ffffffffffffffff', radix: 16);
     for (final byte in bytes) {
-      hash ^= byte;
-      hash = (hash * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF;
+      hash ^= BigInt.from(byte);
+      hash = (hash * prime) & mask;
     }
     return hash.toRadixString(16);
   }
