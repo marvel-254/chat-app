@@ -122,6 +122,11 @@ class _StatusComposerScreenState extends State<StatusComposerScreen> {
         privacy: _privacy,
       );
       if (!mounted) return;
+      // Confirm before navigating so the user knows the post landed even if
+      // the feed takes a moment to refresh.
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Status posted')),
+      );
       context.go('/status');
     } catch (e) {
       if (!mounted) return;

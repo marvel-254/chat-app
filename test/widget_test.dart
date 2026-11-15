@@ -54,9 +54,10 @@ void main() {
       formatPresenceLabel(now.subtract(const Duration(seconds: 20)), now: now),
       'online',
     );
+    // onlineFor is 60s, so anything under a minute still reads as online.
     expect(
       formatPresenceLabel(now.subtract(const Duration(seconds: 50)), now: now),
-      'last seen just now',
+      'online',
     );
     expect(
       formatPresenceLabel(now.subtract(const Duration(minutes: 8)), now: now),

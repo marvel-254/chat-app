@@ -67,8 +67,10 @@ class _StatusViewerScreenState extends State<StatusViewerScreen>
 
   Future<void> _load() async {
     try {
-      final posts = await Supa.watchStatuses().first.timeout(
-            const Duration(seconds: 8),
+      // One-shot REST fetch: the viewer doesn't need live updates, and this
+      // keeps it working even when the realtime channel is slow or down.
+      final posts = await Supa.fetchStatusesOnce().timeout(
+            const Duration(seconds: 10),
           );
       final mine = posts
           .where((p) => p.userId == widget.userId)
