@@ -5011,7 +5011,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                             await AppLock.setEnabled(v);
                           }
                           if (v) {
-                            final seconds = _autoLockTimer == null ? 15 : _autoLockTimer.inSeconds;
+                            final seconds = _autoLockTimer == null ? 15 : _autoLockTimer!.inSeconds;
                             await AppLock.setTimeoutSeconds(
                                 seconds == 0 ? 15 : seconds);
                           }
