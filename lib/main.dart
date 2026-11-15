@@ -4802,9 +4802,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       }
       _password.clear();
       _confirmPassword.clear();
+      await _loadProfile();
       _avatarFile = null;
       _avatarUrlOverride = null;
-      await _loadProfile();
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('Settings saved.')));
