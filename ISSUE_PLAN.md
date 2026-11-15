@@ -1,20 +1,16 @@
-# Issue Resolution & Design Plan
+# Security Issues and Hardening Plan
 
-## Goals
-1. Resolve critical issues #75, #79, #77, #70, #62, #81, #80, #78.
-2. Apply the newly created BRO Design System to all UI components.
-3. Prioritize security, core functionality, and high-end feel.
+## 1. Move Rate Limiting to Backend
+- **Observation**: `MessageSafety.validateContent` currently enforces rate-limiting on the client-side (Flutter). While this provides good UX, it is not a robust security control, as an attacker could bypass the client and interact directly with the Supabase API to flood the `messages` table.
+- **Priority**: Medium
+- **Recommended Fix**: Implement a `before insert` trigger on the `messages` table or an Edge Function that verifies the message frequency per `sender_id`. Use a tracking table to store `last_message_at` for each user.
 
-## Issue Queue
-- [ ] #79: Core Messaging — Refine UI, implement drafting and editing windows.
-- [ ] #75: End-to-End Encryption — Infrastructure check.
-- [ ] #77: Message Management — Edit/Delete functionality.
-- [ ] #70: App Lock — Secure authentication layer.
-- [ ] #62: Block/Report — Safety UI.
-- [ ] #81: Prevent Screenshots — Security policy.
-- [ ] #80: Emoji Reactions/Threads — Engagement.
-- [ ] #78: Rich Media — File/GIF/Sticker support.
+## 2. Transition E2EE to ECDH Key Exchange
+- **Observation**: The current E2EE service derives symmetric keys deterministically using `SHA-256(userIdA | userIdB)`. This provides encryption at rest, but lacks Perfect Forward Secrecy (PFS)—if a user's persistent identity key is compromised, all historical messages can be decrypted.
+- **Priority**: Low
+- **Recommended Fix**: Implement an Elliptic Curve Diffie-Hellman (ECDH) key exchange protocol for initial session establishment. This would allow each session to have unique ephemeral keys, protecting historical communication if long-term keys are leaked.
 
-## Design Integration
-- [ ] Port `Color` definitions from `_P` class in `main.dart` to use new tokens (mapped to `_P` static values).
-- [ ] Refactor UI widgets (Chat bubbles, Buttons, App Bar) to use new component classes.
+## 3. Continuous Audit of `SECURITY DEFINER` Functions
+- **Observation**: The app relies heavily on `SECURITY DEFINER` Postgres functions (e.g., `get_or_create_dm`) to bypass standard RLS for administrative operations.
+- **Priority**: Informational (Maintenance)
+- **Recommended Fix**: Establish a formal review step for all future `SECURITY DEFINER` functions in the `supabase/migrations/` CI pipeline. Ensure all new functions explicitly set `search_path = ''` to prevent search-path hijacking attacks, and strictly audit the input parameters for SQL injection.

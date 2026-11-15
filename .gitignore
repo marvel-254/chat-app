@@ -72,3 +72,6 @@ db-wal
 .agents/
 .claude/
 skills-lock.json
+
+# Local tooling build output
+graphify-out/

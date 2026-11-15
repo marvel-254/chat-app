@@ -7,7 +7,7 @@ plugins {
 
 // Release signing credentials. Kept out of version control (gitignored).
 // Generate once with:
-//   keytool -genkeypair -v -keystore release.keystore -alias nyx-release -keyalg RSA -keysize 2048 -validity 10000
+#   keytool -genkeypair -v -keystore release.keystore -alias bro-release -keyalg RSA -keysize 2048 -validity 10000
 // then write the values to key.properties next to this file.
 val keystorePropertiesFile = rootProject.file("app/key.properties")
 val keystoreProperties: Map<String, String> = if (keystorePropertiesFile.exists()) {
