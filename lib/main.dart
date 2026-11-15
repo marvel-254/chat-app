@@ -5,7 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' hide Presence;
+import 'package:supabase_flutter/supabase_flutter.dart'
+    hide Presence; // app's services/presence.dart takes precedence
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
@@ -2287,6 +2288,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       setLocal(() => chosen = v);
                     },
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         for (final option in const [
                           ('spam', 'Spam'),
@@ -5007,6 +5009,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                               if (!set) return;
                             }
                             await AppLock.setEnabled(v);
+                          }
                           }
                           if (v) {
                             final seconds = _autoLockTimer?.inSeconds ?? 15;

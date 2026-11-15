@@ -330,8 +330,10 @@ class Supa {
                 activeRows.map((r) => r['user_id'] as String).toSet().toList();
             final profilesMap = <String, Map<String, dynamic>>{};
             if (userIds.isNotEmpty) {
-              final profs =
-                  await client.from('visible_profiles').select().filter('id', 'in', userIds);
+              final profs = await client
+                  .from('visible_profiles')
+                  .select()
+                  .filter('id', 'in', userIds);
               for (final p in profs as List) {
                 profilesMap[p['id'] as String] = p as Map<String, dynamic>;
               }
@@ -341,8 +343,9 @@ class Supa {
               rowWithProfile['profiles'] = profilesMap[r['user_id']];
               return StatusPost.fromJson(rowWithProfile);
             }).toList();
-          } catch (e) {
-            // If profile fetch fails, return statuses without profile data
+          } catch (_) {
+            // If the profile fetch fails, still return the statuses so the
+            // feed never goes blank just because avatars/names are missing.
             final now = DateTime.now();
             return rows.where((r) {
               final exp = DateTime.tryParse(r['expires_at'] as String? ?? '');
@@ -351,8 +354,43 @@ class Supa {
                 .toList();
           }
         })
-        // Prevent stream errors from bubbling up to UI
-        .handleError((_) => <StatusPost>[]);
+        // Never let a channel error kill the stream silently.
+        .handleError((_) {});
+  }
+
+  /// One-shot fetch of active statuses via a plain REST query.
+  /// Used where a realtime stream is overkill or unreliable (e.g. the viewer).
+  static Future<List<StatusPost>> fetchStatusesOnce() async {
+    final rows = await client
+        .from('statuses')
+        .select()
+        .order('created_at', ascending: false);
+    final now = DateTime.now();
+    final activeRows = rows.where((r) {
+      final exp = DateTime.tryParse(r['expires_at'] as String? ?? '');
+      return exp != null && exp.isAfter(now);
+    }).toList();
+    final userIds =
+        activeRows.map((r) => r['user_id'] as String).toSet().toList();
+    final profilesMap = <String, Map<String, dynamic>>{};
+    if (userIds.isNotEmpty) {
+      try {
+        final profs = await client
+            .from('visible_profiles')
+            .select()
+            .filter('id', 'in', userIds);
+        for (final p in profs as List) {
+          profilesMap[p['id'] as String] = p as Map<String, dynamic>;
+        }
+      } catch (_) {
+        // Profiles are decorative here; statuses still render without them.
+      }
+    }
+    return activeRows.map((r) {
+      final rowWithProfile = Map<String, dynamic>.from(r);
+      rowWithProfile['profiles'] = profilesMap[r['user_id']];
+      return StatusPost.fromJson(rowWithProfile);
+    }).toList();
   }
 
   static Future<void> deleteStatus(String statusId) async {
