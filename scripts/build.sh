@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local build wrapper for NYX.
+# Local build wrapper for BRO.
 #
 # Auto-loads build config from the gitignored .env.local and injects it as
 # --dart-define values, so you never pass the Supabase key (or any secret) on
@@ -30,17 +30,41 @@ if [[ -f .env.local ]]; then
 fi
 
 TARGET="${1:-apk}"
+# Base href for the PWA. Local dev defaults to /app/; CI (GitHub Pages
+# project site) passes e.g. /chat-app/app/ via BASE_HREF env var.
+BASE_HREF="${BASE_HREF:-/app/}"
 case "$TARGET" in
   apk)
     flutter build apk --release --split-per-abi "${DEFINES[@]}"
     ;;
   web)
-    flutter build web --release "${DEFINES[@]}"
+    # Build Flutter web app with base-href for the PWA subdirectory
+    flutter build web --release --base-href "$BASE_HREF" "${DEFINES[@]}"
+    # Move compiled Flutter app into build/web/app/ (PWA lives under /app/)
+    mkdir -p build/web/app
+    for entry in $(ls build/web); do
+      if [ "$entry" != "app" ]; then
+        mv "build/web/$entry" "build/web/app/$entry"
+      fi
+    done
+    # Copy landing page and assets to build/web/ root
+    mkdir -p build/web/css build/web/icons build/web/assets build/web/legal
+    cp web/index-landing.html build/web/index.html
+    cp web/index.html build/web/app.html
+    cp web/manifest.json web/robots.txt web/sitemap.xml web/llms.txt web/design-system.html web/favicon.png build/web/ 2>/dev/null || true
+    cp web/service-worker.js build/web/app/service-worker.js 2>/dev/null || true
+    cp -r web/css/. build/web/css/
+    cp -r web/icons/. build/web/icons/
+    cp -r web/assets/. build/web/assets/
+    cp -r web/legal/. build/web/legal/
+    # Landing page app link points to the PWA at /app/ (index-landing.html edited inline below)
+    sed -i 's|href="design-system.html"|href="design-system.html"|g' build/web/index.html 2>/dev/null || true
     ;;
   --help|-h)
     echo "Usage: ./scripts/build.sh [apk|web]"
     echo "  apk (default): release APK, split per ABI, secrets from .env"
-    echo "  web:           web release build, secrets from .env"
+    echo "  web:           web release build (landing page + PWA at /app/), secrets from .env"
+    echo "  Env: BASE_HREF defaults to /app/ (override for project-site subpaths)"
     ;;
   *)
     echo "Unknown target: $TARGET (use: apk, web, --help)" >&2
