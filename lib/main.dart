@@ -4802,9 +4802,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       }
       _password.clear();
       _confirmPassword.clear();
+      await _loadProfile();
       _avatarFile = null;
       _avatarUrlOverride = null;
-      await _loadProfile();
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('Settings saved.')));
@@ -5001,17 +5001,15 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                         ),
                         value: enabled,
                         onChanged: (v) async {
-                          if (v) {
-                            final ctx = context;
-                            if (!await AppLock.hasPin()) {
-                              if (!mounted) return;
-                              final set = await promptSetPin(ctx);
-                              if (!set) return;
-                            }
-                            await AppLock.setEnabled(v);
+                          if (v && !await AppLock.hasPin()) {
+                            if (!context.mounted) return;
+                            final set = await promptSetPin(context);
+                            if (!set) return;
                           }
+                          await AppLock.setEnabled(v);
                           if (v) {
-                            final seconds = _autoLockTimer?.inSeconds ?? 15;
+                            final seconds =
+                                _autoLockTimer?.inSeconds ?? 15;
                             await AppLock.setTimeoutSeconds(
                                 seconds == 0 ? 15 : seconds);
                           }

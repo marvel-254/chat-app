@@ -542,6 +542,10 @@ class Supa {
     final publicUrl = client.storage.from('avatars').getPublicUrl(objectPath);
     // Cache-bust so peers and this device pick up the new object immediately.
     // peer_avatar_url is RPC output only — never write it onto participants.
+    // The canonical write target is `profiles` (itself). The UI reads
+    // `visible_profiles` (a live view over `profiles` that re-implements the
+    // privacy masking), so this row update is reflected in every chat list,
+    // chat header, and settings view without any denormalised columns.
     final url = '$publicUrl?v=${DateTime.now().millisecondsSinceEpoch}';
     await client.from('profiles').update({
       'avatar_url': url,
