@@ -51,7 +51,7 @@ create or replace function public.create_circle(
 )
 returns uuid
 language sql
-stable
+volatile
 security definer
 set search_path = ''
 as $$
@@ -70,7 +70,7 @@ $$;
 create or replace function public.join_circle(p_circle_id uuid)
 returns void
 language sql
-stable
+volatile
 security definer
 set search_path = ''
 as $$
@@ -83,7 +83,7 @@ $$;
 create or replace function public.leave_circle(p_circle_id uuid)
 returns void
 language sql
-stable
+volatile
 security definer
 set search_path = ''
 as $$
@@ -91,7 +91,7 @@ as $$
   where circle_id = p_circle_id and user_id = auth.uid();
 $$;
 
--- Get circles for the current user
+-- Get circles for the current user: circles they belong to plus public ones
 create or replace function public.get_user_circles(
   p_user_id uuid default auth.uid()
 )
@@ -112,21 +112,8 @@ stable
 security definer
 set search_path = ''
 as $$
-  with circle_data as (
-    select
-      c.id as circle_id,
-      c.name,
-      c.description,
-      c.avatar_path,
-      c.is_private,
-      c.creator_id,
-      c.created_at,
-      c.updated_at
-    from public.circles c
-    where c.id = any($1)
-  )
   select
-    c.circle_id,
+    c.id as circle_id,
     c.name,
     c.description,
     c.avatar_path,
@@ -135,18 +122,23 @@ as $$
     c.created_at,
     c.updated_at,
     (
-      select count(*)
+      select count(*)::int
       from public.circle_participants cp
-      where cp.circle_id = c.circle_id
+      where cp.circle_id = c.id
     ) as member_count,
-    (
-      select exists (
-        select 1
-        from public.circle_participants
-        where circle_id = c.circle_id and user_id = auth.uid()
-      )
+    exists (
+      select 1
+      from public.circle_participants cp_me
+      where cp_me.circle_id = c.id and cp_me.user_id = auth.uid()
     ) as is_member
-  from circle_data c;
+  from public.circles c
+  where c.is_private = false
+     or c.creator_id = auth.uid()
+     or exists (
+       select 1 from public.circle_participants cp_me
+       where cp_me.circle_id = c.id and cp_me.user_id = auth.uid()
+     )
+  order by c.created_at desc;
 $$;
 
 -- Get all members of a circle
@@ -165,19 +157,14 @@ security definer
 set search_path = ''
 as $$
   select
-    p.user_id,
-    vd.display_name,
-    p.username,
-    val.avatar_url,
+    cp.user_id,
+    vp.display_name,
+    vp.username,
+    vp.avatar_url,
     cp.joined_at,
     cp.is_admin
   from public.circle_participants cp
-  join public.profiles p on p.id = cp.user_id
-  left join public.visible_profiles vd on vd.id = cp.user_id
-  left join (
-    select id, '$' || username as avatar_url
-    from public.profiles
-  ) val on val.id = cp.user_id
+  join public.visible_profiles vp on vp.id = cp.user_id
   where cp.circle_id = p_circle_id
   order by cp.is_admin desc nulls last, cp.joined_at;
 $$;
@@ -205,7 +192,7 @@ create policy "Circle owners can delete circles"
   on public.circles for delete
   using (creator_id = auth.uid());
 
--- Circle participants: users can see members they're in
+-- Circle participants: members see co-members; public circles are open
 create policy "Members can view circle participants"
   on public.circle_participants for select
   using (
@@ -213,9 +200,10 @@ create policy "Members can view circle participants"
     or exists (
       select 1
       from public.circles c
-      where c.id = custom.circle_participants.circle_id
+      where c.id = circle_participants.circle_id
         and (
           c.is_private = false
+          or c.creator_id = auth.uid()
           or exists (
             select 1
             from public.circle_participants cp_self
