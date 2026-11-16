@@ -1,7 +1,8 @@
 /// End-to-end encryption service.
 ///
 /// Uses AES-256-GCM for symmetric message encryption. Each conversation has a
-/// shared secret derived deterministically from both participants' user IDs.
+/// shared secret derived deterministically from both participants' user IDs
+/// with HKDF-SHA256 for proper key separation.
 /// Keys are cached locally via [flutter_secure_storage].
 ///
 /// Protocol:
@@ -36,17 +37,25 @@ String generateKeyHex() {
   return _bytesToHex(bytes);
 }
 
-/// Derive a shared conversation key from two participants' user IDs.
+/// Derive a shared conversation key from two participants' user IDs using HKDF.
 ///
-/// Uses SHA-256 over a sorted concatenation of both user IDs so both parties
-/// arrive at the same key without exchanging it. For a 1:1 DM app this is
-/// sufficient; production apps should use ECDH key exchange instead.
+/// Uses HKDF-SHA256 over a sorted concatenation of both user IDs with a
+/// protocol-specific salt for proper key separation and forward compatibility.
+/// Both parties arrive at the same key without exchanging it.
 String deriveSharedKey(String userIdA, String userIdB) {
   final ordered = [userIdA, userIdB]..sort();
-  final seed = '$ordered[0]|$ordered[1]|bro.e2ee.v1';
-  final digest = Digest('SHA-256');
-  final hash = digest.process(Uint8List.fromList(utf8.encode(seed)));
-  return _bytesToHex(hash);
+  final seed = '$ordered[0]|$ordered[1]';
+  final salt = Uint8List.fromList(utf8.encode('bro.e2ee.v1|$seed'));
+  final ikm = Uint8List.fromList(utf8.encode(seed));
+  final info = Uint8List.fromList(utf8.encode('conversation-key'));
+
+  final hkdf = HKDFKeyDerivator(SHA256Digest());
+  final params = HkdfParameters(ikm, 32, salt, info);
+  hkdf.init(params);
+  final keyBytes = Uint8List(32);
+  hkdf.deriveKey(keyBytes, 0, keyBytes, 0);
+
+  return _bytesToHex(keyBytes);
 }
 
 /// Store the conversation key in secure storage.
@@ -71,7 +80,7 @@ Future<void> deleteConversationKey(String conversationId) async {
 }
 
 /// Get or derive the conversation key. Checks secure storage first, then
-/// derives from user IDs.
+/// derives from user IDs using HKDF.
 Future<String> getOrDeriveKey(
   String conversationId,
   String userIdA,

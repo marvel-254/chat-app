@@ -41,7 +41,7 @@ class AppLock {
   }
 
   static Future<int> timeoutSeconds() async =>
-      (await _prefs).getInt(timeoutKey) ?? 15;
+      (await _prefs).getInt(timeoutKey) ?? 60; // Default to 1 minute to match settings
 
   static Future<void> setTimeoutSeconds(int seconds) async =>
       (await _prefs).setInt(timeoutKey, seconds);

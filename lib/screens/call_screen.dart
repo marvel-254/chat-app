@@ -212,13 +212,23 @@ class _CallScreenState extends State<CallScreen> {
   @override
   void dispose() {
     if (!_finished) {
-      unawaited(_send('hangup', const {}));
-      unawaited(_localStream?.dispose());
-      unawaited(_peerConnection?.close());
+      // Fire-and-forget teardown; silence errors since the app is shutting
+      // down this screen and there's no context to surface them.
+      unawaited(_send('hangup', const {}).catchError((_) {}));
+      final localStream = _localStream;
+      if (localStream != null) {
+        unawaited(localStream.dispose().catchError((_) {}));
+      }
+      final peerConnection = _peerConnection;
+      if (peerConnection != null) {
+        unawaited(peerConnection.close().catchError((_) {}));
+      }
       final channel = _channel;
-      if (channel != null) unawaited(Supa.client.removeChannel(channel));
-      unawaited(_localRenderer.dispose());
-      unawaited(_remoteRenderer.dispose());
+      if (channel != null) {
+        unawaited(Supa.client.removeChannel(channel).catchError((_) => ''));
+      }
+      unawaited(_localRenderer.dispose().catchError((_) {}));
+      unawaited(_remoteRenderer.dispose().catchError((_) {}));
     }
     super.dispose();
   }

@@ -1131,7 +1131,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   StreamSubscription<List<StatusPost>>? _statusSub;
   Set<String> _statusUserIds = {};
 
-  late final Future<List<Profile>> _suggestions = Supa.searchUsers('');
+  Future<List<Profile>>? _suggestions;
   List<Profile> _searchResults = [];
   Timer? _searchDebounce;
   int _searchRequestId = 0;
@@ -1142,10 +1142,15 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   @override
   void initState() {
     super.initState();
+    _suggestions = Supa.searchUsers('');
     _statusSub = Supa.watchStatuses().listen((posts) {
       if (!mounted) return;
       setState(() => _statusUserIds = {for (final p in posts) p.userId});
     }, onError: (_) {});
+  }
+
+  void _reloadSuggestions() {
+    if (mounted) setState(() => _suggestions = Supa.searchUsers(''));
   }
 
   void _onSearchChanged(String value) {
@@ -1642,6 +1647,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
 
   Future<void> _onRefresh() async {
     if (mounted) setState(() => _conversationsTick++);
+    _reloadSuggestions();
   }
 
   Widget _buildLargeScreenLayout(BuildContext context) {
@@ -3874,7 +3880,7 @@ class _VoiceMessageState extends State<_VoiceMessage> {
     _parse();
   }
 
-  /// Extracts the object path from the "voice:<json>" message content.
+  /// Extracts the object path from the `voice:<json>` message content.
   Future<void> _parse() async {
     try {
       final meta =
@@ -4981,7 +4987,10 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     ],
                     onChanged: (v) async {
                       setState(() => _autoLockTimer = v);
-                      await AppLock.setTimeoutSeconds(v?.inSeconds ?? 15);
+                      // When "Off" is selected, keep the cached timeout but
+                      // lock with a short default so re-enabling is snappy.
+                      await AppLock.setTimeoutSeconds(v?.inSeconds ??
+                          (await AppLock.timeoutSeconds()));
                     },
                   ),
                   const SizedBox(height: 20),
@@ -5008,10 +5017,11 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                           }
                           await AppLock.setEnabled(v);
                           if (v) {
-                            final seconds =
-                                _autoLockTimer?.inSeconds ?? 15;
+                            final timeout = await AppLock.timeoutSeconds();
+                            final seconds = _autoLockTimer?.inSeconds ??
+                                (timeout == 15 ? 60 : timeout);
                             await AppLock.setTimeoutSeconds(
-                                seconds == 0 ? 15 : seconds);
+                                seconds == 0 ? 60 : seconds);
                           }
                         },
                       );

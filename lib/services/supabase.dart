@@ -397,6 +397,57 @@ class Supa {
     await client.from('statuses').delete().eq('id', statusId);
   }
 
+  /// Record a view for a status (upsert to handle duplicate views gracefully)
+  static Future<void> recordStatusView(String statusId) async {
+    try {
+      await client.from('status_views').upsert(
+        {
+          'status_id': statusId,
+          'viewer_id': currentUser!.id,
+          'viewed_at': DateTime.now().toUtc().toIso8601String(),
+        },
+        onConflict: 'status_id,viewer_id',
+        ignoreDuplicates: true,
+      );
+    } catch (_) {
+      // Silently fail - view tracking is best-effort
+    }
+  }
+
+  /// Get view count for a status
+  static Future<int> getStatusViewCount(String statusId) async {
+    try {
+      final res = await client
+          .from('status_views')
+          .select('id')
+          .eq('status_id', statusId);
+      return (res as List).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Get viewers for a status (for the owner)
+  static Future<List<Profile>> getStatusViewers(String statusId) async {
+    try {
+      final rows = await client
+          .from('status_views')
+          .select('viewer_id')
+          .eq('status_id', statusId);
+      final ids = (rows as List).map((r) => r['viewer_id'] as String).toList();
+      if (ids.isEmpty) return [];
+      final profs = await client
+          .from('visible_profiles')
+          .select()
+          .filter('id', 'in', ids);
+      return (profs as List)
+          .map((p) => Profile.fromJson(p as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   static Future<String> uploadStatusMedia(
       Uint8List bytes, String filename) async {
     if (bytes.length > 5 * 1024 * 1024) {
@@ -765,7 +816,7 @@ class Supa {
     if (result is List) {
       return result
           .whereType<Map<String, dynamic>>()
-          .where((r) => !r['is_circle'] as bool? ?? false)
+          .where((r) => !(r['is_circle'] as bool? ?? false))
           .map((r) => Conversation(
                 id: r['conversation_id'] as String,
                 createdAt: DateTime.parse(r['created_at'] as String),

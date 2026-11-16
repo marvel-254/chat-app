@@ -128,6 +128,9 @@ class _StatusComposerScreenState extends State<StatusComposerScreen> {
         const SnackBar(content: Text('Status posted')),
       );
       context.go('/status');
+    } on ArgumentError catch (e) {
+      if (!mounted) return;
+      _toast(e.message);
     } catch (e) {
       if (!mounted) return;
       _toast(friendlyErrorMessage(e,

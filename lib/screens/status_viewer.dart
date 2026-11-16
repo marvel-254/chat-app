@@ -82,7 +82,11 @@ class _StatusViewerScreenState extends State<StatusViewerScreen>
         _loading = false;
         _error = mine.isEmpty ? 'This status expired.' : null;
       });
-      if (mine.isNotEmpty) _progress.forward(from: 0);
+      if (mine.isNotEmpty) {
+          _progress.forward(from: 0);
+          // Record view for the first status
+          unawaited(Supa.recordStatusView(mine.first.id));
+        }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -103,6 +107,7 @@ class _StatusViewerScreenState extends State<StatusViewerScreen>
     if (_index + 1 < _posts.length) {
       setState(() => _index++);
       _progress.forward(from: 0);
+      unawaited(Supa.recordStatusView(_posts[_index].id));
       return;
     }
     final ids = widget.peerUserIds.where((id) => id != widget.userId).toList();
@@ -123,6 +128,7 @@ class _StatusViewerScreenState extends State<StatusViewerScreen>
     if (_index > 0) {
       setState(() => _index--);
       _progress.forward(from: 0);
+      unawaited(Supa.recordStatusView(_posts[_index].id));
       return;
     }
     final pos = widget.peerUserIds.indexOf(widget.userId);
