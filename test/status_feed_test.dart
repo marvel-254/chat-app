@@ -86,6 +86,7 @@ void main() {
   test('privacy labels', () {
     expect(statusPrivacyLabel('everyone'), 'Everyone');
     expect(statusPrivacyLabel('followers'), 'Followers');
+    expect(statusPrivacyLabel('close_friends'), 'Close friends');
     expect(statusPrivacyLabel('contacts'), 'Contacts');
   });
 }

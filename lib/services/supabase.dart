@@ -173,7 +173,8 @@ class Supa {
     };
     // Only include if explicitly set (not null) to avoid overwriting with '0 seconds'
     if (defaultMessageExpiry != null) {
-      updates['default_message_expiry'] = _intervalLiteral(defaultMessageExpiry);
+      updates['default_message_expiry'] =
+          _intervalLiteral(defaultMessageExpiry);
     }
     if (autoLockTimer != null) {
       updates['auto_lock_timer'] = _intervalLiteral(autoLockTimer);
@@ -212,8 +213,7 @@ class Supa {
     if (follow) {
       await client.from('user_follows').upsert(
           {'follower_id': currentUser!.id, 'followed_id': userId},
-          onConflict: 'follower_id,followed_id',
-          ignoreDuplicates: true);
+          onConflict: 'follower_id,followed_id', ignoreDuplicates: true);
     } else {
       await client
           .from('user_follows')
@@ -266,11 +266,14 @@ class Supa {
           (res as List).map((row) => row['follower_id'] as String).toList();
       if (ids.isEmpty) return [];
 
-      var profileQuery = client.from('visible_profiles').select().filter('id', 'in', ids) as dynamic;
+      var profileQuery = client
+          .from('visible_profiles')
+          .select()
+          .filter('id', 'in', ids) as dynamic;
       final term = sanitizeSearchTerm(search ?? '');
       if (term.isNotEmpty) {
-        profileQuery = profileQuery.or(
-            'username.ilike.%$term%,display_name.ilike.%$term%');
+        profileQuery = profileQuery
+            .or('username.ilike.%$term%,display_name.ilike.%$term%');
       }
       final profs = await profileQuery;
       return (profs as List)
@@ -300,11 +303,14 @@ class Supa {
           (res as List).map((row) => row['followed_id'] as String).toList();
       if (ids.isEmpty) return [];
 
-      var profileQuery = client.from('visible_profiles').select().filter('id', 'in', ids) as dynamic;
+      var profileQuery = client
+          .from('visible_profiles')
+          .select()
+          .filter('id', 'in', ids) as dynamic;
       final term = sanitizeSearchTerm(search ?? '');
       if (term.isNotEmpty) {
-        profileQuery = profileQuery.or(
-            'username.ilike.%$term%,display_name.ilike.%$term%');
+        profileQuery = profileQuery
+            .or('username.ilike.%$term%,display_name.ilike.%$term%');
       }
       final profs = await profileQuery;
       return (profs as List)
@@ -312,6 +318,33 @@ class Supa {
           .toList();
     } catch (_) {
       return [];
+    }
+  }
+
+  static Future<List<String>> getCloseFriendIds() async {
+    final me = currentUser;
+    if (me == null) return [];
+    final rows = await client
+        .from('close_friend_members')
+        .select('friend_id')
+        .eq('owner_id', me.id);
+    return (rows as List).map((row) => row['friend_id'] as String).toList();
+  }
+
+  static Future<void> setCloseFriend(String friendId, bool selected) async {
+    final me = currentUser;
+    if (me == null || me.id == friendId) return;
+    if (selected) {
+      await client.from('close_friend_members').upsert({
+        'owner_id': me.id,
+        'friend_id': friendId,
+      }, onConflict: 'owner_id,friend_id');
+    } else {
+      await client
+          .from('close_friend_members')
+          .delete()
+          .eq('owner_id', me.id)
+          .eq('friend_id', friendId);
     }
   }
 
@@ -365,10 +398,13 @@ class Supa {
             // If the profile fetch fails, still return the statuses so the
             // feed never goes blank just because avatars/names are missing.
             final now = DateTime.now();
-            return rows.where((r) {
-              final exp = DateTime.tryParse(r['expires_at'] as String? ?? '');
-              return exp != null && exp.isAfter(now);
-            }).map((r) => StatusPost.fromJson(Map<String, dynamic>.from(r)))
+            return rows
+                .where((r) {
+                  final exp =
+                      DateTime.tryParse(r['expires_at'] as String? ?? '');
+                  return exp != null && exp.isAfter(now);
+                })
+                .map((r) => StatusPost.fromJson(Map<String, dynamic>.from(r)))
                 .toList();
           }
         })
@@ -687,8 +723,7 @@ class Supa {
 
   // Conversations
   static Future<List<dynamic>> fetchConversationsWithCircles() async {
-    final dynamic result = await client
-        .rpc('get_all_conversations_for_user');
+    final dynamic result = await client.rpc('get_all_conversations_for_user');
     if (result is List) {
       return result.cast<dynamic>();
     }
@@ -852,10 +887,9 @@ class Supa {
                 peerDisplayName: r['peer_display_name'] as String?,
                 peerAvatarUrl: r['peer_avatar_url'] as String?,
                 lastMessage: r['last_message'] as String?,
-                lastMessageAt:
-                    r['last_message_at'] == null
-                        ? null
-                        : DateTime.parse(r['last_message_at'] as String),
+                lastMessageAt: r['last_message_at'] == null
+                    ? null
+                    : DateTime.parse(r['last_message_at'] as String),
                 unreadCount: (r['unread_count'] as num?)?.toInt() ?? 0,
                 isLocked: (r['is_locked'] as bool?) ?? false,
               ))
@@ -924,34 +958,33 @@ class Supa {
               .where((r) =>
                   !hiddenIds.contains(r['id'] as String) &&
                   (r['expires_at'] == null ||
-                  DateTime.parse(r['expires_at'] as String).isAfter(now)))
+                      DateTime.parse(r['expires_at'] as String).isAfter(now)))
               .map((r) {
-                final id = r['id'] as String;
-                final msg = Message.fromJson(r);
-                // Decrypt the content if it was encrypted
-                String content = msg.content;
-                final decrypted = decryptMessageContent(
-                    conversationId, msg.content, e2eeKey);
-                if (decrypted != null) {
-                  content = decrypted;
-                }
-                return Message(
-                  id: msg.id,
-                  conversationId: msg.conversationId,
-                  senderId: msg.senderId,
-                  content: content,
-                  createdAt: msg.createdAt,
-                  readAt: msg.readAt,
-                  expiresAt: msg.expiresAt,
-                  pinnedAt: msg.pinnedAt,
-                  editedAt: msg.editedAt,
-                  originalContent: msg.originalContent,
-                  readByPeer: readByPeerSet.contains(id) || msg.readAt != null,
-                  replyToId: msg.replyToId,
-                  reactions: reactionsMap[id] ?? [],
-                );
-              })
-              .toList();
+            final id = r['id'] as String;
+            final msg = Message.fromJson(r);
+            // Decrypt the content if it was encrypted
+            String content = msg.content;
+            final decrypted =
+                decryptMessageContent(conversationId, msg.content, e2eeKey);
+            if (decrypted != null) {
+              content = decrypted;
+            }
+            return Message(
+              id: msg.id,
+              conversationId: msg.conversationId,
+              senderId: msg.senderId,
+              content: content,
+              createdAt: msg.createdAt,
+              readAt: msg.readAt,
+              expiresAt: msg.expiresAt,
+              pinnedAt: msg.pinnedAt,
+              editedAt: msg.editedAt,
+              originalContent: msg.originalContent,
+              readByPeer: readByPeerSet.contains(id) || msg.readAt != null,
+              replyToId: msg.replyToId,
+              reactions: reactionsMap[id] ?? [],
+            );
+          }).toList();
         });
   }
 
@@ -1042,10 +1075,14 @@ class Supa {
 
     if (diff > const Duration(hours: 1)) {
       // Soft delete - replace content with "This message was deleted"
-      await client.from('messages').update({
-        'content': 'This message was deleted',
-        'edited_at': now.toIso8601String(),
-      }).eq('id', messageId).eq('sender_id', senderId);
+      await client
+          .from('messages')
+          .update({
+            'content': 'This message was deleted',
+            'edited_at': now.toIso8601String(),
+          })
+          .eq('id', messageId)
+          .eq('sender_id', senderId);
     } else {
       // Hard delete within 1 hour
       await client
@@ -1130,8 +1167,7 @@ class Supa {
       'is_typing': isTyping,
     };
     try {
-      await channel.sendBroadcastMessage(
-          event: _typingEvent, payload: payload);
+      await channel.sendBroadcastMessage(event: _typingEvent, payload: payload);
     } catch (_) {
       try {
         await channel.httpSend(event: _typingEvent, payload: payload);

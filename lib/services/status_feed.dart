@@ -28,14 +28,17 @@ List<StatusThread> groupStatusFeed(List<StatusPost> posts, String myId) {
     ..sort((a, b) => b.last.createdAt.compareTo(a.last.createdAt));
 
   return [
-    if (mine != null && mine.isNotEmpty) StatusThread(userId: myId, posts: mine),
-    ...others.map((list) => StatusThread(userId: list.first.userId, posts: list)),
+    if (mine != null && mine.isNotEmpty)
+      StatusThread(userId: myId, posts: mine),
+    ...others
+        .map((list) => StatusThread(userId: list.first.userId, posts: list)),
   ];
 }
 
 String statusPrivacyLabel(String privacy) => switch (privacy) {
       'everyone' => 'Everyone',
       'followers' => 'Followers',
+      'close_friends' => 'Close friends',
       _ => 'Contacts',
     };
 

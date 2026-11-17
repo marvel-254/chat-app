@@ -30,7 +30,7 @@ import 'screens/auth/confirmation_screen.dart';
 import 'screens/chat/conversation_list_screen.dart';
 import 'screens/chat/chat_screen.dart';
 import 'screens/settings/account_settings_screen.dart';
-
+import 'screens/settings/close_friends_screen.dart';
 
 // Set the restart callback so auth_gate.dart can restart the app without importing BroApp
 void _restartApp() {
@@ -59,7 +59,8 @@ void main() async {
       if (uri == null ||
           !uri.hasAuthority ||
           uri.host.isEmpty ||
-          uri.host == 'your-project.supabase.co' || // stale placeholder build (#48)
+          uri.host ==
+              'your-project.supabase.co' || // stale placeholder build (#48)
           !const {'https', 'http'}.contains(uri.scheme) ||
           supabaseKey.isEmpty) {
         runApp(const BackendConfigurationApp());
@@ -79,9 +80,6 @@ void main() async {
     },
   );
 }
-
-
-
 
 class _P {
   static const bg = app_colors.bg;
@@ -186,6 +184,9 @@ final _router = GoRouter(
     ),
     GoRoute(
         path: '/settings', builder: (_, __) => const AccountSettingsScreen()),
+    GoRoute(
+        path: '/settings/close-friends',
+        builder: (_, __) => const CloseFriendsScreen()),
     GoRoute(
         path: '/call/:conversationId',
         builder: (_, state) => CallScreen(
@@ -403,7 +404,8 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
             snackBarTheme: SnackBarThemeData(
               backgroundColor: _P.surfaceHigh,
               contentTextStyle: const TextStyle(color: _P.text),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
               behavior: SnackBarBehavior.floating,
             ),
             dividerTheme: DividerThemeData(
@@ -414,7 +416,8 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
             floatingActionButtonTheme: FloatingActionButtonThemeData(
               backgroundColor: _P.primary,
               foregroundColor: _P.darkOnAccent,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
               elevation: 4,
             ),
             textTheme: const TextTheme(
@@ -434,4 +437,3 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
     );
   }
 }
-

@@ -161,6 +161,8 @@ class _StatusComposerScreenState extends State<StatusComposerScreen> {
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'everyone', child: Text('Everyone')),
               PopupMenuItem(value: 'contacts', child: Text('Contacts')),
+              PopupMenuItem(
+                  value: 'close_friends', child: Text('Close friends')),
               PopupMenuItem(value: 'followers', child: Text('Followers')),
             ],
             child: Padding(
@@ -217,7 +219,8 @@ class _StatusComposerScreenState extends State<StatusComposerScreen> {
                       decoration: const InputDecoration(
                         counterText: '',
                         hintText: 'Tap to write…',
-                        hintStyle: TextStyle(color: Colors.white54, fontSize: 24),
+                        hintStyle:
+                            TextStyle(color: Colors.white54, fontSize: 24),
                         border: InputBorder.none,
                       ),
                     ),
@@ -228,14 +231,15 @@ class _StatusComposerScreenState extends State<StatusComposerScreen> {
                   children: [
                     for (final mood in _moods)
                       GestureDetector(
-                        onTap: () => setState(
-                            () => _mood = _mood == mood ? null : mood),
+                        onTap: () =>
+                            setState(() => _mood = _mood == mood ? null : mood),
                         child: CircleAvatar(
                           radius: 20,
                           backgroundColor: _mood == mood
                               ? _C.primary.withValues(alpha: 0.35)
                               : Colors.black38,
-                          child: Text(mood, style: const TextStyle(fontSize: 18)),
+                          child:
+                              Text(mood, style: const TextStyle(fontSize: 18)),
                         ),
                       ),
                   ],
@@ -282,8 +286,8 @@ class _StatusComposerScreenState extends State<StatusComposerScreen> {
                         const SizedBox(width: 8),
                         IconButton.filledTonal(
                           tooltip: 'Change colour',
-                          onPressed: () =>
-                              setState(() => _wash = (_wash + 1) % _washes.length),
+                          onPressed: () => setState(
+                              () => _wash = (_wash + 1) % _washes.length),
                           icon: const Icon(Icons.palette_outlined),
                         ),
                       ],
@@ -296,8 +300,7 @@ class _StatusComposerScreenState extends State<StatusComposerScreen> {
                           disabledBackgroundColor: Colors.white24,
                         ),
                         icon: _posting
-                            ? const BroSpinner(
-                                size: 16, color: _C.darkOnAccent)
+                            ? const BroSpinner(size: 16, color: _C.darkOnAccent)
                             : const Icon(Icons.send),
                         label: const Text('Post',
                             style: TextStyle(fontWeight: FontWeight.w800)),

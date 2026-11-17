@@ -328,6 +328,16 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                         if (v != null) setState(() => _aboutVisibility = v);
                       }),
                   const SizedBox(height: 20),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.star_outline),
+                    title: const Text('Close friends'),
+                    subtitle: const Text(
+                        'Choose who can see statuses shared with your private list'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push('/settings/close-friends'),
+                  ),
+                  const SizedBox(height: 8),
                   Text('Messages',
                       style: TextStyle(
                           color: _P.muted, fontWeight: FontWeight.w600)),
@@ -383,8 +393,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       setState(() => _autoLockTimer = v);
                       // When "Off" is selected, keep the cached timeout but
                       // lock with a short default so re-enabling is snappy.
-                      await AppLock.setTimeoutSeconds(v?.inSeconds ??
-                          (await AppLock.timeoutSeconds()));
+                      await AppLock.setTimeoutSeconds(
+                          v?.inSeconds ?? (await AppLock.timeoutSeconds()));
                     },
                   ),
                   const SizedBox(height: 20),
