@@ -163,6 +163,27 @@ Comprehensive end-to-end UI overhaul and motion polish across the client:
   - Cohesive dark Material 3 dialogs and bottom sheets.
 - **Verification**: `flutter test` passed all 20 tests; `flutter analyze` zero errors.
 
+### Polished onboarding flow (v1.3.3)
+
+The single-page onboarding screen was replaced with a **3-page swipeable onboarding flow** with animations and visual polish.
+
+**What changed:**
+- **3 onboarding pages** instead of 1 static screen:
+  1. "For the people who feel like home." — conversation artwork with message tiles and voice note preview
+  2. "Your circle. Your rules." — animated orbiting avatars around a central group node with connection lines
+  3. "Private. Instant. Yours." — breathing shield icon with floating ENCRYPTED/INSTANT/VERIFIED badges
+- **Staggered entrance animations** on each page: title fades/slides in first, then subtitle, then artwork (800ms total)
+- **Ambient background glow** — a subtle radial gradient that slowly orbits behind all pages
+- **Page indicators** — pill-shaped dots at the bottom that animate width on the active page
+- **"Skip" button** — top-right corner lets users bypass onboarding entirely
+- **Dynamic CTA button** — shows "Next →" on pages 1–2, "Get started 🚀" on page 3
+- **Smooth page transitions** — 350ms `easeOutCubic` curve between pages
+
+**Files changed:**
+- `lib/screens/auth/onboarding_screen.dart` — complete rewrite (~1280 lines), added `_OnboardingPage`, `_CircleArtwork`, `_PrivacyArtwork`, `_AmbientGlowPainter`, `_OrbitAvatar`, `_CircleLinesPainter`, `_FeatureBadge`
+
+**Verification:** `flutter analyze` 0 errors; all 20 tests pass.
+
 ### Improved auto-updater (v1.3.0)
 
 The auto-updater in `lib/services/app_update.dart` was rewritten to provide a seamless in-app update experience for sideloaded APKs.

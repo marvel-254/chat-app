@@ -14,17 +14,21 @@ import '../../widgets/status_ring_avatar.dart';
 import '../../widgets/home_nav_bar.dart';
 import '../../services/push_notifications.dart';
 import '../../ui/motion.dart';
+import '../../widgets/search_highlight.dart';
 
 const _adaptiveBreakpoint = app_colors.adaptiveBreakpoint;
 
 class _P {
   static const surface = app_colors.surface;
   static const surfaceHigh = app_colors.surfaceHigh;
+  static const surfaceLow = app_colors.surfaceLow;
   static const border = app_colors.border;
   static const text = app_colors.text;
   static const muted = app_colors.muted;
   static const primary = app_colors.volt;
   static const darkOnAccent = app_colors.darkOnVolt;
+  static const success = app_colors.success;
+  static const bg = app_colors.bg;
 }
 
 class _ErrorState extends StatelessWidget {
@@ -131,7 +135,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     });
     if (query.isEmpty) return;
 
-    _searchDebounce = Timer(const Duration(milliseconds: 250), () async {
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () async {
       if (!mounted || requestId != _searchRequestId) return;
       setState(() => _searchLoading = true);
       try {
@@ -163,6 +167,17 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     _search.dispose();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  void _clearSearch() {
+    _search.clear();
+    _onSearchChanged('');
+    _searchFocusNode.requestFocus();
+  }
+
+  void _onSearchResultTap(Profile user) {
+    FocusScope.of(context).unfocus();
+    _startDM(user);
   }
 
   Widget _conversationAvatar(BuildContext context, Conversation conv) {
@@ -290,7 +305,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
               focusNode: _searchFocusNode,
               style: const TextStyle(color: _P.text, fontSize: 14),
               decoration: InputDecoration(
-                hintText: 'Search people or username...',
+                hintText: 'Search people or @username...',
                 hintStyle: TextStyle(
                     color: _P.muted.withValues(alpha: 0.7), fontSize: 14),
                 prefixIcon: const Icon(Icons.search_rounded,
@@ -303,78 +318,93 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                     ? IconButton(
                         icon: const Icon(Icons.clear_rounded,
                             color: _P.muted, size: 20),
-                        onPressed: () {
-                          _search.clear();
-                          _onSearchChanged('');
-                        },
+                        onPressed: _clearSearch,
+                        tooltip: 'Clear search',
                       )
                     : null,
               ),
               onChanged: _onSearchChanged,
+              onTapOutside: (_) => _searchFocusNode.unfocus(),
             ),
           ),
         ),
-        if (_search.text.trim().isNotEmpty && _searchLoading)
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: LinearProgressIndicator(
-              minHeight: 2,
-              color: _P.primary,
-              backgroundColor: _P.surfaceHigh,
-            ),
-          ),
-        if (_search.text.trim().isNotEmpty && _searchError != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(_searchError!,
-                style: const TextStyle(color: _P.muted, height: 1.35)),
-          ),
-        if (_search.text.trim().isNotEmpty &&
-            _searchCompleted &&
-            _searchError == null &&
-            _searchResults.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text('No users found.', style: TextStyle(color: _P.muted)),
-          ),
-        if (_search.text.trim().isNotEmpty && _searchResults.isNotEmpty) ...[
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text('Users',
-                style: TextStyle(
-                    color: _P.muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600)),
-          ),
-          SizedBox(
-            height: (_searchResults.length * 72.0).clamp(72.0, 288.0),
-            child: ListView.builder(
-              itemCount: _searchResults.length,
-              itemBuilder: (context, index) {
-                final u = _searchResults[index];
-                return ListTile(
-                  leading: GestureDetector(
-                    onTap: () => context.push('/profile/${u.id}'),
-                    child: Avatar(
-                        name: u.peerInitial, url: u.avatarUrl, size: 44),
-                  ),
-                  title: Text(u.label, style: const TextStyle(color: _P.text)),
-                  subtitle: Text('@${u.username}',
-                      style: TextStyle(color: _P.muted, fontSize: 13)),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.person_outline, size: 20),
-                    color: _P.muted,
-                    tooltip: 'View profile',
-                    onPressed: () => context.push('/profile/${u.id}'),
-                  ),
-                  onTap: () => _startDM(u),
-                );
-              },
-            ),
-          ),
-          const Divider(height: 1),
-        ],
+        AnimatedSize(
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+          child: _search.text.trim().isEmpty
+              ? const SizedBox.shrink()
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Loading skeleton
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      child: _searchLoading
+                          ? Padding(
+                              key: const ValueKey('loading'),
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              child: _SearchSkeleton(),
+                            )
+                          : const SizedBox(key: ValueKey('no-loading'), height: 0),
+                    ),
+                    // Error state
+                    if (_searchError != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+                        child: _SearchError(
+                          message: _searchError!,
+                          onRetry: () => _onSearchChanged(_search.text),
+                        ),
+                      ),
+                    // Empty state
+                    if (_searchCompleted &&
+                        _searchError == null &&
+                        _searchResults.isEmpty)
+                      _SearchEmptyState(
+                        query: _search.text.trim(),
+                        onClear: _clearSearch,
+                      ),
+                    // Search results
+                    if (_searchResults.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+                        child: Text(
+                          'People',
+                          style: TextStyle(
+                              color: _P.muted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.4),
+                        ),
+                      ),
+                      ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _searchResults.length,
+                        padding: const EdgeInsets.only(bottom: 8),
+                        itemBuilder: (context, index) {
+                          final u = _searchResults[index];
+                          final isOnline = Presence.isOnline(u.id);
+                          return FadeSlideIn(
+                            index: index.clamp(0, 7),
+                            child: _SearchResultTile(
+                              user: u,
+                              query: _search.text,
+                              isOnline: isOnline,
+                              onTap: () => _onSearchResultTap(u),
+                              onProfileTap: () =>
+                                  context.push('/profile/${u.id}'),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+        ),
         if (_search.text.trim().isEmpty)
           FutureBuilder<List<Profile>>(
             future: _suggestions,
@@ -382,71 +412,44 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
               final people = snapshot.data ?? const <Profile>[];
               if (people.isEmpty) return const SizedBox.shrink();
               return SizedBox(
-                height: 116,
+                height: 128,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
-                      child: Text(
-                        'People you may know',
-                        style: TextStyle(
-                          color: _P.muted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      child: Row(
+                        children: [
+                          Text(
+                            'People you may know',
+                            style: TextStyle(
+                              color: _P.muted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Icon(Icons.psychology_outlined,
+                              size: 13, color: _P.muted.withValues(alpha: 0.6)),
+                        ],
                       ),
                     ),
                     Expanded(
                       child: ListView(
                         scrollDirection: Axis.horizontal,
                         padding: const EdgeInsets.symmetric(horizontal: 12),
+                        physics: const BouncingScrollPhysics(),
                         children: [
                           for (int idx = 0; idx < people.take(8).length; idx++)
                             FadeSlideIn(
                               index: idx,
                               offset: const Offset(0.08, 0),
-                              child: Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: PressScale(
-                                  scaleFactor: 0.94,
-                                  onTap: () => _startDM(people[idx]),
-                                  onLongPress: () =>
-                                      context.push('/profile/${people[idx].id}'),
-                                  child: SizedBox(
-                                    width: 76,
-                                    child: Column(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.all(2),
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                              color: _P.primary.withValues(alpha: 0.35),
-                                              width: 1.5,
-                                            ),
-                                          ),
-                                          child: Avatar(
-                                            name: people[idx].peerInitial,
-                                            url: people[idx].avatarUrl,
-                                            size: 44,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 5),
-                                        Text(
-                                          '@${people[idx].username}',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            color: _P.text,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
+                              child: _SuggestionTile(
+                                user: people[idx],
+                                onTap: () => _startDM(people[idx]),
+                                onLongPress: () =>
+                                    context.push('/profile/${people[idx].id}'),
                               ),
                             ),
                         ],
@@ -496,9 +499,53 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                           'Give it another try — they usually come right back.',
                       onRetry: () => setState(() => _conversationsTick++));
                 }
-                final conversations = snapshot.data ?? [];
-                Presence.setListPeers(conversations.map((c) => c.peerId));
-                if (conversations.isEmpty) {
+                final allConversations = snapshot.data ?? [];
+                Presence.setListPeers(allConversations.map((c) => c.peerId));
+                final filterQuery = _search.text.trim().toLowerCase();
+                final conversations = filterQuery.isEmpty
+                    ? allConversations
+                    : allConversations
+                        .where((c) =>
+                            c.peerLabel
+                                .toLowerCase()
+                                .contains(filterQuery) ||
+                            (c.peerUsername
+                                    ?.toLowerCase()
+                                    .contains(filterQuery) ??
+                                false))
+                        .toList();
+                if (conversations.isEmpty && allConversations.isNotEmpty) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.search_off_rounded,
+                              color: _P.muted, size: 40),
+                          const SizedBox(height: 14),
+                          Text(
+                            'No chats match\n"${_search.text.trim()}"',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                color: _P.text,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                height: 1.4),
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Try searching by username above to find them.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                color: _P.muted, fontSize: 13, height: 1.4),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+                if (allConversations.isEmpty) {
                   return Center(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -571,13 +618,19 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                                 title: Row(
                                   children: [
                                     Expanded(
-                                      child: Text(
-                                        conv.peerLabel,
+                                      child: SearchHighlightText(
+                                        text: conv.peerLabel,
+                                        query: _search.text,
                                         style: TextStyle(
                                           color: _P.text,
                                           fontWeight: unread
                                               ? FontWeight.w700
                                               : FontWeight.w600,
+                                          fontSize: 15,
+                                        ),
+                                        highlightStyle: const TextStyle(
+                                          color: _P.primary,
+                                          fontWeight: FontWeight.w700,
                                           fontSize: 15,
                                         ),
                                         maxLines: 1,
@@ -709,6 +762,346 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   Future<void> _onRefresh() async {
     if (mounted) setState(() => _conversationsTick++);
     _reloadSuggestions();
+  }
+
+  // ===== Search UI Components =====
+
+  /// Skeleton loader for search results.
+  Widget _SearchSkeleton() {
+    final scheme = Theme.of(context).colorScheme;
+    final block = scheme.onSurface.withValues(alpha: 0.08);
+    return Column(
+      children: List.generate(4, (index) {
+        return Shimmer(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(color: block, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 140,
+                        height: 14,
+                        decoration: BoxDecoration(
+                          color: block,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        width: 100,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: block,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  /// Error state for search.
+  Widget _SearchError({required String message, required VoidCallback onRetry}) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _P.muted.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _P.muted.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off_rounded, color: _P.muted, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(color: _P.muted, fontSize: 13, height: 1.4),
+            ),
+          ),
+          TextButton(
+            onPressed: onRetry,
+            style: TextButton.styleFrom(
+              foregroundColor: _P.primary,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            ),
+            child: const Text('Retry', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Empty state for search results.
+  Widget _SearchEmptyState({required String query, required VoidCallback onClear}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 32),
+      child: Column(
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: _P.surfaceHigh,
+              shape: BoxShape.circle,
+              border: Border.all(color: _P.border.withValues(alpha: 0.3)),
+            ),
+            child: Icon(Icons.person_search_rounded, color: _P.muted, size: 32),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'No results for "$query"',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: _P.text,
+              fontWeight: FontWeight.w600,
+              fontSize: 16,
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Try a different name or @username',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: _P.muted, fontSize: 13, height: 1.4),
+          ),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: onClear,
+            icon: const Icon(Icons.clear_rounded, size: 18),
+            label: const Text('Clear search', style: TextStyle(fontWeight: FontWeight.w600)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _P.primary,
+              side: BorderSide(color: _P.primary.withValues(alpha: 0.5)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Individual search result tile.
+  Widget _SearchResultTile({
+    required Profile user,
+    required String query,
+    required bool isOnline,
+    required VoidCallback onTap,
+    required VoidCallback onProfileTap,
+  }) {
+    return PressScale(
+      scaleFactor: 0.98,
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: _P.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _P.border.withValues(alpha: 0.25)),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  // Avatar with online indicator
+                  GestureDetector(
+                    onTap: onProfileTap,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Avatar(
+                          name: user.peerInitial,
+                          url: user.avatarUrl,
+                          size: 48,
+                        ),
+                        if (isOnline)
+                          Positioned(
+                            right: -2,
+                            bottom: -2,
+                            child: Container(
+                              width: 14,
+                              height: 14,
+                              decoration: BoxDecoration(
+                                color: _P.success,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: _P.bg, width: 2),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _P.success.withValues(alpha: 0.4),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 1),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Name and username
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SearchHighlightText(
+                          text: user.label,
+                          query: query,
+                          style: const TextStyle(
+                            color: _P.text,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15.5,
+                          ),
+                          highlightStyle: const TextStyle(
+                            color: _P.primary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15.5,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 3),
+                        SearchHighlightText(
+                          text: '@${user.username}',
+                          query: query,
+                          style: TextStyle(color: _P.muted, fontSize: 12.5),
+                          highlightStyle: TextStyle(
+                            color: _P.primary.withValues(alpha: 0.85),
+                            fontSize: 12.5,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Message button
+                  PressScale(
+                    scaleFactor: 0.92,
+                    onTap: onTap,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _P.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: _P.primary.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.chat_bubble_outline_rounded,
+                              size: 16, color: _P.primary),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'Message',
+                            style: TextStyle(
+                              color: _P.primary,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Suggestion tile for 'People you may know' section.
+  Widget _SuggestionTile({
+    required Profile user,
+    required VoidCallback onTap,
+    required VoidCallback onLongPress,
+  }) {
+    final isOnline = Presence.isOnline(user.id);
+    return PressScale(
+      scaleFactor: 0.94,
+      onTap: onTap,
+      onLongPress: onLongPress,
+      child: SizedBox(
+        width: 78,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: _P.primary.withValues(alpha: 0.3),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Avatar(
+                    name: user.peerInitial,
+                    url: user.avatarUrl,
+                    size: 46,
+                  ),
+                ),
+                if (isOnline)
+                  Positioned(
+                    right: -2,
+                    bottom: -2,
+                    child: Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: _P.success,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: _P.bg, width: 2),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '@${user.username}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _P.text,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildLargeScreenLayout(BuildContext context) {
