@@ -54,6 +54,34 @@ class PendingMessage {
   /// doesn't evaporate before it can be retried.
   static Duration? defaultExpiry() => const Duration(hours: 24);
 
+  Map<String, dynamic> toJson() => {
+        'local_id': localId,
+        'conversation_id': conversationId,
+        'sender_id': senderId,
+        'content': content,
+        'created_at': createdAt.toIso8601String(),
+        'expires_at': expiresAt?.toIso8601String(),
+        'reply_to_id': replyToId,
+        'status': status,
+        'retry_count': retryCount,
+      };
+
+  factory PendingMessage.fromJson(Map<String, dynamic> json) {
+    return PendingMessage(
+      localId: json['local_id'] as String,
+      conversationId: json['conversation_id'] as String,
+      senderId: json['sender_id'] as String,
+      content: json['content'] as String,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      expiresAt: json['expires_at'] == null
+          ? null
+          : DateTime.parse(json['expires_at'] as String),
+      replyToId: json['reply_to_id'] as String?,
+      status: json['status'] as String? ?? 'queued',
+      retryCount: (json['retry_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+
   PendingMessage copyWith({
     String? localId,
     String? conversationId,

@@ -13,6 +13,8 @@ import 'package:uuid/uuid.dart';
 import '../../theme/app_colors.dart' as app_colors;
 import '../../services/supabase.dart';
 import '../../services/presence.dart';
+import '../../services/connection_monitor.dart';
+import '../../services/message_outbox.dart';
 import '../../services/voice_note.dart';
 import '../../services/scheduled_messages.dart' as scheduled;
 import '../../services/secure_screen.dart';
@@ -81,6 +83,49 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _lastMarkedMessageId;
   bool _showJumpToBottom = false;
   late final VoidCallback _chatBackgroundListener = () => _loadChatBackground();
+  late final VoidCallback _outboxConnectivityListener = _onConnectivityChanged;
+
+  void _onConnectivityChanged() {
+    if (ConnectionMonitor.isOnline.value) unawaited(_flushOutbox());
+  }
+
+  Future<void> _restorePendingMessages() async {
+    await MessageOutbox.load();
+    final restored = MessageOutbox.forConversation(widget.conversationId);
+    if (!mounted || restored.isEmpty) return;
+    setState(() {
+      for (final item in restored) {
+        _pendingMessages[item.localId] = item;
+      }
+    });
+    if (ConnectionMonitor.isOnline.value) unawaited(_flushOutbox());
+  }
+
+  Future<void> _flushOutbox() async {
+    if (!ConnectionMonitor.isOnline.value) return;
+    await MessageOutbox.flush((item) async {
+      await Supa.sendMessage(
+        item.conversationId,
+        item.content,
+        expiry: item.expiresAt == null
+            ? null
+            : item.expiresAt!.difference(DateTime.now()),
+        replyToId: item.replyToId,
+      );
+      if (item.conversationId == widget.conversationId && mounted) {
+        setState(() => _pendingMessages.remove(item.localId));
+        _rollToBottom();
+      }
+      Supa.triggerConversationRefresh();
+    });
+    if (!mounted) return;
+    final remaining = MessageOutbox.forConversation(widget.conversationId);
+    setState(() {
+      _pendingMessages
+        ..clear()
+        ..addEntries(remaining.map((item) => MapEntry(item.localId, item)));
+    });
+  }
 
   void _onScroll() {
     if (!_scroll.hasClients) return;
@@ -121,6 +166,8 @@ class _ChatScreenState extends State<ChatScreen> {
     _checkConversationLock();
     _ctrl.addListener(_onDraftChanged);
     _scroll.addListener(_onScroll);
+    ConnectionMonitor.isOnline.addListener(_outboxConnectivityListener);
+    unawaited(_restorePendingMessages());
     Supa.chatBackgroundChanged.addListener(_chatBackgroundListener);
   }
 
@@ -403,6 +450,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _typingTimer?.cancel();
     _peerTypingTimer?.cancel();
     _draftSaveTimer?.cancel();
+    ConnectionMonitor.isOnline.removeListener(_outboxConnectivityListener);
     Supa.chatBackgroundChanged.removeListener(_chatBackgroundListener);
     final callChannel = _callChannel;
     if (callChannel != null) Supa.client.removeChannel(callChannel);
@@ -443,7 +491,7 @@ class _ChatScreenState extends State<ChatScreen> {
         expiresAt: expiresAt,
         replyToId: replyToId,
       );
-      _addPending(pending);
+      await _addPending(pending);
       await Supa.sendMessage(widget.conversationId, content,
           expiry: _messageExpiry, replyToId: replyToId);
       _removePending(localId);
@@ -469,12 +517,14 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Pending (optimistic) messages keyed by their local id. These are the
   /// messages sent before the server echoed them back, rendered as a pending
   /// bubble until they reach the server.
-  void _addPending(PendingMessage pm) {
+  Future<void> _addPending(PendingMessage pm) async {
     _pendingMessages[pm.localId] = pm;
+    await MessageOutbox.put(pm);
   }
 
   void _removePending(String localId) {
     _pendingMessages.remove(localId);
+    unawaited(MessageOutbox.remove(localId));
   }
 
   void _markPendingFailed(String localId) {
@@ -482,7 +532,8 @@ class _ChatScreenState extends State<ChatScreen> {
     if (pm != null && pm.status != 'sent') {
       pm.status = 'failed';
       pm.retryCount += 1;
-      setState(() {});
+      unawaited(MessageOutbox.update(pm));
+      if (mounted) setState(() {});
     }
   }
 
@@ -585,6 +636,72 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Future<void> _showOutbox() async {
+    final items = MessageOutbox.forConversation(widget.conversationId)
+        .where((item) => item.status == 'failed' || item.status == 'queued')
+        .toList();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: _P.surface,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: items.isEmpty
+              ? const SizedBox(
+                  height: 80,
+                  child: Center(child: Text('No messages waiting to send.')),
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('Message outbox',
+                        style: TextStyle(
+                            color: _P.text,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 8),
+                    for (final item in items)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          item.status == 'failed'
+                              ? Icons.error_outline
+                              : Icons.schedule_send_outlined,
+                          color: item.status == 'failed'
+                              ? Colors.orangeAccent
+                              : _P.primary,
+                        ),
+                        title: Text(item.content,
+                            maxLines: 2, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(item.status == 'failed'
+                            ? 'Waiting for retry'
+                            : 'Waiting for connection'),
+                        trailing: IconButton(
+                          tooltip: 'Retry now',
+                          icon: const Icon(Icons.refresh),
+                          onPressed: () async {
+                            item.status = 'queued';
+                            await MessageOutbox.update(item);
+                            if (mounted) {
+                              setState(
+                                  () => _pendingMessages[item.localId] = item);
+                            }
+                            if (sheetContext.mounted) {
+                              Navigator.pop(sheetContext);
+                            }
+                            await _flushOutbox();
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+
   void _showChatMenu(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -593,6 +710,16 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (_pendingMessages.values.any(
+                (item) => item.status == 'failed' || item.status == 'queued'))
+              _MenuTile(
+                icon: Icons.outbox_outlined,
+                label: 'Message outbox',
+                onTap: () {
+                  Navigator.pop(context);
+                  _showOutbox();
+                },
+              ),
             _MenuTile(
               icon: Icons.timer_outlined,
               label:
@@ -1414,7 +1541,7 @@ class _ChatScreenState extends State<ChatScreen> {
         createdAt: DateTime.now(),
         expiresAt: expiresAt,
       );
-      _addPending(pending);
+      await _addPending(pending);
       try {
         await Supa.sendMessage(
             widget.conversationId, 'attachment:${jsonEncode(attachment)}');
@@ -1714,7 +1841,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                       color: _P.surfaceHigh,
                                       shape: BoxShape.circle,
                                       border: Border.all(
-                                        color: _P.primary.withValues(alpha: 0.4),
+                                        color:
+                                            _P.primary.withValues(alpha: 0.4),
                                         width: 1.2,
                                       ),
                                       boxShadow: [
@@ -1878,7 +2006,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                     onLongPress: _showMessageActions,
                                     onReactionTap: _toggleReaction,
                                     messages: display,
-                                    pendingStatus: _pendingMessages[display[i].id]?.status,
+                                    pendingStatus:
+                                        _pendingMessages[display[i].id]?.status,
                                   ),
                                 ),
                                 Positioned(
@@ -1890,7 +2019,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                     curve: Curves.easeOutBack,
                                     child: AnimatedOpacity(
                                       opacity: _showJumpToBottom ? 1.0 : 0.0,
-                                      duration: const Duration(milliseconds: 160),
+                                      duration:
+                                          const Duration(milliseconds: 160),
                                       child: PressScale(
                                         onTap: _jumpToBottom,
                                         child: Container(
@@ -1900,12 +2030,14 @@ class _ChatScreenState extends State<ChatScreen> {
                                             color: _P.surfaceHigh,
                                             shape: BoxShape.circle,
                                             border: Border.all(
-                                              color: _P.primary.withValues(alpha: 0.4),
+                                              color: _P.primary
+                                                  .withValues(alpha: 0.4),
                                               width: 1.2,
                                             ),
                                             boxShadow: [
                                               BoxShadow(
-                                                color: Colors.black.withValues(alpha: 0.4),
+                                                color: Colors.black
+                                                    .withValues(alpha: 0.4),
                                                 blurRadius: 10,
                                                 offset: const Offset(0, 3),
                                               ),
@@ -3234,10 +3366,6 @@ class _AttachActionItem extends StatelessWidget {
   }
 }
 
-
-
-
-
 // === Chat widgets ===
 
 class _ReactionPickerItem extends StatelessWidget {
@@ -3261,7 +3389,6 @@ class _ReactionPickerItem extends StatelessWidget {
     );
   }
 }
-
 
 class _ReplyPreviewBar extends StatelessWidget {
   const _ReplyPreviewBar({required this.message, required this.onCancel});
@@ -4958,7 +5085,6 @@ void _showPinnedMessagesSheet(
     ),
   );
 }
-
 
 class _PinnedMessagesSheet extends StatefulWidget {
   const _PinnedMessagesSheet({
