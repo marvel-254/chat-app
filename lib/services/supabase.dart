@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:async';
@@ -128,8 +129,14 @@ class Supa {
     if (term.isNotEmpty) {
       request = request.or('username.ilike.%$term%,display_name.ilike.%$term%');
     }
-    final res = await request.order('username').limit(limit);
-    return (res as List).map((e) => Profile.fromJson(e)).toList();
+    try {
+      final res = await request.order('username').limit(limit);
+      debugPrint('searchUsers("$query") -> ${res.length} results');
+      return (res as List).map((e) => Profile.fromJson(e)).toList();
+    } catch (e) {
+      debugPrint('searchUsers("$query") failed: $e');
+      rethrow;
+    }
   }
 
   static Future<void> updateProfile(

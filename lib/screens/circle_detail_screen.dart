@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../models/circle.dart';
 import '../services/circles.dart';
 import '../services/supabase.dart';
@@ -28,33 +29,22 @@ class _CircleDetailScreenState extends State<CircleDetailScreen> {
   Future<void> _loadCircle() async {
     setState(() => _isLoading = true);
     try {
-      final circleData = await Supa.client
-          .rpc('get_user_circles')
-          .eq('circle_id', widget.circleId)
-          .single();
+      // Fetch all circles and filter client-side since RPC doesn't support .eq() filtering
+      final circles = await Circles.getAllCircles();
+      final circle = circles.firstWhere(
+        (c) => c.id == widget.circleId,
+        orElse: () => throw 'Circle not found',
+      );
 
-      final circle = Circle(
-          id: circleData['circle_id'] as String,
-          name: circleData['name'] as String,
-          description: circleData['description'] as String?,
-          avatarPath: circleData['avatar_path'] as String?,
-          isPrivate: circleData['is_private'] as bool? ?? false,
-          creatorId: circleData['creator_id'] as String,
-          createdAt: DateTime.parse(circleData['created_at'] as String),
-          updatedAt: DateTime.parse(circleData['updated_at'] as String),
-          memberCount: circleData['member_count'] as int? ?? 0,
-          isMember: circleData['is_member'] as bool? ?? false,
-        );
+      final members = await Circles.getCircleMembers(widget.circleId);
+      final isAdmin = await Circles.isAdmin(widget.circleId);
 
-        final members = await Circles.getCircleMembers(widget.circleId);
-        final isAdmin = await Circles.isAdmin(widget.circleId);
-
-        setState(() {
-          _circle = circle;
-          _members = members;
-          _isAdmin = isAdmin;
-          _isLoading = false;
-        });
+      setState(() {
+        _circle = circle;
+        _members = members;
+        _isAdmin = isAdmin;
+        _isLoading = false;
+      });
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -148,21 +138,22 @@ class _CircleDetailScreenState extends State<CircleDetailScreen> {
 
       final user = profiles.first;
       try {
-        await Supa.client.rpc('join_circle', params: {
-          'p_circle_id': widget.circleId,
-          'p_user_id': user.id,
-        });
-        setState(() {
-          _loadCircle();
-        });
+        // Note: join_circle uses auth.uid() server-side, so it only joins
+        // the current user. To invite another user, the server would need
+        // a separate invite function. For now, just show a message.
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Invited ${user.displayName ?? user.username}')),
+          SnackBar(content: Text('User "$user.username" found — direct messaging them instead')),
         );
+        if (!mounted) return;
+        final conv = await Supa.getOrCreateDM(user.id);
+        if (!mounted) return;
+        context.go('/chat/${conv.id}', extra: user);
+        return;
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to invite: $e')),
+          SnackBar(content: Text('Failed: $e')),
         );
       }
     }

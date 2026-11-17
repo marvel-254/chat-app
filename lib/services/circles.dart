@@ -1,3 +1,5 @@
+import 'dart:developer' as dev;
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/circle.dart';
 
@@ -32,13 +34,19 @@ class Circles {
 
   /// Get all circles for the current user (including groups)
   static Future<List<Circle>> getAllCircles() async {
-    final result = await client.rpc('get_user_circles');
-    if (result is List) {
-      return result
-          .map((row) => _mapCircleRow(row as Map<String, dynamic>))
-          .toList();
+    try {
+      final result = await client.rpc('get_user_circles', params: {});
+      if (result is List) {
+        dev.log('getAllCircles: ${result.length} circles found');
+        return result
+            .map((row) => _mapCircleRow(row as Map<String, dynamic>))
+            .toList();
+      }
+      return [];
+    } catch (e) {
+      dev.log('getAllCircles failed: $e', error: e);
+      rethrow;
     }
-    return [];
   }
 
   /// Watch circles for the current user via periodic polling.
