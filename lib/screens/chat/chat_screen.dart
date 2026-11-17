@@ -155,9 +155,7 @@ class _ChatScreenState extends State<ChatScreen> {
           _lockReady = true;
         });
         // Prevent screenshots for all conversations (issue #81).
-        // Applied broadly - every conversation has screenshot protection enabled
-        // when the chat screen is active, with additional locking available
-        // via the conversation lock feature.
+        // Locked conversations already enabled this; now we apply it broadly.
         await SecureScreen.enable();
       }
     } catch (_) {
@@ -316,8 +314,7 @@ class _ChatScreenState extends State<ChatScreen> {
               backgroundColor: _P.surface,
               title: Text(video ? 'Incoming video call' : 'Incoming voice call',
                   style: const TextStyle(color: _P.text)),
-              content: Text(
-                  '${peer.label} (@${peer.username}) is calling.',
+              content: Text('${peer.label} (@${peer.username}) is calling.',
                   style: const TextStyle(color: _P.muted)),
               actions: [
                 TextButton(
@@ -415,7 +412,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _openVoiceNote() async {
     final result = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => _VoiceNoteDialog(conversationId: widget.conversationId),
+      builder: (dialogContext) =>
+          _VoiceNoteDialog(conversationId: widget.conversationId),
     );
     if (result != null && result.isNotEmpty) {
       // The dialog already played a short confirmation; nothing further needed.
@@ -652,6 +650,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   if (mounted) _reportUser();
                 });
               },
+            ),
             _MenuTile(
               icon: Icons.block_flipped,
               label: 'Block user',
@@ -739,26 +738,25 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
           ),
         ),
-      ),
-    );
-    if (submitted != true) return;
-    await Supa.reportUser(
-      userId: peer.id,
-      reason: chosen,
-      details:
-          detailsCtrl.text.trim().isEmpty ? null : detailsCtrl.text.trim(),
-    );
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Thanks. We received your report.')));
+      );
+      if (submitted != true) return;
+      await Supa.reportUser(
+        userId: peer.id,
+        reason: chosen,
+        details:
+            detailsCtrl.text.trim().isEmpty ? null : detailsCtrl.text.trim(),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Thanks. We received your report.')));
+      }
+    } catch (e) {
+      _unsupported(friendlyErrorMessage(e,
+          fallback: "We couldn't send that report. Try again?"));
+    } finally {
+      detailsCtrl.dispose();
     }
-  } catch (e) {
-    _unsupported(friendlyErrorMessage(e,
-        fallback: "We couldn't send that report. Try again?"));
-  } finally {
-    detailsCtrl.dispose();
   }
-}
 
   Future<void> _blockUser() async {
     final peer = _peer;
@@ -899,7 +897,8 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                             Text(
                               entry['previous_content'] as String,
-                              style: const TextStyle(color: _P.text, fontSize: 14),
+                              style:
+                                  const TextStyle(color: _P.text, fontSize: 14),
                             ),
                             const SizedBox(height: 4),
                             Text(
@@ -911,7 +910,8 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                             Text(
                               entry['new_content'] as String,
-                              style: const TextStyle(color: _P.text, fontSize: 14),
+                              style:
+                                  const TextStyle(color: _P.text, fontSize: 14),
                             ),
                           ],
                         ),
@@ -1035,7 +1035,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         onPressed: () => Navigator.pop(
                             dialogContext, controller.text.trim()),
                         child: const Text('Save'))
-                  ]));
+                  ],
+                ));
         controller.dispose();
         if (updated != null &&
             updated.isNotEmpty &&
@@ -1049,7 +1050,7 @@ class _ChatScreenState extends State<ChatScreen> {
             builder: (dialogContext) => AlertDialog(
                   title: const Text('Delete for everyone'),
                   content: const Text(
-                      'This will remove the message for all participants. This action cannot be undone.',
+                      'This will remove the message for all participants. This action cannot be undone.'),
                   actions: [
                     TextButton(
                         onPressed: () => Navigator.pop(dialogContext, false),
@@ -1060,7 +1061,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             backgroundColor: Colors.redAccent),
                         child: const Text('Delete for everyone'))
                   ],
-                )));
+                ));
         if (confirm == true) {
           await Supa.deleteMessageForEveryone(message.id);
         }
@@ -1071,7 +1072,7 @@ class _ChatScreenState extends State<ChatScreen> {
             builder: (dialogContext) => AlertDialog(
                   title: const Text('Delete for me'),
                   content: const Text(
-                      'This will remove the message only from your view.',
+                      'This will remove the message only from your view.'),
                   actions: [
                     TextButton(
                         onPressed: () => Navigator.pop(dialogContext, false),
@@ -1413,5 +1414,3709 @@ class _ChatScreenState extends State<ChatScreen> {
         createdAt: DateTime.now(),
         expiresAt: expiresAt,
       );
+      _addPending(pending);
+      try {
+        await Supa.sendMessage(
+            widget.conversationId, 'attachment:${jsonEncode(attachment)}');
+        _removePending(localId);
+        _rollToBottom();
+      } catch (e) {
+        _markPendingFailed(localId);
+        _unsupported(friendlyErrorMessage(e,
+            fallback:
+                "We couldn't upload that file. Check your connection and try again."));
+      }
+    } finally {
+      if (mounted) setState(() => _sendingMessage = false);
+    }
+  }
 
-[read_files: showing lines 1-1416 of 5123. The window was shortened to stay under 50,000 characters. Use code_search to locate the part you need and read a window around it, or call read_files again with offset=1417 to continue.]"]
+  String _mimeType(String filename) {
+    final ext = filename.split('.').last.toLowerCase();
+    return switch (ext) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'gif' => 'image/gif',
+      'webp' => 'image/webp',
+      'mp4' || 'mov' => 'video/$ext',
+      'pdf' => 'application/pdf',
+      'doc' => 'application/msword',
+      'docx' =>
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'txt' => 'text/plain',
+      'zip' => 'application/zip',
+      _ => 'application/octet-stream',
+    };
+  }
+
+  Future<void> _pickPhoto({bool camera = false}) async {
+    try {
+      final picker = ImagePicker();
+      final file = camera
+          ? await picker.pickImage(
+              source: ImageSource.camera, imageQuality: 85, maxWidth: 1920)
+          : await picker.pickMedia(imageQuality: 85, maxWidth: 1920);
+      if (file == null) return;
+      await _sendAttachment(
+          await file.readAsBytes(), file.name, _mimeType(file.name));
+    } catch (_) {
+      _unsupported("We couldn't open your photos. Please try again.");
+    }
+  }
+
+  Future<void> _pickDocument() async {
+    try {
+      final files = await FilePicker.pickFiles(type: FileType.any);
+      if (files.isEmpty) return;
+      final file = files.first;
+      final bytes = await file.readAsBytes();
+      if (bytes.length > 20 * 1024 * 1024) {
+        _unsupported('Files must be 20 MB or smaller.');
+        return;
+      }
+      await _sendAttachment(bytes, file.name, _mimeType(file.name));
+    } catch (_) {
+      _unsupported("We couldn't open that file. Please try again.");
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_lockReady && _conversationLocked && !_conversationUnlocked) {
+      return LockGate(
+        title: 'This chat is locked',
+        reason: 'Unlock this conversation',
+        onUnlocked: () => setState(() => _conversationUnlocked = true),
+      );
+    }
+    return Scaffold(
+      appBar: AppBar(
+        titleSpacing: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          tooltip: 'Back to chats',
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/conversations');
+            }
+          },
+        ),
+        title: InkWell(
+          onTap: () {
+            final peer = _peer;
+            if (peer != null) context.push('/profile/${peer.id}');
+          },
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+            child: Row(
+              children: [
+                ValueListenableBuilder<int>(
+                  valueListenable: Presence.epoch,
+                  builder: (_, __, ___) => Avatar(
+                    name: _peer?.peerInitial ?? '?',
+                    url: _peer?.avatarUrl,
+                    size: 38,
+                    showOnlineDot:
+                        _peerTyping == null && Presence.isOnline(_peer?.id),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _peer?.label ?? 'Chat',
+                        style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: _P.text),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      _PeerStatusLine(
+                        typing: _peerTyping != null,
+                        peerId: _peer?.id,
+                        fallback: _peer != null
+                            ? '@${_peer!.username}'
+                            : 'Direct message',
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          // E2EE security indicator
+          Tooltip(
+            message: 'Messages are end-to-end encrypted',
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Icon(
+                Icons.lock_rounded,
+                size: 18,
+                color: Colors.green.shade300,
+              ),
+            ),
+          ),
+          _ActionBtn(Icons.videocam_rounded,
+              onTap: () => _startCall(video: true)),
+          _ActionBtn(Icons.phone_rounded,
+              onTap: () => _startCall(video: false)),
+          _ActionBtn(Icons.more_vert, onTap: () => _showChatMenu(context)),
+          const SizedBox(width: 6),
+        ],
+      ),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth > _adaptiveBreakpoint) {
+            return _buildLargeScreenChat(context);
+          } else {
+            return _buildSmallScreenChat(context);
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildSmallScreenChat(BuildContext context) {
+    return StreamBuilder<List<Message>>(
+      stream: Supa.watchMessages(widget.conversationId),
+      builder: (context, snapshot) {
+        final messages = snapshot.data ?? [];
+        final display = _displayMessages(messages);
+        final pinnedMessages = messages
+            .where((m) => m.pinnedAt != null)
+            .toList()
+          ..sort((a, b) => (b.pinnedAt!).compareTo(a.pinnedAt!));
+        final showBanner = pinnedMessages.isNotEmpty && !_pinnedBannerDismissed;
+
+        return Column(
+          children: [
+            // Pinned message banner
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              transitionBuilder: (child, anim) => SizeTransition(
+                sizeFactor: anim,
+                alignment: Alignment.topCenter,
+                child: FadeTransition(opacity: anim, child: child),
+              ),
+              child: showBanner
+                  ? _PinnedMessagesBanner(
+                      key: const ValueKey('banner'),
+                      pinnedMessages: pinnedMessages,
+                      currentIndex: _pinnedBannerIndex.clamp(
+                          0, pinnedMessages.length - 1),
+                      onTap: () {
+                        final idx = _pinnedBannerIndex.clamp(
+                            0, pinnedMessages.length - 1);
+                        final msg = pinnedMessages[idx];
+                        final msgIdx = messages.indexOf(msg);
+                        if (msgIdx >= 0) {
+                          _scrollToMessage(msgIdx, messages.length);
+                        }
+                        setState(() {
+                          _pinnedBannerIndex =
+                              (_pinnedBannerIndex + 1) % pinnedMessages.length;
+                        });
+                      },
+                      onLongPress: () => _showPinnedMessagesSheet(
+                        context,
+                        pinnedMessages,
+                        (i, total) {
+                          final msg = pinnedMessages[
+                              i.clamp(0, pinnedMessages.length - 1)];
+                          final msgIdx = messages.indexOf(msg);
+                          if (msgIdx >= 0) {
+                            _scrollToMessage(msgIdx, messages.length);
+                          }
+                        },
+                        (msg) async {
+                          await Supa.setMessagePinned(msg.id, false);
+                        },
+                      ),
+                      onDismiss: () =>
+                          setState(() => _pinnedBannerDismissed = true),
+                    )
+                  : const SizedBox.shrink(key: ValueKey('no-banner')),
+            ),
+            Expanded(
+              child: Container(
+                decoration: _chatCanvas(_chatBackground,
+                    imageUrl: _chatBackgroundImageUrl),
+                child: Builder(builder: (context) {
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      display.isEmpty) {
+                    return const BubbleSkeleton();
+                  }
+                  if (snapshot.hasError) {
+                    return _ErrorState(
+                        message: "Couldn't load this chat",
+                        detail: 'A quick retry usually does the trick.',
+                        onRetry: () => setState(() {}));
+                  }
+                  if (display.isEmpty) {
+                    return _EmptyState(
+                      peerName: _peer?.label,
+                      onSayHello: () {
+                        _ctrl.text = 'Hey! 👋';
+                        _send();
+                      },
+                    );
+                  }
+                  _markUnreadAsReadIfNeeded(messages);
+                  return Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 600),
+                      child: Stack(
+                        children: [
+                          ListView.builder(
+                            controller: _scroll,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 12),
+                            itemCount: display.length,
+                            itemBuilder: (_, i) => _MessageRow(
+                              msg: display[i],
+                              prev: i > 0 ? display[i - 1] : null,
+                              next: i + 1 < display.length
+                                  ? display[i + 1]
+                                  : null,
+                              me: Supa.currentUser!.id,
+                              onLongPress: _showMessageActions,
+                              onReactionTap: _toggleReaction,
+                              messages: display,
+                              pendingStatus:
+                                  _pendingMessages[display[i].id]?.status,
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 12,
+                            right: 16,
+                            child: AnimatedScale(
+                              scale: _showJumpToBottom ? 1.0 : 0.0,
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeOutBack,
+                              child: AnimatedOpacity(
+                                opacity: _showJumpToBottom ? 1.0 : 0.0,
+                                duration: const Duration(milliseconds: 160),
+                                child: PressScale(
+                                  onTap: _jumpToBottom,
+                                  child: Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: _P.surfaceHigh,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: _P.primary.withValues(alpha: 0.4),
+                                        width: 1.2,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black
+                                              .withValues(alpha: 0.4),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.keyboard_arrow_down_rounded,
+                                        color: _P.primary,
+                                        size: 26,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ),
+            if (_peerTyping != null) const _TypingIndicator(),
+            if (_replyTo != null)
+              _ReplyPreviewBar(
+                message: _replyTo!,
+                onCancel: () => setState(() => _replyTo = null),
+              ),
+            _Composer(
+              controller: _ctrl,
+              onSend: _send,
+              onTypingChanged: _onTypingChanged,
+              onAttach: () => _showAttachSheet(context),
+              onVoice: () => _openVoiceNote(),
+              onEmoji: _showEmojiPicker,
+              onSchedule: _showSchedulePicker,
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildLargeScreenChat(BuildContext context) {
+    return Row(
+      children: [
+        const NavSidebar(),
+        Expanded(
+          child: StreamBuilder<List<Message>>(
+            stream: Supa.watchMessages(widget.conversationId),
+            builder: (context, snapshot) {
+              final messages = snapshot.data ?? [];
+              final display = _displayMessages(messages);
+              final pinnedMessages = messages
+                  .where((m) => m.pinnedAt != null)
+                  .toList()
+                ..sort((a, b) => (b.pinnedAt!).compareTo(a.pinnedAt!));
+              final showBanner =
+                  pinnedMessages.isNotEmpty && !_pinnedBannerDismissed;
+
+              return Column(
+                children: [
+                  // Pinned message banner
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    transitionBuilder: (child, anim) => SizeTransition(
+                      sizeFactor: anim,
+                      alignment: Alignment.topCenter,
+                      child: FadeTransition(opacity: anim, child: child),
+                    ),
+                    child: showBanner
+                        ? _PinnedMessagesBanner(
+                            key: const ValueKey('banner'),
+                            pinnedMessages: pinnedMessages,
+                            currentIndex: _pinnedBannerIndex.clamp(
+                                0, pinnedMessages.length - 1),
+                            onTap: () {
+                              final idx = _pinnedBannerIndex.clamp(
+                                  0, pinnedMessages.length - 1);
+                              final msg = pinnedMessages[idx];
+                              final msgIdx = messages.indexOf(msg);
+                              if (msgIdx >= 0) {
+                                _scrollToMessage(msgIdx, messages.length);
+                              }
+                              setState(() {
+                                _pinnedBannerIndex = (_pinnedBannerIndex + 1) %
+                                    pinnedMessages.length;
+                              });
+                            },
+                            onLongPress: () => _showPinnedMessagesSheet(
+                              context,
+                              pinnedMessages,
+                              (i, total) {
+                                final msg = pinnedMessages[
+                                    i.clamp(0, pinnedMessages.length - 1)];
+                                final msgIdx = messages.indexOf(msg);
+                                if (msgIdx >= 0) {
+                                  _scrollToMessage(msgIdx, messages.length);
+                                }
+                              },
+                              (msg) async {
+                                await Supa.setMessagePinned(msg.id, false);
+                              },
+                            ),
+                            onDismiss: () =>
+                                setState(() => _pinnedBannerDismissed = true),
+                          )
+                        : const SizedBox.shrink(key: ValueKey('no-banner')),
+                  ),
+                  Expanded(
+                    child: Container(
+                      decoration: _chatCanvas(_chatBackground,
+                          imageUrl: _chatBackgroundImageUrl),
+                      child: Builder(builder: (context) {
+                        if (snapshot.connectionState ==
+                                ConnectionState.waiting &&
+                            messages.isEmpty) {
+                          return const BubbleSkeleton();
+                        }
+                        if (snapshot.hasError) {
+                          return _ErrorState(
+                              message: "Couldn't load this chat",
+                              detail: 'A quick retry usually does the trick.',
+                              onRetry: _onRetry);
+                        }
+                        if (messages.isEmpty) {
+                          return _EmptyState(
+                            peerName: _peer?.label,
+                            onSayHello: () {
+                              _ctrl.text = 'Hey! 👋';
+                              _send();
+                            },
+                          );
+                        }
+                        _markUnreadAsReadIfNeeded(messages);
+                        return Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 600),
+                            child: Stack(
+                              children: [
+                                ListView.builder(
+                                  controller: _scroll,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 12),
+                                  itemCount: display.length,
+                                  itemBuilder: (_, i) => _MessageRow(
+                                    msg: display[i],
+                                    prev: i > 0 ? display[i - 1] : null,
+                                    next: i + 1 < display.length
+                                        ? display[i + 1]
+                                        : null,
+                                    me: Supa.currentUser!.id,
+                                    onLongPress: _showMessageActions,
+                                    onReactionTap: _toggleReaction,
+                                    messages: display,
+                                    pendingStatus: _pendingMessages[display[i].id]?.status,
+                                  ),
+                                ),
+                                Positioned(
+                                  bottom: 12,
+                                  right: 16,
+                                  child: AnimatedScale(
+                                    scale: _showJumpToBottom ? 1.0 : 0.0,
+                                    duration: const Duration(milliseconds: 220),
+                                    curve: Curves.easeOutBack,
+                                    child: AnimatedOpacity(
+                                      opacity: _showJumpToBottom ? 1.0 : 0.0,
+                                      duration: const Duration(milliseconds: 160),
+                                      child: PressScale(
+                                        onTap: _jumpToBottom,
+                                        child: Container(
+                                          width: 40,
+                                          height: 40,
+                                          decoration: BoxDecoration(
+                                            color: _P.surfaceHigh,
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: _P.primary.withValues(alpha: 0.4),
+                                              width: 1.2,
+                                            ),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black.withValues(alpha: 0.4),
+                                                blurRadius: 10,
+                                                offset: const Offset(0, 3),
+                                              ),
+                                            ],
+                                          ),
+                                          child: const Center(
+                                            child: Icon(
+                                              Icons.keyboard_arrow_down_rounded,
+                                              color: _P.primary,
+                                              size: 26,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                  if (_peerTyping != null) const _TypingIndicator(),
+                  if (_replyTo != null)
+                    _ReplyPreviewBar(
+                      message: _replyTo!,
+                      onCancel: () => setState(() => _replyTo = null),
+                    ),
+                  _Composer(
+                    controller: _ctrl,
+                    onSend: _send,
+                    onTypingChanged: _onTypingChanged,
+                    onAttach: () => _showAttachSheet(context),
+                    onVoice: () => _openVoiceNote(),
+                    onEmoji: _showEmojiPicker,
+                    onSchedule: _showSchedulePicker,
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({this.peerName, this.onSayHello});
+  final String? peerName;
+  final VoidCallback? onSayHello;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: _P.surface,
+                shape: BoxShape.circle,
+                border: Border.all(color: _P.border),
+              ),
+              child: const Center(
+                child: Icon(Icons.waving_hand_outlined,
+                    color: _P.primary, size: 36),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              peerName != null ? 'Say hello to $peerName!' : 'No messages yet',
+              style: const TextStyle(
+                color: _P.text,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Break the ice with a message or a quick wave.',
+              style: TextStyle(color: _P.muted, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+            if (onSayHello != null) ...[
+              const SizedBox(height: 18),
+              FilledButton.tonalIcon(
+                onPressed: onSayHello,
+                style: FilledButton.styleFrom(
+                  backgroundColor: _P.surfaceHigh,
+                  foregroundColor: _P.text,
+                ),
+                icon: const Text('👋', style: TextStyle(fontSize: 16)),
+                label: const Text('Wave hello',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorState extends StatelessWidget {
+  const _ErrorState(
+      {required this.message, this.detail, required this.onRetry});
+  final String message;
+  final String? detail;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off_outlined, color: _P.muted, size: 48),
+            const SizedBox(height: 12),
+            Text(message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    color: _P.text, fontSize: 16, fontWeight: FontWeight.w600)),
+            if (detail != null) ...[
+              const SizedBox(height: 6),
+              Text(detail!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color: _P.muted, fontSize: 13, height: 1.4)),
+            ],
+            const SizedBox(height: 20),
+            OutlinedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Try again'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PeerStatusLine extends StatelessWidget {
+  const _PeerStatusLine({
+    required this.typing,
+    required this.peerId,
+    required this.fallback,
+  });
+  final bool typing;
+  final String? peerId;
+  final String fallback;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 180),
+      child: typing
+          ? const Row(
+              key: ValueKey('typing'),
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('typing',
+                    style: TextStyle(fontSize: 12, color: _P.primary)),
+                SizedBox(width: 4),
+                _TypingDots(color: _P.primary, size: 4),
+              ],
+            )
+          : ValueListenableBuilder<int>(
+              key: const ValueKey('presence'),
+              valueListenable: Presence.epoch,
+              builder: (_, __, ___) {
+                final presence = Presence.label(peerId) ?? fallback;
+                final online = Presence.isOnline(peerId);
+                return Text(
+                  presence,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: online ? _P.success : _P.muted,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                );
+              },
+            ),
+    );
+  }
+}
+
+class _TypingDots extends StatefulWidget {
+  const _TypingDots({this.color = _P.muted, this.size = 6});
+  final Color color;
+  final double size;
+
+  @override
+  State<_TypingDots> createState() => _TypingDotsState();
+}
+
+class _TypingDotsState extends State<_TypingDots>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 900))
+      ..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < 3; i++) ...[
+              if (i > 0) SizedBox(width: widget.size * 0.45),
+              _dot(i),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _dot(int index) {
+    final t = (_ctrl.value + index / 3) % 1;
+    final bounce = (t < 0.5 ? t : 1 - t) * 2;
+    final lift = (bounce * 3) - 0.4;
+    final opacity = 0.35 + bounce * 0.65;
+    return Transform.translate(
+      offset: Offset(0, -lift),
+      child: Container(
+        width: widget.size,
+        height: widget.size,
+        decoration: BoxDecoration(
+          color: widget.color.withValues(alpha: opacity),
+          shape: BoxShape.circle,
+        ),
+      ),
+    );
+  }
+}
+
+class _TypingIndicator extends StatelessWidget {
+  const _TypingIndicator();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: _P.surfaceHigh,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(16),
+              topRight: Radius.circular(16),
+              bottomRight: Radius.circular(16),
+              bottomLeft: Radius.circular(4),
+            ),
+            border: Border.all(color: _P.border),
+          ),
+          child: const _TypingDots(color: _P.muted, size: 7),
+        ),
+      ),
+    );
+  }
+}
+
+class _MessageRow extends StatelessWidget {
+  const _MessageRow(
+      {required this.msg,
+      this.prev,
+      this.next,
+      required this.me,
+      required this.onLongPress,
+      this.onReactionTap,
+      this.messages,
+      this.pendingStatus});
+  final Message msg;
+  final Message? prev;
+  final Message? next;
+  final String me;
+  final ValueChanged<Message> onLongPress;
+  final void Function(String messageId, String emoji)? onReactionTap;
+  final List<Message>? messages;
+  final String? pendingStatus;
+
+  bool get _nowDateLine =>
+      prev == null || !_sameDay(prev!.createdAt, msg.createdAt);
+  bool get _groupPrev =>
+      prev != null && prev!.senderId == msg.senderId && !_nowDateLine;
+  bool get _groupNext =>
+      next != null &&
+      next!.senderId == msg.senderId &&
+      _sameDay(msg.createdAt, next!.createdAt);
+  bool get mine => msg.senderId == me;
+
+  static bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment:
+          mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        if (_nowDateLine) _DateLine(ts: msg.createdAt),
+        TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: 0, end: 1),
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeOutCubic,
+          builder: (context, progress, child) => Opacity(
+            opacity: progress,
+            child: Transform.translate(
+              offset: Offset(
+                (mine ? 1 : -1) * 10 * (1 - progress),
+                7 * (1 - progress),
+              ),
+              child: child,
+            ),
+          ),
+          child: _Bubble(
+            msg: msg,
+            groupedTop: _groupPrev,
+            groupedBottom: _groupNext,
+            mine: mine,
+            onLongPress: () => onLongPress(msg),
+            onReactionTap: onReactionTap,
+            pendingStatus: pendingStatus,
+            replyTarget: msg.replyToId != null && messages != null
+                ? messages!.where((m) => m.id == msg.replyToId).firstOrNull
+                : null,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DateLine extends StatelessWidget {
+  const _DateLine({required this.ts});
+  final DateTime ts;
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    String label;
+    if (_MessageRow._sameDay(now, ts)) {
+      label = 'Today';
+    } else if (_MessageRow._sameDay(
+        now.subtract(const Duration(days: 1)), ts)) {
+      label = 'Yesterday';
+    } else {
+      label = '${ts.day} ${_months[ts.month - 1]}';
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(
+            color: _P.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: _P.border),
+          ),
+          child: Text(label,
+              style: const TextStyle(color: _P.muted, fontSize: 12)),
+        ),
+      ),
+    );
+  }
+}
+
+const _months = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec'
+];
+
+class _ReactionsRow extends StatelessWidget {
+  const _ReactionsRow({
+    required this.reactions,
+    required this.mine,
+    this.onTap,
+  });
+  final List<Map<String, dynamic>> reactions;
+  final bool mine;
+  final ValueChanged<String>? onTap;
+
+  Map<String, int> get _counts {
+    final counts = <String, int>{};
+    for (final r in reactions) {
+      final emoji = r['emoji'] as String;
+      counts[emoji] = (counts[emoji] ?? 0) + 1;
+    }
+    return counts;
+  }
+
+  bool _hasUserReacted(String emoji) {
+    final me = Supa.currentUser;
+    if (me == null) return false;
+    return reactions.any((r) => r['emoji'] == emoji && r['user_id'] == me.id);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final counts = _counts;
+    final uniqueEmojis = counts.keys.toList();
+    final mutedColor = mine ? _P.darkOnAccent.withValues(alpha: 0.5) : _P.muted;
+    return Wrap(
+      spacing: 4,
+      runSpacing: 2,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: uniqueEmojis.map((emoji) {
+        final count = counts[emoji]!;
+        final hasReacted = _hasUserReacted(emoji);
+        return GestureDetector(
+          onTap: onTap != null ? () => onTap!(emoji) : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: hasReacted
+                  ? _P.volt.withValues(alpha: 0.15)
+                  : _P.surfaceLow.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(12),
+              border: hasReacted
+                  ? Border.all(color: _P.volt, width: 1)
+                  : Border.all(
+                      color: Colors.white.withValues(alpha: 0.08), width: 0.5),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(emoji, style: const TextStyle(fontSize: 13)),
+                const SizedBox(width: 4),
+                Text(
+                  count.toString(),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: hasReacted ? _P.volt : mutedColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _VoiceMessage extends StatefulWidget {
+  const _VoiceMessage({required this.content, required this.mine});
+  final String content;
+  final bool mine;
+
+  @override
+  State<_VoiceMessage> createState() => _VoiceMessageState();
+}
+
+class _VoiceMessageState extends State<_VoiceMessage> {
+  final _player = AudioPlayer();
+  String? _path;
+  bool _ready = false;
+  bool _playing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _parse();
+  }
+
+  /// Extracts the object path from the `voice:<json>` message content.
+  Future<void> _parse() async {
+    try {
+      final meta =
+          jsonDecode(widget.content.substring(6)) as Map<String, dynamic>;
+      if (meta['path'] != null) {
+        setState(() {
+          _path = meta['path'] as String;
+          _ready = true;
+        });
+      }
+    } catch (_) {
+      // Malformed voice note content; fall back to a placeholder bubble.
+    }
+  }
+
+  void _toggle() {
+    if (_path == null) return;
+    if (_playing) {
+      _player.pause();
+    } else {
+      _player.play(UrlSource(_path!));
+    }
+    setState(() => _playing = !_playing);
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  String _filename() {
+    try {
+      final raw = widget.content.substring(6);
+      final parts = raw.split('/');
+      final last = parts.last.split('}').first;
+      return '$last.m4a';
+    } catch (_) {
+      return 'voice note';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 420),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        gradient: widget.mine
+            ? const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [_P.primary, Color(0xFFC7EF00)],
+              )
+            : const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF292B32), Color(0xFF202127)],
+              ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: widget.mine
+              ? Colors.white.withValues(alpha: 0.2)
+              : Colors.white.withValues(alpha: 0.07),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: widget.mine
+                ? _P.primary.withValues(alpha: 0.13)
+                : Colors.black.withValues(alpha: 0.16),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.audio_file_outlined,
+                  color: _P.darkOnAccent, size: 18),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  _filename(),
+                  style: TextStyle(
+                      color: widget.mine ? _P.darkOnAccent : _P.text,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600),
+                ),
+              ),
+              IconButton(
+                icon: Icon(
+                  _playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  size: 20,
+                  color: widget.mine ? _P.darkOnAccent : _P.text,
+                ),
+                onPressed: _toggle,
+                tooltip: _playing ? 'Pause' : 'Play',
+              ),
+            ],
+          ),
+          if (_path != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: _ready
+                  ? SizedBox(
+                      height: 40,
+                      child: _playing
+                          ? const Center(
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: _P.darkOnAccent))
+                          : Icon(
+                              _playing
+                                  ? Icons.pause_circle_filled
+                                  : Icons.play_circle_fill,
+                              color: widget.mine ? _P.darkOnAccent : _P.text,
+                              size: 32),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VoiceNoteDialog extends StatefulWidget {
+  const _VoiceNoteDialog({required this.conversationId});
+  final String conversationId;
+
+  @override
+  State<_VoiceNoteDialog> createState() => _VoiceNoteDialogState();
+}
+
+class _VoiceNoteDialogState extends State<_VoiceNoteDialog> {
+  bool _recording = false;
+  bool _sending = false;
+  String? _error;
+
+  Future<void> _toggleRecord() async {
+    if (_recording) {
+      setState(() {
+        _recording = false;
+        _error = null;
+        _sending = true;
+      });
+      final messageId =
+          await VoiceNoteService.stopAndUpload(widget.conversationId);
+      if (!mounted) return;
+      setState(() => _sending = false);
+      if (messageId.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Voice note sent.'),
+              behavior: SnackBarBehavior.floating),
+        );
+        Navigator.of(context).pop(messageId);
+      } else {
+        setState(() {
+          _recording = true;
+          _error =
+              'Could not send that voice note. Check your connection and try again.';
+        });
+      }
+    } else {
+      final ok = await VoiceNoteService.start();
+      if (!mounted) return;
+      if (ok) {
+        setState(() => _recording = true);
+      } else {
+        setState(() {
+          _error = 'Microphone permission is needed for voice notes.';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog.fullscreen(
+      backgroundColor: _P.bg,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _recording ? 'Recording…' : 'Voice note',
+                  style: const TextStyle(fontSize: 20, color: _P.text),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _recording
+                      ? 'Hold to record, tap stop when done.'
+                      : 'Tap and hold to record a voice note.',
+                  style: TextStyle(color: _P.muted, height: 1.4),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      _error ?? '',
+                      style: const TextStyle(color: Colors.redAccent),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 120,
+            child: GestureDetector(
+              onTap: _toggleRecord,
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: _recording
+                      ? const Color(0xFF450A0A)
+                      : _sending
+                          ? const Color(0xFF2A2A2A)
+                          : const Color(0xFF3A3A3A),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: _recording
+                        ? const Color(0xFF8A0000)
+                        : const Color(0xFF444444),
+                    width: 2,
+                  ),
+                ),
+                child: _recording
+                    ? const Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text('Recording',
+                              style: TextStyle(
+                                  color: _P.darkOnAccent, fontSize: 16)),
+                          SizedBox(height: 6),
+                          SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: _P.darkOnAccent,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Center(
+                        child: Icon(
+                          _recording ? Icons.stop_rounded : Icons.mic_outlined,
+                          color: _recording ? _P.darkOnAccent : _P.text,
+                          size: 44,
+                        ),
+                      ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _Bubble extends StatelessWidget {
+  const _Bubble(
+      {required this.msg,
+      this.groupedTop = false,
+      this.groupedBottom = false,
+      required this.mine,
+      required this.onLongPress,
+      this.onReactionTap,
+      this.replyTarget,
+      this.pendingStatus});
+  final Message msg;
+  final bool groupedTop;
+  final bool groupedBottom;
+  final bool mine;
+  final VoidCallback onLongPress;
+  final void Function(String messageId, String emoji)? onReactionTap;
+  final Message? replyTarget;
+  final String? pendingStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    Map<String, dynamic>? attachment;
+    if (msg.content.startsWith('attachment:')) {
+      try {
+        attachment = Map<String, dynamic>.from(
+            jsonDecode(msg.content.substring(11)) as Map);
+      } catch (_) {}
+    }
+    final adjusted = BorderRadius.only(
+      topLeft: Radius.circular(!mine && groupedTop ? 7 : 18),
+      topRight: Radius.circular(mine && groupedTop ? 7 : 18),
+      bottomLeft: Radius.circular(!mine && groupedBottom ? 7 : 18),
+      bottomRight: Radius.circular(mine && groupedBottom ? 7 : 18),
+    );
+    return Padding(
+      padding: EdgeInsets.only(
+        top: groupedTop ? 2 : 6,
+        bottom: groupedBottom ? 2 : 6,
+        left: mine ? 64 : 4,
+        right: mine ? 4 : 64,
+      ),
+      child: GestureDetector(
+        onLongPress: () {
+          if (attachment != null) return;
+          onLongPress();
+        },
+        child: Container(
+          constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.68),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            gradient: mine
+                ? const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [_P.primary, Color(0xFFC7EF00)],
+                  )
+                : const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF292B32), Color(0xFF202127)],
+                  ),
+            borderRadius: adjusted,
+            border: Border.all(
+              color: mine
+                  ? Colors.white.withValues(alpha: 0.2)
+                  : Colors.white.withValues(alpha: 0.07),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: mine
+                    ? _P.primary.withValues(alpha: 0.13)
+                    : Colors.black.withValues(alpha: 0.16),
+                blurRadius: mine ? 18 : 12,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (replyTarget != null)
+                _ReplyPreviewInline(msg: replyTarget!, mine: mine),
+              if (msg.content.startsWith('voice:'))
+                _VoiceMessage(content: msg.content, mine: mine)
+              else if (attachment != null)
+                _AttachmentContent(attachment: attachment, mine: mine)
+              else
+                Text(msg.content,
+                    style: TextStyle(
+                        fontSize: 15,
+                        height: 1.3,
+                        color: mine ? _P.darkOnAccent : _P.text)),
+              if (msg.reactions.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                _ReactionsRow(
+                  reactions: msg.reactions,
+                  mine: mine,
+                  onTap: onReactionTap != null
+                      ? (emoji) => onReactionTap!(msg.id, emoji)
+                      : null,
+                ),
+              ],
+              const SizedBox(height: 2),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (msg.pinnedAt != null) ...[
+                    Icon(Icons.push_pin,
+                        size: 11, color: mine ? _P.darkOnAccent : _P.primary),
+                    const SizedBox(width: 3),
+                  ],
+                  if (msg.editedAt != null) ...[
+                    Text('edited',
+                        style: TextStyle(
+                            fontSize: 10,
+                            color: mine
+                                ? _P.darkOnAccent.withValues(alpha: 0.7)
+                                : _P.muted)),
+                    const SizedBox(width: 4),
+                  ],
+                  Text(_fmtTime(msg.createdAt),
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: mine
+                              ? _P.darkOnAccent.withValues(alpha: 0.7)
+                              : _P.muted)),
+                  if (mine) ...[
+                    const SizedBox(width: 3),
+                    if (pendingStatus == 'sending') ...[
+                      const SizedBox(width: 2),
+                      SizedBox(
+                        width: 10,
+                        height: 10,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.5,
+                          color: _P.darkOnAccent.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ] else if (pendingStatus == 'failed') ...[
+                      const SizedBox(width: 2),
+                      Icon(
+                        Icons.error_outline_rounded,
+                        size: 13,
+                        color: Colors.red.shade900,
+                      ),
+                    ] else ...[
+                      Icon(
+                        msg.readByPeer
+                            ? Icons.done_all_rounded
+                            : Icons.done_rounded,
+                        size: 13,
+                        color: msg.readByPeer
+                            ? const Color(0xFF0D5E2F)
+                            : _P.darkOnAccent.withValues(alpha: 0.7),
+                      ),
+                    ],
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static String _fmtTime(DateTime t) {
+    final h = t.hour == 0 ? 12 : (t.hour > 12 ? t.hour - 12 : t.hour);
+    final m = t.minute.toString().padLeft(2, '0');
+    final ap = t.hour >= 12 ? 'PM' : 'AM';
+    return '$h:$m $ap';
+  }
+}
+
+class _AttachmentContent extends StatelessWidget {
+  const _AttachmentContent({required this.attachment, required this.mine});
+  final Map<String, dynamic> attachment;
+  final bool mine;
+  @override
+  Widget build(BuildContext context) {
+    final previewWidth =
+        (MediaQuery.sizeOf(context).width * 0.58).clamp(120.0, 220.0);
+    final objectPath = attachment['path'] as String?;
+    final name = attachment['name'] as String? ?? 'Shared file';
+    if (objectPath == null) {
+      return Text(name, style: const TextStyle(color: _P.text));
+    }
+    return FutureBuilder<String>(
+      future: Supa.attachmentUrl(objectPath),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return SizedBox(
+            width: 220,
+            child: TextButton.icon(
+              onPressed: () async {
+                try {
+                  final url = await Supa.attachmentUrl(objectPath);
+                  await launchUrl(Uri.parse(url),
+                      mode: LaunchMode.externalApplication);
+                } catch (_) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text(
+                              "This file isn't ready yet. Try again in a moment.")),
+                    );
+                  }
+                }
+              },
+              icon: const Icon(Icons.refresh),
+              label: const Text("Couldn't open this file"),
+            ),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const SizedBox(
+              width: 180,
+              height: 54,
+              child: Center(child: BroSpinner(size: 18)));
+        }
+        final url = Uri.parse(snapshot.data!);
+        if (attachment['kind'] == 'image') {
+          return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    showDialog<void>(
+                      context: context,
+                      builder: (dialogContext) => Dialog.fullscreen(
+                        backgroundColor: Colors.black.withValues(alpha: 0.95),
+                        child: Stack(
+                          children: [
+                            InteractiveViewer(
+                              maxScale: 4.0,
+                              child: Center(
+                                child: Image.network(url.toString(),
+                                    fit: BoxFit.contain),
+                              ),
+                            ),
+                            Positioned(
+                              top: 24,
+                              right: 20,
+                              child: IconButton(
+                                icon: const Icon(Icons.close,
+                                    color: Colors.white, size: 28),
+                                onPressed: () => Navigator.pop(dialogContext),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                  child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.network(url.toString(),
+                          width: previewWidth,
+                          height: 190,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => SizedBox(
+                              width: previewWidth,
+                              height: 100,
+                              child: const Icon(Icons.broken_image_outlined)))),
+                ),
+                const SizedBox(height: 5),
+                Text(name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 12, color: mine ? _P.darkOnAccent : _P.text)),
+              ]);
+        }
+        return InkWell(
+            onTap: () => launchUrl(url, mode: LaunchMode.externalApplication),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(
+                  attachment['kind'] == 'video'
+                      ? Icons.video_file_outlined
+                      : Icons.insert_drive_file_outlined,
+                  color: mine ? _P.darkOnAccent : _P.primary),
+              const SizedBox(width: 8),
+              Flexible(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text(name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: mine ? _P.darkOnAccent : _P.text,
+                            fontWeight: FontWeight.w600)),
+                    Text('Tap to open',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: mine
+                                ? _P.darkOnAccent.withValues(alpha: 0.7)
+                                : _P.muted)),
+                  ])),
+            ]));
+      },
+    );
+  }
+}
+
+class _Composer extends StatelessWidget {
+  const _Composer({
+    required this.controller,
+    required this.onSend,
+    this.onTypingChanged,
+    this.onAttach,
+    this.onVoice,
+    this.onEmoji,
+    this.onSchedule,
+  });
+  final TextEditingController controller;
+  final VoidCallback onSend;
+  final ValueChanged<String>? onTypingChanged;
+  final VoidCallback? onAttach;
+  final VoidCallback? onVoice;
+  final VoidCallback? onEmoji;
+  final VoidCallback? onSchedule;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+      child: Container(
+        decoration: BoxDecoration(
+          color: _P.surface,
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(color: _P.border.withValues(alpha: 0.35)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.22),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            const SizedBox(width: 4),
+            PressScale(
+              scaleFactor: 0.88,
+              onTap: onAttach,
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.add_circle_outline_rounded,
+                    color: _P.primary, size: 24),
+              ),
+            ),
+            PressScale(
+              scaleFactor: 0.88,
+              onTap: onEmoji,
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.emoji_emotions_outlined,
+                    color: _P.muted, size: 22),
+              ),
+            ),
+            PressScale(
+              scaleFactor: 0.88,
+              onTap: onSchedule,
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.schedule_outlined, color: _P.muted, size: 22),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: TextField(
+                controller: controller,
+                minLines: 1,
+                maxLines: 5,
+                style: const TextStyle(color: _P.text, fontSize: 15),
+                decoration: InputDecoration(
+                  hintText: 'Message',
+                  hintStyle: TextStyle(
+                      color: _P.muted.withValues(alpha: 0.7), fontSize: 15),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onSubmitted: (_) => onSend(),
+                onChanged: onTypingChanged,
+              ),
+            ),
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: controller,
+              builder: (_, v, __) {
+                final hasText = v.text.trim().isNotEmpty;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6, left: 4),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    transitionBuilder: (child, anim) => ScaleTransition(
+                      scale: anim,
+                      child: FadeTransition(
+                        opacity: anim,
+                        child: child,
+                      ),
+                    ),
+                    child: hasText
+                        ? PressScale(
+                            key: const ValueKey('send-btn'),
+                            scaleFactor: 0.88,
+                            onTap: onSend,
+                            child: Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: _P.primary,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _P.primary.withValues(alpha: 0.4),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.arrow_upward_rounded,
+                                  color: _P.darkOnAccent,
+                                  size: 21,
+                                ),
+                              ),
+                            ),
+                          )
+                        : PressScale(
+                            key: const ValueKey('mic-btn'),
+                            scaleFactor: 0.88,
+                            onTap: onVoice,
+                            child: Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: _P.surfaceHigh,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: _P.border.withValues(alpha: 0.35),
+                                ),
+                              ),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.mic_none_rounded,
+                                  color: _P.primary,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                          ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionBtn extends StatelessWidget {
+  const _ActionBtn(this.icon, {this.onTap});
+  final IconData icon;
+  final VoidCallback? onTap;
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+        icon: Icon(icon, color: _P.muted, size: 22), onPressed: onTap ?? () {});
+  }
+}
+
+class _MenuTile extends StatelessWidget {
+  const _MenuTile(
+      {required this.icon, required this.label, required this.onTap});
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: _P.muted, size: 22),
+      title: Text(label, style: const TextStyle(color: _P.text, fontSize: 15)),
+      onTap: onTap,
+    );
+  }
+}
+
+class _AttachActionItem extends StatelessWidget {
+  const _AttachActionItem({
+    required this.icon,
+    required this.label,
+    required this.color,
+    this.iconColor = Colors.white,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final Color iconColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return PressScale(
+      scaleFactor: 0.9,
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.16),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: color.withValues(alpha: 0.35),
+                width: 1.5,
+              ),
+            ),
+            child: Center(
+              child: Icon(
+                icon,
+                color: color == _P.primary ? iconColor : color,
+                size: 24,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              color: _P.text,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+
+
+
+// === Chat widgets ===
+
+class _ReactionPickerItem extends StatelessWidget {
+  const _ReactionPickerItem({required this.emoji});
+  final String emoji;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.pop(context, emoji),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 100),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: _P.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _P.border),
+        ),
+        child: Text(emoji, style: const TextStyle(fontSize: 28)),
+      ),
+    );
+  }
+}
+
+
+class _ReplyPreviewBar extends StatelessWidget {
+  const _ReplyPreviewBar({required this.message, required this.onCancel});
+  final Message message;
+  final VoidCallback onCancel;
+
+  String get _previewText {
+    final text = message.content;
+    if (text.startsWith('attachment:')) return '[Attachment]';
+    return text.isEmpty ? '[Empty message]' : text;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: _P.volt.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _P.volt.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.reply_outlined, size: 16, color: _P.volt),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Reply to',
+                    style: TextStyle(color: _P.volt, fontSize: 11),
+                  ),
+                  Text(
+                    _previewText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: _P.text.withValues(alpha: 0.7), fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              icon: Icon(Icons.close, size: 18, color: _P.muted),
+              onPressed: onCancel,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Reply preview shown inside a message bubble when the message is a reply.
+
+class _ReplyPreviewInline extends StatelessWidget {
+  const _ReplyPreviewInline({required this.msg, required this.mine});
+  final Message msg;
+  final bool mine;
+
+  String get _previewText {
+    final text = msg.content;
+    if (text.startsWith('attachment:')) return '[Attachment]';
+    return text.isEmpty ? '[Empty message]' : text;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = mine ? _P.darkOnAccent.withValues(alpha: 0.6) : _P.muted;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.reply_outlined, size: 12, color: textColor),
+              const SizedBox(width: 4),
+              Text(
+                'Reply to${msg.senderId == (Supa.currentUser?.id ?? '') ? ' you' : ''}',
+                style: TextStyle(fontSize: 11, color: textColor),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Container(
+            constraints: const BoxConstraints(maxWidth: 250),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: textColor.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: textColor.withValues(alpha: 0.15)),
+            ),
+            child: Text(
+              _previewText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: textColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Emoji picker grid with categorized emojis.
+
+class _EmojiPicker extends StatelessWidget {
+  const _EmojiPicker({required this.onEmojiSelected});
+  final ValueChanged<String> onEmojiSelected;
+
+  static const _emojis = {
+    'Smileys': [
+      '😀',
+      '😃',
+      '😄',
+      '😁',
+      '😆',
+      '😅',
+      '🤣',
+      '😂',
+      '🙂',
+      '🙃',
+      '😉',
+      '😊',
+      '😇',
+      '🥰',
+      '😍',
+      '🤩',
+      '😘',
+      '😗',
+      '😚',
+      '😙',
+      '😋',
+      '😛',
+      '😜',
+      '🤪',
+      '😝',
+      '🤑',
+      '🤗',
+      '🤭',
+      '🤫',
+      '🤔',
+      '🤐',
+      '🤨',
+      '😐',
+      '😑',
+      '😶',
+      '😏',
+      '😒',
+      '🙄',
+      '😬',
+      '🤥',
+      '😌',
+      '😔',
+      '😪',
+      '🤤',
+      '😴',
+      '😷',
+      '🤒',
+      '🤕',
+      '🤢',
+      '🤮',
+      '🤧',
+      '🥵',
+      '🥶',
+      '🥴',
+      '😵',
+      '🤯',
+      '🤠',
+      '🥳',
+      '🥸',
+      '😎',
+      '🤓',
+      '🧐',
+      '😕',
+      '😟',
+      '🙁',
+      '😮',
+      '😯',
+      '😲',
+      '😳',
+      '🥺',
+      '😦',
+      '😧',
+      '😨',
+      '😰',
+      '😥',
+      '😢',
+      '😭',
+      '😱',
+      '😖',
+      '😣',
+      '😞',
+      '😓',
+      '😩',
+      '😫',
+      '🥱',
+      '😤',
+      '😡',
+      '😠',
+      '🤬',
+      '😈',
+      '👿',
+      '💀',
+      '☠️',
+      '💩',
+      '🤡',
+      '👹',
+      '👺',
+      '👻',
+      '👽',
+      '👾',
+      '🤖',
+    ],
+    'Gestures': [
+      '👋',
+      '🤚',
+      '🖐️',
+      '✋',
+      '🖖',
+      '👌',
+      '🤌',
+      '🤏',
+      '✌️',
+      '🤞',
+      '🤟',
+      '🤘',
+      '🤙',
+      '👈',
+      '👉',
+      '👆',
+      '🖕',
+      '👇',
+      '☝️',
+      '👍',
+      '👎',
+      '✊',
+      '👊',
+      '🤛',
+      '🤜',
+      '👏',
+      '🙌',
+      '👐',
+      '🤲',
+      '🤝',
+      '🙏',
+      '✍️',
+      '💅',
+      '🤳',
+      '💪',
+    ],
+    'Hearts': [
+      '❤️',
+      '🧡',
+      '💛',
+      '💚',
+      '💙',
+      '💜',
+      '🖤',
+      '🤍',
+      '🤎',
+      '💔',
+      '❣️',
+      '💕',
+      '💞',
+      '💓',
+      '💗',
+      '💖',
+      '💘',
+      '💝',
+      '💟',
+      '♥️',
+      '🫶',
+    ],
+    'Objects': [
+      '⚡',
+      '🔥',
+      '✨',
+      '🎉',
+      '🎊',
+      '🎈',
+      '🎁',
+      '🏆',
+      '🥇',
+      '🎯',
+      '🚀',
+      '💡',
+      '📌',
+      '🔔',
+      '🎵',
+      '🎶',
+      '🎸',
+      '🥁',
+      '🎤',
+      '🎧',
+      '📱',
+      '💻',
+      '🎮',
+      '🕹️',
+      '📷',
+      '🎬',
+      '🎨',
+      '🧩',
+      '🎲',
+      '🃏',
+      '♟️',
+    ],
+    'Nature': [
+      '🌈',
+      '☀️',
+      '🌤️',
+      '⛅',
+      '🌦️',
+      '🌧️',
+      '⛈️',
+      '🌩️',
+      '🌨️',
+      '❄️',
+      '☃️',
+      '⛄',
+      '🌬️',
+      '💨',
+      '🌪️',
+      '🌫️',
+      '🌊',
+      '💧',
+      '💦',
+      '🌸',
+      '💐',
+      '🌷',
+      '🌹',
+      '🌺',
+      '🌻',
+      '🌼',
+      '🌵',
+      '🌴',
+      '🌳',
+      '🌲',
+      '🍀',
+      '🍁',
+      '🍂',
+      '🍃',
+      '🐶',
+      '🐱',
+      '🐭',
+      '🐹',
+      '🐰',
+      '🦊',
+      '🐻',
+      '🐼',
+      '🐨',
+      '🐯',
+      '🦁',
+      '🐮',
+      '🐷',
+      '🐸',
+      '🐵',
+      '🐔',
+      '🐧',
+      '🐦',
+      '🦆',
+      '🦅',
+      '🦉',
+      '🦋',
+      '🐛',
+      '🐌',
+      '🐞',
+      '🐜',
+      '🪲',
+      '🐢',
+      '🐍',
+      '🐙',
+      '🦑',
+      '🐬',
+      '🐳',
+      '🐋',
+      '🦈',
+      '🐊',
+    ],
+    'Food': [
+      '🍕',
+      '🍔',
+      '🍟',
+      '🌭',
+      '🥪',
+      '🌮',
+      '🌯',
+      '🥙',
+      '🍜',
+      '🍝',
+      '🍣',
+      '🍱',
+      '🍛',
+      '🍤',
+      '🍙',
+      '🍚',
+      '🍳',
+      '🥘',
+      '🍲',
+      '🥗',
+      '🍿',
+      '🧂',
+      '🥫',
+      '🍞',
+      '🥐',
+      '🥖',
+      '🥨',
+      '🧀',
+      '🥚',
+      '🥓',
+      '🥩',
+      '🍗',
+      '🍖',
+      '🦴',
+      '🌽',
+      '🥕',
+      '🥦',
+      '🍆',
+      '🥔',
+      '🍠',
+      '🌰',
+      '🥜',
+      '🍯',
+      '🍎',
+      '🍏',
+      '🍐',
+      '🍊',
+      '🍋',
+      '🍌',
+      '🍉',
+      '🍇',
+      '🍓',
+      '🫐',
+      '🍈',
+      '🍒',
+      '🍑',
+      '🥭',
+      '🍍',
+      '🥥',
+      '🥝',
+      '🍅',
+      '🍄',
+      '🥜',
+      '🌶️',
+      '🍺',
+      '🍻',
+      '🥂',
+      '🍷',
+      '🥃',
+      '🍸',
+      '🍹',
+      '🧃',
+      '🥤',
+      '🧋',
+      '☕',
+      '🍵',
+      '🫖',
+      '🍶',
+      '🧊',
+      '🍰',
+      '🎂',
+      '🧁',
+      '🥧',
+      '🍩',
+      '🍪',
+      '🍫',
+      '🍬',
+      '🍭',
+      '🍮',
+      '🍯',
+    ],
+    'Travel': [
+      '🚗',
+      '🚕',
+      '🚙',
+      '🚌',
+      '🚎',
+      '🏎️',
+      '🚓',
+      '🚑',
+      '🚒',
+      '🚐',
+      '🛻',
+      '🚚',
+      '🚛',
+      '🚜',
+      '🏍️',
+      '🛵',
+      '🚲',
+      '🛴',
+      '🛹',
+      '🚁',
+      '✈️',
+      '🛩️',
+      '🚀',
+      '🛸',
+      '🚢',
+      '⛵',
+      '🚤',
+      '🗼',
+      '🏰',
+      '🏯',
+      '🏟️',
+      '🎡',
+      '🎢',
+      '🎠',
+      '⛲',
+      '🗽',
+      '🌅',
+      '🌄',
+      '🌠',
+      '🎇',
+      '🎆',
+      '🌉',
+      '🌇',
+      '🌆',
+      '🏙️',
+      '🌃',
+      '🌌',
+      '🌍',
+    ],
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: [
+          Text('Emoji',
+              style: TextStyle(
+                  color: _P.text, fontSize: 16, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: _emojis.entries.map((entry) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 4, horizontal: 4),
+                        child: Text(entry.key,
+                            style: TextStyle(
+                                color: _P.muted,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500)),
+                      ),
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: entry.value.map((emoji) {
+                          return InkWell(
+                            onTap: () => onEmojiSelected(emoji),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              width: 40,
+                              height: 40,
+                              alignment: Alignment.center,
+                              child: Text(emoji,
+                                  style: const TextStyle(fontSize: 24)),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// GIF picker using the Giphy API (trending + search).
+
+class _GifPicker extends StatefulWidget {
+  const _GifPicker({required this.onGifSelected});
+  final ValueChanged<String> onGifSelected;
+
+  @override
+  State<_GifPicker> createState() => _GifPickerState();
+}
+
+class _GifPickerState extends State<_GifPicker> {
+  final _search = TextEditingController();
+  List<Map<String, dynamic>> _gifs = [];
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTrending();
+  }
+
+  Future<void> _loadTrending() async {
+    setState(() => _loading = true);
+    try {
+      final gifs = await _fetchGifs('trending');
+      if (mounted) setState(() => _gifs = gifs);
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _searchGifs() async {
+    final query = _search.text.trim();
+    if (query.isEmpty) {
+      _loadTrending();
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      final gifs = await _fetchGifs('search', query: query);
+      if (mounted) setState(() => _gifs = gifs);
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> _fetchGifs(
+    String type, {
+    String? query,
+  }) async {
+    // Use Giphy's public API. The key is a demo key; for production, use your own.
+    final apiKey = 'dc6FjTznNgl7dPyRzO9cYI7zF2fCHP0s';
+    final uri = switch (type) {
+      'trending' => Uri.https('api.giphy.com', '/v1/gifs/trending', {
+          'api_key': apiKey,
+          'limit': '20',
+          'rating': 'g',
+        }),
+      'search' => Uri.https('api.giphy.com', '/v1/gifs/search', {
+          'api_key': apiKey,
+          'q': query!,
+          'limit': '20',
+          'rating': 'g',
+        }),
+      _ => throw Exception('Unknown type'),
+    };
+    final response = await http.get(uri);
+    if (response.statusCode != 200) throw Exception('API error');
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final results = data['data'] as List<dynamic>? ?? [];
+    return results
+        .whereType<Map<String, dynamic>>()
+        .where((g) {
+          final images = g['images'] as Map<String, dynamic>?;
+          return images?['fixed_height']?['url'] != null;
+        })
+        .map((g) => {
+              'url': (g['images']['fixed_height'] as Map)['url'] as String,
+              'preview': (g['images']['fixed_height_downsampled'] as Map)['url']
+                  as String?,
+              'title': g['title'] as String? ?? '',
+            })
+        .toList();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: [
+          Text('GIF',
+              style: TextStyle(
+                  color: _P.text, fontSize: 16, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _search,
+            decoration: InputDecoration(
+              hintText: 'Search GIFs...',
+              hintStyle: const TextStyle(color: _P.muted),
+              prefixIcon: const Icon(Icons.search, color: _P.muted),
+              suffixIcon: _search.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, color: _P.muted),
+                      onPressed: () {
+                        _search.clear();
+                        _loadTrending();
+                      },
+                    )
+                  : null,
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: _P.border)),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: _P.border)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: _P.primary)),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            style: const TextStyle(color: _P.text),
+            onSubmitted: (_) => _searchGifs(),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _gifs.isEmpty
+                    ? const Center(
+                        child: Text('No GIFs found',
+                            style: TextStyle(color: _P.muted)))
+                    : GridView.builder(
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                        ),
+                        itemCount: _gifs.length,
+                        itemBuilder: (context, index) {
+                          final gif = _gifs[index];
+                          final url = gif['preview'] ?? gif['url'];
+                          return InkWell(
+                            onTap: () =>
+                                widget.onGifSelected(gif['url'] as String),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.network(
+                                url,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  color: _P.surfaceHigh,
+                                  child: const Icon(Icons.broken_image,
+                                      color: _P.muted),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Sticker picker with built-in sticker packs.
+
+class _StickerPicker extends StatelessWidget {
+  const _StickerPicker({required this.onStickerSelected});
+  final ValueChanged<String> onStickerSelected;
+
+  static const _stickerPacks = {
+    'Faces': [
+      '😂',
+      '🤣',
+      '😍',
+      '🥰',
+      '😎',
+      '🤩',
+      '😇',
+      '🥳',
+      '😴',
+      '🤯',
+      '😱',
+      '🤮',
+      '💀',
+      '👻',
+      '🤡',
+      '👽',
+      '🤖',
+      '😈',
+      '👿',
+      '🙃',
+      '😏',
+      '🤔',
+      '🤫',
+      '🤭',
+    ],
+    'Hands': [
+      '👍',
+      '👎',
+      '👏',
+      '🙌',
+      '👐',
+      '🤝',
+      '🙏',
+      '✌️',
+      '🤞',
+      '🤟',
+      '🤘',
+      '👌',
+      '🤏',
+      '✋',
+      '🖖',
+      '👋',
+      '💪',
+      '🦾',
+      '🖕',
+      '👊',
+      '🤛',
+      '🤜',
+    ],
+    'Love': [
+      '❤️',
+      '🧡',
+      '💛',
+      '💚',
+      '💙',
+      '💜',
+      '🖤',
+      '🤍',
+      '🤎',
+      '💔',
+      '💕',
+      '💞',
+      '💓',
+      '💗',
+      '💖',
+      '💘',
+      '💝',
+      '💟',
+      '🫶',
+      '😘',
+      '😍',
+      '🥰',
+      '😻',
+      '💑',
+      '💏',
+      '👩‍❤️‍👨',
+      '👨‍❤️‍👨',
+      '👩‍❤️‍👩',
+    ],
+    'Animals': [
+      '🐶',
+      '🐱',
+      '🐭',
+      '🐹',
+      '🐰',
+      '🦊',
+      '🐻',
+      '🐼',
+      '🐨',
+      '🐯',
+      '🦁',
+      '🐮',
+      '🐷',
+      '🐸',
+      '🐵',
+      '🐔',
+      '🐧',
+      '🐦',
+      '🦆',
+      '🦅',
+      '🦉',
+      '🦇',
+      '🐛',
+      '🦋',
+      '🐌',
+      '🐞',
+      '🐜',
+      '🪲',
+      '🐢',
+      '🐍',
+      '🦎',
+      '🐙',
+      '🦑',
+      '🐬',
+      '🐳',
+      '🐋',
+      '🦈',
+      '🐊',
+      '🐅',
+      '🐆',
+      '🦓',
+      '🦍',
+      '🦧',
+      '🐘',
+      '🦛',
+      '🦏',
+      '🐪',
+      '🐫',
+      '🦒',
+      '🦘',
+      '🦬',
+      '🐃',
+      '🐂',
+      '🐄',
+      '🐎',
+      '🐖',
+      '🐏',
+      '🐑',
+      '🦙',
+      '🐐',
+      '🦌',
+      '🐕',
+      '🐩',
+      '🦮',
+      '🐕‍🦺',
+      '🐈',
+      '🐈‍⬛',
+      '🐓',
+      '🦃',
+      '🦤',
+      '🦚',
+      '🦜',
+      '🦢',
+      '🦩',
+      '🕊️',
+      '🐇',
+      '🦝',
+      '🦨',
+      '🦡',
+      '🦫',
+      '🦦',
+      '🦥',
+      '🐁',
+      '🐀',
+      '🐿️',
+      '🦔',
+    ],
+    'Activities': [
+      '⚽',
+      '🏀',
+      '🏈',
+      '⚾',
+      '🥎',
+      '🎾',
+      '🏐',
+      '🏉',
+      '🥏',
+      '🎱',
+      '🪀',
+      '🏓',
+      '🏸',
+      '🏒',
+      '🏑',
+      '🥍',
+      '🏏',
+      '🪃',
+      '🥅',
+      '⛳',
+      '🪁',
+      '🏹',
+      '🎣',
+      '🤿',
+      '🥊',
+      '🥋',
+      '🎽',
+      '🛹',
+      '🛼',
+      '🛷',
+      '⛸️',
+      '🥌',
+      '🎿',
+      '⛷️',
+      '🏂',
+      '🪂',
+      '🏋️',
+      '🤸',
+      '⛹️',
+      '🤺',
+      '🏇',
+      '🧘',
+      '🏄',
+      '🏊',
+      '🤽',
+      '🚣',
+      '🧗',
+      '🚴',
+      '🏆',
+      '🥇',
+      '🥈',
+      '🥉',
+      '🏅',
+      '🎖️',
+      '🏵️',
+      '🎗️',
+      '🎫',
+      '🎟️',
+      '🎪',
+    ],
+    'Travel': [
+      '🚗',
+      '🚕',
+      '🚙',
+      '🚌',
+      '🏎️',
+      '🚓',
+      '🚑',
+      '🚒',
+      '🚐',
+      '🚚',
+      '🚛',
+      '🚜',
+      '🏍️',
+      '🛵',
+      '🚲',
+      '🛴',
+      '🚁',
+      '✈️',
+      '🛩️',
+      '🚀',
+      '🛸',
+      '🚢',
+      '⛵',
+      '🚤',
+      '🗼',
+      '🏰',
+      '🏯',
+      '🏟️',
+      '🎡',
+      '🎢',
+      '🎠',
+      '⛲',
+      '🗽',
+      '🌅',
+      '🌄',
+      '🌠',
+      '🎇',
+      '🎆',
+      '🌉',
+      '🌇',
+      '🌆',
+      '🏙️',
+      '🌃',
+      '🌌',
+      '🌍',
+      '🌎',
+      '🌏',
+      '🗾',
+    ],
+    'Objects': [
+      '⌚',
+      '📱',
+      '💻',
+      '⌨️',
+      '🖥️',
+      '🖨️',
+      '🖱️',
+      '🖲️',
+      '💽',
+      '💾',
+      '💿',
+      '📀',
+      '📼',
+      '📷',
+      '📸',
+      '📹',
+      '🎥',
+      '📽️',
+      '🎞️',
+      '📞',
+      '☎️',
+      '📟',
+      '📠',
+      '📺',
+      '📻',
+      '🎙️',
+      '🎚️',
+      '🎛️',
+      '🧭',
+      '⏱️',
+      '⏲️',
+      '⏰',
+      '🕰️',
+      '⌛',
+      '⏳',
+      '📡',
+      '🔋',
+      '🔌',
+      '💡',
+      '🔦',
+      '🕯️',
+      '🧯',
+      '🗑️',
+      '🛢️',
+      '💸',
+      '💵',
+      '💴',
+      '💶',
+      '💷',
+      '💰',
+      '💳',
+      '💎',
+      '⚖️',
+      '🧰',
+      '🔧',
+      '🔨',
+      '⚒️',
+      '🛠️',
+      '⛏️',
+      '🪚',
+      '🔩',
+      '⚙️',
+      '🧱',
+      '⛓️',
+      '🧲',
+      '🔗',
+      '📧',
+      '📨',
+      '📩',
+      '📤',
+      '📥',
+      '📦',
+      '📫',
+      '📪',
+      '📬',
+      '📭',
+      '📮',
+      '📯',
+      '📜',
+      '📃',
+      '📄',
+      '📑',
+      '🧾',
+      '📊',
+      '📈',
+      '📉',
+      '📆',
+      '📅',
+      '🗓️',
+      '📇',
+      '🗃️',
+      '🗳️',
+      '🗄️',
+      '📋',
+      '📁',
+      '📂',
+      '🗂️',
+      '🗞️',
+      '📰',
+      '📓',
+      '📔',
+      '📒',
+      '📕',
+      '📗',
+      '📘',
+      '📙',
+      '📚',
+      '📖',
+      '🔖',
+      '🧷',
+      '🔗',
+      '📎',
+      '🖇️',
+      '📐',
+      '📏',
+      '🧮',
+      '📌',
+      '📍',
+      '✂️',
+      '🖊️',
+      '🖋️',
+      '✒️',
+      '🖌️',
+      '🖍️',
+      '📝',
+      '✏️',
+      '🔍',
+      '🔎',
+      '🔏',
+      '🔐',
+      '🔒',
+      '🔓',
+    ],
+    'Symbols': [
+      '❤️',
+      '🧡',
+      '💛',
+      '💚',
+      '💙',
+      '💜',
+      '🖤',
+      '🤍',
+      '🤎',
+      '💔',
+      '❣️',
+      '💕',
+      '💞',
+      '💓',
+      '💗',
+      '💖',
+      '💘',
+      '💝',
+      '☮️',
+      '✝️',
+      '☪️',
+      '🕉️',
+      '☸️',
+      '✡️',
+      '🔯',
+      '🕎',
+      '☯️',
+      '☦️',
+      '🛐',
+      '⛎',
+      '♈',
+      '♉',
+      '♊',
+      '♋',
+      '♌',
+      '♍',
+      '♎',
+      '♏',
+      '♐',
+      '♑',
+      '♒',
+      '♓',
+      '🆔',
+      '⚛️',
+      '🉑',
+      '☢️',
+      '☣️',
+      '📴',
+      '📳',
+      '🈶',
+      '🈚',
+      '🈸',
+      '🈺',
+      '🈷️',
+      '✴️',
+      '🆚',
+      '💮',
+      '🉐',
+      '㊙️',
+      '㊗️',
+      '🈴',
+      '🈵',
+      '🈹',
+      '🈲',
+      '🅰️',
+      '🅱️',
+      '🆎',
+      '🆑',
+      '🅾️',
+      '🆘',
+      '❌',
+      '⭕',
+      '🛑',
+      '⛔',
+      '📛',
+      '🚫',
+      '💯',
+      '💢',
+      '♨️',
+      '🚷',
+      '🚯',
+      '🚳',
+      '🚱',
+      '🔞',
+      '📵',
+      '🚭',
+      '❗',
+      '❕',
+      '❓',
+      '❔',
+      '‼️',
+      '⁉️',
+      '🔅',
+      '🔆',
+      '〽️',
+      '⚠️',
+      '🚸',
+      '🔱',
+      '⚜️',
+      '🔰',
+      '♻️',
+      '✅',
+      '🈯',
+      '💹',
+      '❇️',
+      '✳️',
+      '❎',
+      '🌐',
+      '💠',
+      'Ⓜ️',
+      '🌀',
+      '💤',
+      '🏧',
+      '🚾',
+      '♿',
+      '🅿️',
+      '🛗',
+      '🈳',
+      '🈂️',
+      '🛂',
+      '🛃',
+      '🛄',
+      '🛅',
+      '🚹',
+      '🚺',
+      '🚼',
+      '⚧️',
+      '🚻',
+      '🚮',
+      '🎦',
+      '📶',
+      '🈁',
+      '🔣',
+      'ℹ️',
+      '🔤',
+      '🔡',
+      '🔠',
+      '🆖',
+      '🆗',
+      '🆙',
+      '🆒',
+      '🆕',
+      '🆓',
+      '0️⃣',
+      '1️⃣',
+      '2️⃣',
+      '3️⃣',
+      '4️⃣',
+      '5️⃣',
+      '6️⃣',
+      '7️⃣',
+      '8️⃣',
+      '9️⃣',
+      '🔟',
+      '🔢',
+      '#️⃣',
+      '*️⃣',
+      '⏏️',
+      '▶️',
+      '⏸️',
+      '⏯️',
+      '⏹️',
+      '⏺️',
+      '⏭️',
+      '⏮️',
+      '⏩',
+      '⏪',
+      '⏫',
+      '⏬',
+      '◀️',
+      '🔼',
+      '🔽',
+      '➡️',
+      '⬅️',
+      '⬆️',
+      '⬇️',
+      '↗️',
+      '↘️',
+      '↙️',
+      '↖️',
+      '↕️',
+      '↔️',
+      '↪️',
+      '↩️',
+      '⤴️',
+      '⤵️',
+      '🔀',
+      '🔁',
+      '🔂',
+      '🔄',
+      '🔃',
+      '➕',
+      '➖',
+      '➗',
+      '✖️',
+      '🟰',
+      '♾️',
+      '💲',
+      '💱',
+      '™️',
+      '©️',
+      '®️',
+      '〰️',
+      '➰',
+      '➿',
+      '🔚',
+      '🔙',
+      '🔛',
+      '🔝',
+      '🔜',
+      '✔️',
+      '☑️',
+      '🔘',
+      '🔴',
+      '🟠',
+      '🟡',
+      '🟢',
+      '🔵',
+      '🟣',
+      '🟤',
+      '⚫',
+      '⚪',
+      '🟥',
+      '🟧',
+      '🟨',
+      '🟩',
+      '🟦',
+      '🟪',
+      '🟫',
+      '⬛',
+      '⬜',
+      '◼️',
+      '◻️',
+      '◾',
+      '◽',
+      '▪️',
+      '▫️',
+      '🔶',
+      '🔷',
+      '🔸',
+      '🔹',
+      '🔺',
+      '🔻',
+      '💠',
+      '🔲',
+      '🔳',
+      '⬬',
+      '🔈',
+      '🔇',
+      '🔉',
+      '🔊',
+      '🔔',
+      '🔕',
+      '📣',
+      '📢',
+      '♠️',
+      '♣️',
+      '♥️',
+      '♦️',
+      '🃏',
+      '🎴',
+      '🀄',
+      '🕐',
+      '🕑',
+      '🕒',
+      '🕓',
+      '🕔',
+      '🕕',
+      '🕖',
+      '🕗',
+      '🕘',
+      '🕙',
+      '🕚',
+      '🕛',
+      '🕜',
+      '🕝',
+      '🕞',
+      '🕟',
+      '🕠',
+      '🕡',
+      '🕢',
+      '🕣',
+      '🕤',
+      '🕥',
+      '🕦',
+      '🕧',
+    ],
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: [
+          Text('Stickers',
+              style: TextStyle(
+                  color: _P.text, fontSize: 16, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: _stickerPacks.entries.map((entry) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 4, horizontal: 4),
+                        child: Text(entry.key,
+                            style: TextStyle(
+                                color: _P.muted,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500)),
+                      ),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: entry.value.map((sticker) {
+                          return InkWell(
+                            onTap: () => onStickerSelected(sticker),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              width: 56,
+                              height: 56,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: _P.surfaceHigh,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(sticker,
+                                  style: const TextStyle(fontSize: 32)),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Quick-preset button for the schedule picker dialog.
+
+class _SchedulePresetBtn extends StatelessWidget {
+  final String label;
+  final Duration duration;
+  final void Function(VoidCallback) setState;
+  final DateTime now;
+  final void Function(DateTime) onSelected;
+  const _SchedulePresetBtn(
+      this.label, this.duration, this.setState, this.now, this.onSelected);
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: () {
+        final d = now
+            .add(duration)
+            .copyWith(second: 0, millisecond: 0, microsecond: 0);
+        onSelected(d);
+        setState(() {});
+      },
+      child:
+          Text(label, style: const TextStyle(color: _P.primary, fontSize: 13)),
+    );
+  }
+}
+
+class _PinnedMessagesBanner extends StatelessWidget {
+  const _PinnedMessagesBanner({
+    super.key,
+    required this.pinnedMessages,
+    required this.currentIndex,
+    required this.onTap,
+    required this.onLongPress,
+    required this.onDismiss,
+  });
+
+  final List<Message> pinnedMessages;
+  final int currentIndex;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    if (pinnedMessages.isEmpty) return const SizedBox.shrink();
+
+    final count = pinnedMessages.length;
+    // Show the message at currentIndex (clamped for safety).
+    final msg = pinnedMessages[currentIndex.clamp(0, count - 1)];
+    final preview = msg.content.replaceAll('\n', ' ');
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: count > 1 ? onLongPress : null,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          decoration: BoxDecoration(
+            color: _P.surface,
+            border: Border(
+              bottom: BorderSide(color: _P.border.withValues(alpha: 0.6)),
+              left: BorderSide(color: _P.primary, width: 3),
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Row(
+            children: [
+              // Pin icon
+              Icon(Icons.push_pin, size: 15, color: _P.primary),
+              const SizedBox(width: 10),
+              // Message preview
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // "Pinned message" label + counter
+                    Row(
+                      children: [
+                        Text(
+                          'Pinned message',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: _P.primary,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                        if (count > 1) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: _P.primary.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '${currentIndex + 1} / $count',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: _P.primary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      preview,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: _P.text.withValues(alpha: 0.85),
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Dismiss button
+              GestureDetector(
+                onTap: onDismiss,
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Icon(Icons.close,
+                      size: 16, color: _P.muted.withValues(alpha: 0.7)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Bottom sheet listing all pinned messages with tap-to-scroll and unpin.
+void _showPinnedMessagesSheet(
+  BuildContext context,
+  List<Message> pinnedMessages,
+  void Function(int index, int total) onScrollTo,
+  Future<void> Function(Message msg) onUnpin,
+) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: _P.surface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (sheetCtx) => _PinnedMessagesSheet(
+      pinnedMessages: pinnedMessages,
+      onScrollTo: onScrollTo,
+      onUnpin: onUnpin,
+    ),
+  );
+}
+
+
+class _PinnedMessagesSheet extends StatefulWidget {
+  const _PinnedMessagesSheet({
+    required this.pinnedMessages,
+    required this.onScrollTo,
+    required this.onUnpin,
+  });
+
+  final List<Message> pinnedMessages;
+  final void Function(int index, int total) onScrollTo;
+  final Future<void> Function(Message msg) onUnpin;
+
+  @override
+  State<_PinnedMessagesSheet> createState() => _PinnedMessagesSheetState();
+}
+
+class _PinnedMessagesSheetState extends State<_PinnedMessagesSheet> {
+  // Track local unpin in-progress to show loading feedback.
+  final _unpinning = <String>{};
+
+  @override
+  Widget build(BuildContext context) {
+    final msgs = widget.pinnedMessages;
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Handle
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: _P.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+            child: Row(
+              children: [
+                Icon(Icons.push_pin, size: 18, color: _P.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Pinned messages',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: _P.text,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _P.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${msgs.length} / 5',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _P.primary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: _P.border),
+          // Message list – show most recent first
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 360),
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              itemCount: msgs.length,
+              separatorBuilder: (_, __) =>
+                  const Divider(height: 1, color: _P.border),
+              itemBuilder: (_, i) {
+                final msg = msgs[i];
+                final isUnpinning = _unpinning.contains(msg.id);
+                return ListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                  leading: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: _P.primary.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '${i + 1}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: _P.primary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  title: Text(
+                    msg.content.replaceAll('\n', ' '),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 14, color: _P.text),
+                  ),
+                  subtitle: Text(
+                    _fmtBannerTime(msg.pinnedAt ?? msg.createdAt),
+                    style: TextStyle(fontSize: 11, color: _P.muted),
+                  ),
+                  trailing: isUnpinning
+                      ? const BroSpinner(size: 18, color: _P.muted)
+                      : IconButton(
+                          icon: Icon(Icons.push_pin, size: 18, color: _P.muted),
+                          tooltip: 'Unpin',
+                          onPressed: () async {
+                            setState(() => _unpinning.add(msg.id));
+                            try {
+                              await widget.onUnpin(msg);
+                            } finally {
+                              if (mounted) {
+                                setState(() => _unpinning.remove(msg.id));
+                              }
+                            }
+                          },
+                        ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    widget.onScrollTo(i, msgs.length);
+                  },
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  static String _fmtBannerTime(DateTime t) {
+    final now = DateTime.now();
+    final diff = now.difference(t);
+    if (diff.inDays == 0) {
+      final h = t.hour == 0 ? 12 : (t.hour > 12 ? t.hour - 12 : t.hour);
+      final m = t.minute.toString().padLeft(2, '0');
+      final ap = t.hour >= 12 ? 'PM' : 'AM';
+      return 'Pinned today at $h:$m $ap';
+    }
+    if (diff.inDays == 1) return 'Pinned yesterday';
+    if (diff.inDays < 7) return 'Pinned ${diff.inDays} days ago';
+    return 'Pinned ${t.day}/${t.month}/${t.year}';
+  }
+}
