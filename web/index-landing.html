@@ -70,7 +70,10 @@
     .header-cta { min-height:40px; padding-inline:17px; font-size:12px; }
 
     .hero { position:relative; overflow:hidden; padding:96px 0 92px; border-bottom:1px solid rgba(255,255,255,.06); }
-    .hero:before { content:""; position:absolute; width:500px; height:500px; right:-210px; top:-235px; border-radius:50%; border:1px solid #d7ff5f12; box-shadow:0 0 0 50px #d7ff5f05,0 0 0 100px #d7ff5f04,0 0 0 150px #d7ff5f03; pointer-events:none; }
+    .hero-video-bg { position:absolute; inset:0; z-index:0; overflow:hidden; }
+    .hero-video-bg video { width:100%; height:100%; object-fit:cover; opacity:.15; filter:blur(2px) saturate(.8); }
+    .hero-video-overlay { position:absolute; inset:0; background:linear-gradient(180deg, rgba(10,11,13,.85) 0%, rgba(10,11,13,.7) 50%, rgba(10,11,13,.9) 100%); z-index:1; }
+    .hero:before { content:""; position:absolute; width:500px; height:500px; right:-210px; top:-235px; border-radius:50%; border:1px solid #d7ff5f12; box-shadow:0 0 0 50px #d7ff5f05,0 0 0 100px #d7ff5f04,0 0 0 150px #d7ff5f03; pointer-events:none; z-index:2; }
     .hero-grid { position:relative; display:grid; grid-template-columns:1fr 1fr; align-items:center; gap:68px; }
     .eyebrow { display:inline-flex; align-items:center; gap:10px; color:var(--lime); font-size:10px; font-weight:800; letter-spacing:.19em; text-transform:uppercase; }
     .eyebrow:before { content:""; width:22px; height:1px; background:currentColor; }
@@ -228,7 +231,14 @@
 
   <main id="top">
     <section class="hero">
-      <div class="wrap hero-grid">
+      <!-- Background video — subtle, blurred, low opacity for natural atmosphere -->
+      <div class="hero-video-bg">
+        <video autoplay muted loop playsinline preload="metadata" poster="">
+          <source src="/assets/video/man_chatting_on_phone.mp4" type="video/mp4">
+        </video>
+        <div class="hero-video-overlay"></div>
+      </div>
+      <div class="wrap hero-grid" style="position:relative;z-index:3;">
         <div class="hero-content">
           <div class="eyebrow">A little more human</div>
           <h1>Less noise.<br>More <span>you.</span></h1>

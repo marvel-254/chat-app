@@ -163,6 +163,17 @@ Comprehensive end-to-end UI overhaul and motion polish across the client:
   - Cohesive dark Material 3 dialogs and bottom sheets.
 - **Verification**: `flutter test` passed all 20 tests; `flutter analyze` zero errors.
 
+### Landing page hero video background (2026-11-17)
+
+Added a subtle background video to the hero section of the web landing page (`web/index-landing.html`) to give the download page a more natural, lived-in atmosphere.
+
+**What changed:**
+- **`web/assets/video/man_chatting_on_phone.mp4`** — Video file (~3.3 MB) placed in web assets for serving by the landing page.
+- **`web/index-landing.html`** — Added `.hero-video-bg` wrapper with an autoplaying, muted, looping `<video>` element behind the hero content. The video is styled with `opacity: 0.15`, `blur(2px)`, and `saturate(0.8)` so it reads as ambient atmosphere rather than a focal element. A dark gradient overlay (`.hero-video-overlay`) ensures the hero text and CTAs remain fully readable. The hero grid content sits at `z-index: 3` above the video layer.
+- Video uses `preload="metadata"` to minimize initial load impact and `playsinline` for mobile compatibility.
+
+**Design rationale:** The low opacity, blur, and desaturation keep the video from competing with the headline and CTA. It adds a subtle sense of motion and humanity — someone chatting on their phone — without feeling staged or distracting.
+
 ### Polished onboarding flow (v1.3.3)
 
 The single-page onboarding screen was replaced with a **3-page swipeable onboarding flow** with animations and visual polish.
