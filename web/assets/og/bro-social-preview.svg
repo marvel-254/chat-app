@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#11140d"/>
+      <stop offset=".55" stop-color="#0a0b0d"/>
+      <stop offset="1" stop-color="#101017"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b1e20"/>
+      <stop offset="1" stop-color="#111316"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#d7ff5f" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#d7ff5f" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#background)"/>
+  <ellipse cx="130" cy="-12" rx="510" ry="390" fill="url(#glow)"/>
+  <g opacity=".35" fill="none" stroke="#d7ff5f">
+    <circle cx="1028" cy="315" r="230" stroke-opacity=".14"/>
+    <circle cx="1028" cy="315" r="185" stroke-opacity=".12"/>
+    <circle cx="1028" cy="315" r="140" stroke-opacity=".1"/>
+  </g>
+  <g transform="translate(74 70)">
+    <rect width="66" height="66" rx="18" fill="#121318"/>
+    <rect x="1" y="1" width="64" height="64" rx="17" fill="none" stroke="#d4ff00" stroke-opacity=".34"/>
+    <path d="M18 21c0-1.7 1.3-3 3-3h12a10 10 0 0 1 5.5 18.4A10 10 0 0 1 33 55H21c-1.7 0-3-1.3-3-3V21Z" fill="#d4ff00"/>
+    <circle cx="29" cy="28" r="3.8" fill="#121318"/>
+    <circle cx="29" cy="45" r="3.8" fill="#121318"/>
+    <circle cx="49" cy="17" r="4.5" fill="#a855f7"/>
+  </g>
+  <text x="157" y="112" fill="#f3f3ed" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="800" letter-spacing="5">BRO</text>
+  <text x="159" y="138" fill="#969b91" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" letter-spacing="2.8">TALK LIKE YOU MEAN IT</text>
+  <text x="76" y="290" fill="#f3f3ed" font-family="Arial, Helvetica, sans-serif" font-size="78" font-weight="750" letter-spacing="-5">Less noise.</text>
+  <text x="76" y="377" fill="#d7ff5f" font-family="Arial, Helvetica, sans-serif" font-size="78" font-weight="750" letter-spacing="-5">More you.</text>
+  <text x="80" y="430" fill="#b5b8b0" font-family="Arial, Helvetica, sans-serif" font-size="20">A calmer corner of your phone for the people</text>
+  <text x="80" y="460" fill="#b5b8b0" font-family="Arial, Helvetica, sans-serif" font-size="20">who make your day.</text>
+  <g transform="translate(80 510)">
+    <rect width="330" height="38" rx="19" fill="#ffffff" fill-opacity=".045" stroke="#ffffff" stroke-opacity=".12"/>
+    <circle cx="20" cy="19" r="4" fill="#d7ff5f"/>
+    <text x="34" y="24" fill="#c6c9c1" font-family="Arial, Helvetica, sans-serif" font-size="12" letter-spacing=".5">PRIVATE CHATS  ·  NO ADS  ·  ANDROID + WEB</text>
+  </g>
+  <g transform="translate(690 162)">
+    <rect width="414" height="319" rx="25" fill="url(#panel)" stroke="#ffffff" stroke-opacity=".14"/>
+    <text x="26" y="38" fill="#8e948a" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="700" letter-spacing="2">THE LITTLE THINGS</text>
+    <circle cx="369" cy="34" r="4" fill="#8ee6bb"/>
+    <text x="344" y="57" fill="#aeb4aa" font-family="Arial, Helvetica, sans-serif" font-size="10">just now</text>
+    <path d="M26 72h362" stroke="#ffffff" stroke-opacity=".08"/>
+    <text x="145" y="99" fill="#72776f" font-family="Arial, Helvetica, sans-serif" font-size="9" letter-spacing="1.4">TODAY  ·  8:42 PM</text>
+    <rect x="25" y="119" width="286" height="66" rx="15" fill="#202327" stroke="#ffffff" stroke-opacity=".06"/>
+    <text x="43" y="147" fill="#e7e9e2" font-family="Arial, Helvetica, sans-serif" font-size="14">Made it home. That was exactly</text>
+    <text x="43" y="168" fill="#e7e9e2" font-family="Arial, Helvetica, sans-serif" font-size="14">the reset I needed.</text>
+    <rect x="118" y="198" width="270" height="55" rx="15" fill="#d7ff5f"/>
+    <text x="136" y="231" fill="#171a10" font-family="Arial, Helvetica, sans-serif" font-size="14">Same here. Let’s do it again soon.</text>
+    <rect x="118" y="268" width="270" height="29" rx="14" fill="#1b1e22" stroke="#ffffff" stroke-opacity=".08"/>
+    <circle cx="137" cy="282" r="9" fill="#a692ff"/>
+    <path d="m135 278 6 4-6 4z" fill="#171322"/>
+    <path d="M158 282h100m14 0h9m13 0h25" stroke="#a692ff" stroke-width="3" stroke-linecap="round" opacity=".8"/>
+    <text x="357" y="286" fill="#aeb4aa" font-family="Arial, Helvetica, sans-serif" font-size="9">0:12</text>
+  </g>
+  <text x="1104" y="575" text-anchor="end" fill="#858a80" font-family="Arial, Helvetica, sans-serif" font-size="13" letter-spacing="1.1">BRO.OMIXSYSTEMS.STORE</text>
+</svg>

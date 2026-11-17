@@ -1,8 +1,29 @@
-# Chat App
+# BRO
 
-Chat App is a real-time messaging application built with Flutter. It offers a fast, accessible web experience alongside native mobile and desktop targets.
+> BRO is a calm, private messaging app for conversations with the people who matter. It is available on Android and on the web.
 
-- Stack: Flutter (web), Dart
-- Entry point: `web/index.html`
-- PWA manifest: `web/manifest.json`
-- Primary route: `/` (single-page application)
+BRO's public website is https://bro.omixsystems.store/. The landing page is the canonical overview of the product; the web app is served from the same site at /app/.
+
+## Public pages
+
+- [BRO landing page](https://bro.omixsystems.store/): Product overview, download links, and entry to the web app.
+- [Web app](https://bro.omixsystems.store/app/): BRO messaging experience for web browsers.
+- [Privacy policy](https://bro.omixsystems.store/legal/privacy.html)
+- [Terms of service](https://bro.omixsystems.store/legal/terms.html)
+- [Cookie policy](https://bro.omixsystems.store/legal/cookie.html)
+- [All Android releases](https://github.com/marvel-254/chat-app/releases)
+- [Source repository](https://github.com/marvel-254/chat-app)
+
+## Product summary
+
+BRO focuses on direct conversations rather than public feeds. Product features include real-time messaging, voice notes, presence, and a dark-first interface. The landing page offers Android APK downloads and a same-site link to the web app.
+
+## Technical notes
+
+- Canonical website: https://bro.omixsystems.store/
+- Web app path: https://bro.omixsystems.store/app/
+- Social preview image: https://bro.omixsystems.store/assets/og/bro-social-preview.png (PNG, 1200 × 630)
+- Sitemap: https://bro.omixsystems.store/sitemap.xml
+- Robots policy: https://bro.omixsystems.store/robots.txt
+
+This file describes public product information only. Do not infer private user content or security guarantees beyond those stated in the published policies.

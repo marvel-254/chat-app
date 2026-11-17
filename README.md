@@ -20,6 +20,10 @@ Voice and video calls use peer-to-peer WebRTC with a public STUN server for conn
 - [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
 - [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
 
+## Vercel production deployment
+
+The existing `bro-landing` Vercel project is linked to this repository's `main` branch and builds the landing page and Flutter web app together, with the app mounted under `/app/`. `vercel.json` configures Vercel's native Git build, and `scripts/vercel-build.sh` installs the pinned Flutter SDK into Vercel's build cache before running `scripts/build.sh web`. The landing page's relative `app/` link therefore stays on the same hostname (`bro.omixsystems.store`). Vercel's production environment needs the public `SUPABASE_URL` and `SUPABASE_ANON_KEY` variables; do not configure a service-role key in the browser build. GitHub Pages remains configured as a legacy/fallback deployment for now.
+
 ## Cloudflare file storage
 
 Chat attachments and custom chat backgrounds are stored in the private Cloudflare R2 bucket `chat-app-storage` through the authenticated Worker at `https://bro-chat-storage.twistedoliver211fs.workers.dev`. Avatar images remain in Supabase Storage. The Worker checks the signed-in Supabase user and conversation membership before issuing uploads or download links.
