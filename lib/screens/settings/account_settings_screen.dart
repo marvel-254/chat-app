@@ -3,10 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Presence;
 import '../../theme/app_colors.dart' as app_colors;
 import '../../services/supabase.dart';
 import '../../models/profile.dart';
+import '../../models/profile_theme.dart';
 import '../../ui/states.dart';
 import '../../ui/errors.dart';
 import '../lock_gate.dart';
@@ -30,6 +33,12 @@ class _P {
   static const darkOnAccent = app_colors.darkOnVolt;
 }
 
+Color _profileThemeColor(ProfileTheme theme) {
+  final value = theme.colorHex;
+  if (!RegExp(r'^#[0-9A-Fa-f]{6}$').hasMatch(value)) return _P.primary;
+  return Color(int.parse('FF${value.substring(1)}', radix: 16));
+}
+
 class AccountSettingsScreen extends StatefulWidget {
   const AccountSettingsScreen({super.key});
   @override
@@ -42,6 +51,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   final _password = TextEditingController();
   final _confirmPassword = TextEditingController();
   final _about = TextEditingController();
+  final _profileStatus = TextEditingController();
+  final _profileColor = TextEditingController(text: '#D4FF00');
   Profile? _profile;
   XFile? _avatarFile;
   String? _avatarUrlOverride;
@@ -49,6 +60,13 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   String _chatBackground = 'default';
   String? _chatBackgroundImagePath;
   String? _chatBackgroundImageUrl;
+  String? _coverImagePath;
+  String? _coverImageUrl;
+  String? _profileMusicPath;
+  String? _profileMusicName;
+  bool _animatedAvatarEnabled = false;
+  String? _animatedAvatarPath;
+  bool _uploadingProfileMedia = false;
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -73,6 +91,16 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       _username.text = profile?.username ?? '';
       _displayName.text = profile?.displayName ?? '';
       _about.text = profile?.about ?? '';
+      _profileStatus.text = profile?.theme.statusMessage ?? '';
+      _profileColor.text = profile?.theme.colorHex ?? '#D4FF00';
+      _coverImagePath = profile?.theme.coverImagePath;
+      _profileMusicPath = profile?.theme.musicPath;
+      _profileMusicName = profile?.theme.musicName;
+      _animatedAvatarEnabled = profile?.theme.animatedAvatarEnabled ?? false;
+      _animatedAvatarPath = profile?.theme.animatedAvatarPath;
+      _coverImageUrl = _coverImagePath == null
+          ? null
+          : Supa.profileMediaUrl(_coverImagePath!);
       _photoVisibility = profile?.photoVisibility ?? 'everyone';
       _statusVisibility = profile?.statusVisibility ?? 'everyone';
       _aboutVisibility = profile?.aboutVisibility ?? 'everyone';
@@ -156,12 +184,99 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     }
   }
 
+  Future<void> _pickCover() async {
+    if (_uploadingProfileMedia) return;
+    try {
+      final file = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 2400,
+        maxHeight: 1200,
+      );
+      if (file == null) return;
+      setState(() => _uploadingProfileMedia = true);
+      final path =
+          await Supa.uploadProfileCover(await file.readAsBytes(), file.name);
+      if (!mounted) return;
+      setState(() {
+        _coverImagePath = path;
+        _coverImageUrl = Supa.profileMediaUrl(path);
+        _error = null;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = friendlyErrorMessage(e,
+            fallback: 'Choose a JPEG, PNG, or WebP image under 10 MB.'));
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingProfileMedia = false);
+    }
+  }
+
+  Future<void> _pickProfileMusic() async {
+    if (_uploadingProfileMedia) return;
+    try {
+      final files = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['mp3', 'm4a', 'aac', 'wav', 'ogg', 'webm'],
+      );
+      if (files.isEmpty) return;
+      final file = files.first;
+      setState(() => _uploadingProfileMedia = true);
+      final path =
+          await Supa.uploadProfileMusic(await file.readAsBytes(), file.name);
+      if (!mounted) return;
+      setState(() {
+        _profileMusicPath = path;
+        _profileMusicName = file.name;
+        _error = null;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = friendlyErrorMessage(e,
+            fallback: 'Choose an audio file under 15 MB.'));
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingProfileMedia = false);
+    }
+  }
+
+  Future<void> _pickAnimatedAvatar() async {
+    if (_uploadingProfileMedia) return;
+    try {
+      final file = await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (file == null) return;
+      setState(() => _uploadingProfileMedia = true);
+      final path =
+          await Supa.uploadAnimatedAvatar(await file.readAsBytes(), file.name);
+      if (!mounted) return;
+      setState(() {
+        _animatedAvatarPath = path;
+        _animatedAvatarEnabled = true;
+        _error = null;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = friendlyErrorMessage(e,
+            fallback: 'Choose an animated GIF avatar under 5 MB.'));
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingProfileMedia = false);
+    }
+  }
+
   Future<void> _save() async {
     final username = _username.text.trim();
+    final profileColor = _profileColor.text.trim().toUpperCase();
     if (username.length < 3 ||
         !RegExp(r'^[a-zA-Z0-9_.-]+$').hasMatch(username)) {
       setState(() => _error =
           'Usernames need at least 3 letters, numbers, dots, dashes, or underscores.');
+      return;
+    }
+    if (!RegExp(r'^#[0-9A-F]{6}$').hasMatch(profileColor)) {
+      setState(() =>
+          _error = 'Profile color must be a six-digit hex value like #D4FF00.');
       return;
     }
     if (_password.text.isNotEmpty && _password.text.length < 6) {
@@ -187,6 +302,17 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
           readReceiptsEnabled: _readReceiptsEnabled,
           defaultMessageExpiry: _defaultMessageExpiry,
           autoLockTimer: _autoLockTimer);
+      await Supa.updateProfileTheme(ProfileTheme(
+        colorHex: profileColor,
+        coverImagePath: _coverImagePath,
+        musicPath: _profileMusicPath,
+        musicName: _profileMusicName,
+        animatedAvatarEnabled: _animatedAvatarEnabled,
+        animatedAvatarPath: _animatedAvatarPath,
+        statusMessage: _profileStatus.text.trim().isEmpty
+            ? null
+            : _profileStatus.text.trim(),
+      ));
       await Supa.updateChatBackground(
         _chatBackground,
         imagePath:
@@ -220,6 +346,12 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     }
   }
 
+  Color _profileColorValue() {
+    final value = _profileColor.text.trim();
+    if (!RegExp(r'^#[0-9A-Fa-f]{6}$').hasMatch(value)) return _P.primary;
+    return Color(int.parse('FF${value.substring(1)}', radix: 16));
+  }
+
   @override
   void dispose() {
     _username.dispose();
@@ -227,6 +359,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     _password.dispose();
     _confirmPassword.dispose();
     _about.dispose();
+    _profileStatus.dispose();
+    _profileColor.dispose();
     super.dispose();
   }
 
@@ -281,6 +415,132 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       controller: _about,
                       label: 'About (max 160 characters)',
                       icon: Icons.info_outline),
+                  const SizedBox(height: 20),
+                  Text('Profile theme',
+                      style: TextStyle(
+                          color: _P.muted, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _profileColor,
+                    textCapitalization: TextCapitalization.characters,
+                    maxLength: 7,
+                    style: const TextStyle(color: _P.text),
+                    decoration: InputDecoration(
+                      labelText: 'Profile color',
+                      hintText: '#D4FF00',
+                      prefixIcon: Container(
+                        margin: const EdgeInsets.all(12),
+                        width: 20,
+                        height: 20,
+                        decoration: BoxDecoration(
+                          color: _profileColorValue(),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: 4),
+                  TextField(
+                    controller: _profileStatus,
+                    maxLength: 80,
+                    style: const TextStyle(color: _P.text),
+                    decoration: const InputDecoration(
+                      labelText: 'Profile status message',
+                      hintText: 'What are you up to?',
+                      prefixIcon: Icon(Icons.short_text_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: _uploadingProfileMedia ? null : _pickCover,
+                    child: Container(
+                      height: 132,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: _P.surface,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: _P.border),
+                        image: _coverImageUrl == null
+                            ? null
+                            : DecorationImage(
+                                image: NetworkImage(_coverImageUrl!),
+                                fit: BoxFit.cover,
+                              ),
+                      ),
+                      child: _coverImageUrl == null
+                          ? const Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.panorama_outlined, color: _P.muted),
+                                SizedBox(height: 6),
+                                Text('Upload cover image',
+                                    style: TextStyle(color: _P.text)),
+                                SizedBox(height: 3),
+                                Text('JPEG, PNG, or WebP up to 10 MB',
+                                    style: TextStyle(
+                                        color: _P.muted, fontSize: 12)),
+                              ],
+                            )
+                          : Align(
+                              alignment: Alignment.bottomRight,
+                              child: Padding(
+                                padding: const EdgeInsets.all(10),
+                                child: FilledButton.tonalIcon(
+                                  onPressed: _pickCover,
+                                  icon:
+                                      const Icon(Icons.edit_outlined, size: 16),
+                                  label: const Text('Change cover'),
+                                ),
+                              ),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.music_note_outlined),
+                    title: Text(_profileMusicName ?? 'Profile music'),
+                    subtitle: Text(
+                        _profileMusicPath == null
+                            ? 'Add a short track for visitors'
+                            : 'Uploaded and ready to play',
+                        style: TextStyle(color: _P.muted, fontSize: 12)),
+                    trailing: TextButton(
+                      onPressed:
+                          _uploadingProfileMedia ? null : _pickProfileMusic,
+                      child:
+                          Text(_profileMusicPath == null ? 'Add' : 'Replace'),
+                    ),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Use animated avatar'),
+                    subtitle: Text(
+                      _animatedAvatarPath == null
+                          ? 'Choose a GIF to enable this'
+                          : 'Animated GIFs are shown as uploaded',
+                      style: TextStyle(color: _P.muted, fontSize: 12),
+                    ),
+                    value:
+                        _animatedAvatarEnabled && _animatedAvatarPath != null,
+                    onChanged: _animatedAvatarPath == null
+                        ? null
+                        : (value) =>
+                            setState(() => _animatedAvatarEnabled = value),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed:
+                          _uploadingProfileMedia ? null : _pickAnimatedAvatar,
+                      icon: const Icon(Icons.gif_box_outlined),
+                      label: Text(_animatedAvatarPath == null
+                          ? 'Choose animated GIF'
+                          : 'Replace animated GIF'),
+                    ),
+                  ),
                   const SizedBox(height: 20),
                   Text('Privacy',
                       style: TextStyle(
@@ -674,12 +934,17 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   int _followingCount = 0;
   bool _followLoading = false;
   String? _error;
+  final _profileMusicPlayer = AudioPlayer();
+  bool _musicPlaying = false;
 
   bool get _isSelf => Supa.currentUser?.id == widget.userId;
 
   @override
   void initState() {
     super.initState();
+    _profileMusicPlayer.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _musicPlaying = false);
+    });
     Presence.focus(widget.userId);
     _load();
   }
@@ -687,6 +952,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   @override
   void dispose() {
     Presence.unfocus(widget.userId);
+    _profileMusicPlayer.dispose();
     super.dispose();
   }
 
@@ -716,6 +982,30 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           _error = "We couldn't open this profile right now.";
           _loading = false;
         });
+      }
+    }
+  }
+
+  Future<void> _toggleMusic() async {
+    final path = _profile?.theme.musicPath;
+    if (path == null || path.isEmpty) return;
+    try {
+      if (_musicPlaying) {
+        await _profileMusicPlayer.stop();
+        if (mounted) setState(() => _musicPlaying = false);
+        return;
+      }
+      await _profileMusicPlayer.play(
+        UrlSource(Supa.profileMediaUrl(path)),
+      );
+      if (mounted) setState(() => _musicPlaying = true);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _musicPlaying = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("This profile track couldn't be played here."),
+          behavior: SnackBarBehavior.floating,
+        ));
       }
     }
   }
@@ -809,11 +1099,35 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   Widget _buildBody() {
     final profile = _profile!;
     final isMe = _isSelf;
+    final themeColor = _profileThemeColor(profile.theme);
+    final avatarUrl = profile.theme.animatedAvatarEnabled &&
+            profile.theme.animatedAvatarPath != null
+        ? Supa.profileMediaUrl(profile.theme.animatedAvatarPath!)
+        : profile.avatarUrl;
 
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          if (profile.theme.coverImagePath != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              height: 176,
+              width: double.infinity,
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                image: DecorationImage(
+                  image: NetworkImage(
+                      Supa.profileMediaUrl(profile.theme.coverImagePath!)),
+                  fit: BoxFit.cover,
+                  colorFilter: ColorFilter.mode(
+                      Colors.black.withValues(alpha: 0.2), BlendMode.darken),
+                ),
+                border: Border.all(color: themeColor.withValues(alpha: 0.55)),
+              ),
+            ),
+          ],
           // ── Avatar & name ──────────────────────────────────────────────
           const SizedBox(height: 28),
           Center(
@@ -821,7 +1135,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               children: [
                 Avatar(
                   name: profile.peerInitial,
-                  url: profile.avatarUrl,
+                  url: avatarUrl,
                   size: 92,
                 ),
                 // Subtle glow ring
@@ -831,7 +1145,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: _P.primary.withValues(alpha: 0.35),
+                          color: themeColor.withValues(alpha: 0.55),
                           width: 2.5,
                         ),
                       ),
@@ -977,6 +1291,71 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               icon: const Icon(Icons.edit_outlined, size: 17),
               label: const Text('Edit profile'),
               style: TextButton.styleFrom(foregroundColor: _P.primary),
+            ),
+            const SizedBox(height: 28),
+          ],
+
+          if (profile.theme.statusMessage != null &&
+              profile.theme.statusMessage!.trim().isNotEmpty) ...[
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: themeColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: themeColor.withValues(alpha: 0.35)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.bolt_outlined, color: themeColor, size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      profile.theme.statusMessage!.trim(),
+                      style:
+                          TextStyle(color: _P.text, fontSize: 14, height: 1.35),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (profile.theme.musicPath != null) ...[
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: _P.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: themeColor.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.music_note_outlined, color: themeColor),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      profile.theme.musicName ?? 'Profile music',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: _P.text, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: _musicPlaying ? 'Stop music' : 'Play music',
+                    onPressed: _toggleMusic,
+                    icon: Icon(
+                      _musicPlaying
+                          ? Icons.stop_circle_outlined
+                          : Icons.play_circle_outline,
+                      color: themeColor,
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 28),
           ],

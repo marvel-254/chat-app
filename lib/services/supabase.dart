@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import '../models/profile.dart';
+import '../models/profile_theme.dart';
 import 'search_safety.dart';
 import 'reactions.dart' as reactions;
 import 'message_safety.dart' as message_safety;
@@ -191,6 +192,100 @@ class Supa {
         rethrow;
       }
     }
+  }
+
+  static Future<void> updateProfileTheme(ProfileTheme theme) async {
+    final updates = <String, dynamic>{
+      ...theme.toJson(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    };
+    await client.from('profiles').update(updates).eq('id', currentUser!.id);
+  }
+
+  static String profileMediaUrl(String objectPath) {
+    if (objectPath.startsWith('http://') || objectPath.startsWith('https://')) {
+      return objectPath;
+    }
+    return client.storage.from('profile-media').getPublicUrl(objectPath);
+  }
+
+  static Future<String> uploadProfileCover(
+      Uint8List bytes, String filename) async {
+    if (bytes.length > 10 * 1024 * 1024) {
+      throw ArgumentError('Profile cover images must be 10 MB or smaller.');
+    }
+    final extension = path.extension(filename).toLowerCase();
+    final contentType = switch (extension) {
+      '.jpg' || '.jpeg' => 'image/jpeg',
+      '.png' => 'image/png',
+      '.webp' => 'image/webp',
+      _ => throw ArgumentError('Choose a JPEG, PNG, or WebP cover image.'),
+    };
+    final objectPath =
+        '${currentUser!.id}/cover${extension.isEmpty ? '.jpg' : extension}';
+    await client.storage.from('profile-media').uploadBinary(
+          objectPath,
+          bytes,
+          fileOptions: FileOptions(
+            upsert: true,
+            cacheControl: '3600',
+            contentType: contentType,
+          ),
+        );
+    return objectPath;
+  }
+
+  static Future<String> uploadProfileMusic(
+      Uint8List bytes, String filename) async {
+    if (bytes.length > 15 * 1024 * 1024) {
+      throw ArgumentError('Profile music must be 15 MB or smaller.');
+    }
+    final extension = path.extension(filename).toLowerCase();
+    final contentType = switch (extension) {
+      '.mp3' => 'audio/mpeg',
+      '.m4a' => 'audio/mp4',
+      '.aac' => 'audio/aac',
+      '.wav' => 'audio/wav',
+      '.ogg' => 'audio/ogg',
+      '.webm' => 'audio/webm',
+      _ => throw ArgumentError(
+          'Choose an MP3, M4A, AAC, WAV, OGG, or WebM audio file.'),
+    };
+    final objectPath =
+        '${currentUser!.id}/profile-music${extension.isEmpty ? '.mp3' : extension}';
+    await client.storage.from('profile-media').uploadBinary(
+          objectPath,
+          bytes,
+          fileOptions: FileOptions(
+            upsert: true,
+            cacheControl: '3600',
+            contentType: contentType,
+          ),
+        );
+    return objectPath;
+  }
+
+  static Future<String> uploadAnimatedAvatar(
+      Uint8List bytes, String filename) async {
+    if (bytes.length > 5 * 1024 * 1024) {
+      throw ArgumentError('Animated avatars must be 5 MB or smaller.');
+    }
+    final extension = path.extension(filename).toLowerCase();
+    if (extension != '.gif') {
+      throw ArgumentError('Animated avatars must be GIF files.');
+    }
+    const objectPathSuffix = '/animated-avatar.gif';
+    final objectPath = '${currentUser!.id}$objectPathSuffix';
+    await client.storage.from('profile-media').uploadBinary(
+          objectPath,
+          bytes,
+          fileOptions: const FileOptions(
+            upsert: true,
+            cacheControl: '3600',
+            contentType: 'image/gif',
+          ),
+        );
+    return objectPath;
   }
 
   static Future<void> recordLastSeen() async {

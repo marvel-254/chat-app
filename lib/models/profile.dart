@@ -1,3 +1,5 @@
+import 'profile_theme.dart';
+
 class Profile {
   final String id;
   final String username;
@@ -16,6 +18,7 @@ class Profile {
   final Duration? defaultMessageExpiry;
   final Duration? autoLockTimer;
   final bool readByPeer;
+  final ProfileTheme theme;
 
   Profile({
     required this.id,
@@ -35,6 +38,7 @@ class Profile {
     this.defaultMessageExpiry,
     this.autoLockTimer,
     this.readByPeer = false,
+    this.theme = const ProfileTheme(),
   });
 
   factory Profile.fromJson(Map<String, dynamic> json) => Profile(
@@ -56,6 +60,7 @@ class Profile {
         readReceiptsEnabled: json['read_receipts_enabled'] as bool? ?? true,
         defaultMessageExpiry: parseInterval(json['default_message_expiry']),
         autoLockTimer: parseInterval(json['auto_lock_timer']),
+        theme: ProfileTheme.fromJson(json),
       );
 
   Map<String, dynamic> toJson() => {
@@ -67,6 +72,7 @@ class Profile {
         'chat_background_image_path': chatBackgroundImagePath,
         'created_at': createdAt.toIso8601String(),
         'updated_at': updatedAt.toIso8601String(),
+        ...theme.toJson(),
       };
 
   /// Display label for this profile (display name, else username).
