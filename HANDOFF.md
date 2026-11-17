@@ -106,6 +106,20 @@ After pushing, check the repository’s Actions page for all three runs. The rel
 
 ## Current work status (2026-11-17)
 
+### GitHub links removed from landing page
+
+All links pointing to the GitHub source code repository were removed from the landing page (`web/index-landing.html`) to prevent visitors from accessing the source code.
+
+**What was removed:**
+- **"GitHub ↗"** link in the footer navigation.
+- **"License"** link in the footer pointing to `https://github.com/marvel-254/chat-app/blob/main/LICENSE`.
+- **"All releases ↗"** link in the download section pointing to `https://github.com/marvel-254/chat-app/releases/latest`.
+- Privacy section text changed from "inspect the project on GitHub" to "Read our policies to understand how we handle your data."
+
+**What was kept:**
+- APK download links from GitHub Releases (`/releases/download/...`) — these serve the compiled APK files directly and don't expose the source code repository.
+- The JavaScript that fetches the latest release from the GitHub API — it only updates download URLs and release version info, not source code access.
+
 ### Sentry error monitoring (v1.2.0+)
 
 - **`sentry_flutter: ^9.20.0`** added to `pubspec.yaml`.
