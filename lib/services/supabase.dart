@@ -578,13 +578,8 @@ class Supa {
   }
 
   static Future<String> chatBackgroundUrl(String objectPath) async {
-    // Use RPC function for 30-day expiry (2592000 seconds) instead of 1 hour
-    try {
-      final res = await client.rpc('get_chat_background_signed_url',
-          params: {'p_user_id': currentUser!.id, 'p_path': objectPath});
-      if (res != null) return res as String;
-    } catch (_) {}
-    // Fallback to storage signed URL (1 hour expiry)
+    // Create signed URL with 1 hour expiry (fallback)
+    // For longer expiry, the storage API would need a newer version
     if (_cloudStorageUrl.isNotEmpty) {
       return (await _storagePost('/sign', query: {'key': objectPath}))['url']
           as String;
