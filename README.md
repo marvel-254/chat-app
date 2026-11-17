@@ -6,7 +6,7 @@ A beautifully dark messaging app with automatic updates, voice notes, and a mode
 
 Before running the app, configure its Supabase project. Create a local `.env.local` file (it is gitignored) with `SUPABASE_URL` and `SUPABASE_ANON_KEY`, using the Project URL and publishable/anon key from your Supabase project settings. Build with `./scripts/build.sh` (or `./scripts/build.sh web`). The app shows a setup message instead of starting with a fake backend endpoint when either value is missing.
 
-For GitHub Actions builds, configure repository secrets named `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
+The GitHub Pages workflow builds the browser app with BRO's public Supabase URL and publishable key; those are client-side values, never a service-role key. The signed APK workflow reads repository secrets named `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
 
 ## Chat features
 

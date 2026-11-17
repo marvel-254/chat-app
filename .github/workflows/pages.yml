@@ -32,8 +32,9 @@ jobs:
 
       - name: Build Web (Landing + PWA at /app/)
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          # Browser client settings are public Supabase values (never a service-role key).
+          SUPABASE_URL: https://dbfgyehzgrmsajpwydps.supabase.co
+          SUPABASE_ANON_KEY: sb_publishable_LDvClqv8Pb9ShXTMB9FBtA_m8_GRKsv
           BASE_HREF: /chat-app/app/
         run: |
           ./scripts/build.sh web

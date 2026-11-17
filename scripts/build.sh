@@ -29,6 +29,15 @@ if [[ -f .env.local ]]; then
   done < .env.local
 fi
 
+# CI and shell environments can provide the public Supabase client config too.
+# These values are safe for client apps; never pass a service-role key here.
+for key in SUPABASE_URL SUPABASE_ANON_KEY; do
+  value="${!key:-}"
+  if [[ -n "$value" ]]; then
+    DEFINES+=(--dart-define="${key}=${value}")
+  fi
+done
+
 TARGET="${1:-apk}"
 # Base href for the PWA. Local dev defaults to /app/; CI (GitHub Pages
 # project site) passes e.g. /chat-app/app/ via BASE_HREF env var.
@@ -51,14 +60,13 @@ case "$TARGET" in
     mkdir -p build/web/css build/web/icons build/web/assets build/web/legal
     cp web/index-landing.html build/web/index.html
     cp web/index.html build/web/app.html
-    cp web/manifest.json web/robots.txt web/sitemap.xml web/llms.txt web/design-system.html web/favicon.png build/web/ 2>/dev/null || true
+    cp web/manifest.json web/robots.txt web/sitemap.xml web/llms.txt web/favicon.png build/web/ 2>/dev/null || true
     cp web/service-worker.js build/web/app/service-worker.js 2>/dev/null || true
     cp -r web/css/. build/web/css/
     cp -r web/icons/. build/web/icons/
     cp -r web/assets/. build/web/assets/
     cp -r web/legal/. build/web/legal/
-    # Landing page app link points to the PWA at /app/ (index-landing.html edited inline below)
-    sed -i 's|href="design-system.html"|href="design-system.html"|g' build/web/index.html 2>/dev/null || true
+    # Landing page links to the PWA under /app/ and contains no private-only design docs.
     ;;
   --help|-h)
     echo "Usage: ./scripts/build.sh [apk|web]"

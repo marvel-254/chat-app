@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -124,7 +126,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _WelcomeHero(isSignUp: _isSignUp),
+                    WelcomeHero(isSignUp: _isSignUp),
                     const SizedBox(height: 28),
 
                     // Segmented Sign In / Create toggle
@@ -311,80 +313,462 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-/// Full-body welcome artwork alongside the sign-in copy.
-class _WelcomeHero extends StatelessWidget {
-  const _WelcomeHero({required this.isSignUp});
+/// A small, animated 3D-style welcome scene for the sign-in screen.
+/// Local transparent renders sit in a Flutter-drawn, animated depth scene.
+class WelcomeHero extends StatefulWidget {
+  const WelcomeHero({
+    super.key,
+    required this.isSignUp,
+    this.animate = true,
+    this.showEyebrow = true,
+    this.showFeatureCards = true,
+  });
   final bool isSignUp;
+  final bool animate;
+  final bool showEyebrow;
+  final bool showFeatureCards;
+
+  @override
+  State<WelcomeHero> createState() => _WelcomeHeroState();
+}
+
+class _WelcomeHeroState extends State<WelcomeHero>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _motion = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 6200),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.animate) {
+      _motion.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant WelcomeHero oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.animate != oldWidget.animate) {
+      if (widget.animate) {
+        _motion.repeat();
+      } else {
+        _motion.stop();
+        _motion.value = 0;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _motion.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 312,
+      height: 370,
       width: double.infinity,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final compact = constraints.maxWidth < 330;
-          final avatarWidth = compact ? 108.0 : 132.0;
-          final gap = compact ? 8.0 : 12.0;
-          final headingSize = compact ? 22.0 : 25.0;
-          final taglineSize = compact ? 12.5 : 14.0;
-
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              SizedBox(
-                width: avatarWidth,
-                height: 300,
-                child: Semantics(
-                  image: true,
-                  label:
-                      'BRO character waving and pointing toward the sign-in fields',
-                  child: Image.asset(
-                    'assets/images/welcome_avatar_fullbody.png',
-                    width: avatarWidth,
-                    height: 300,
-                    fit: BoxFit.contain,
-                    gaplessPlayback: true,
-                  ),
-                ),
-              ),
-              SizedBox(width: gap),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      isSignUp
-                          ? 'Your people. Your place.'
-                          : 'Good to see you, Bro.',
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        fontSize: headingSize,
-                        height: 1.08,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.7,
-                        color: app_colors.P.text,
+          final compact = constraints.maxWidth < 350;
+          final artWidth = compact ? 218.0 : 250.0;
+          final artHeight = compact ? 238.0 : 250.0;
+          return AnimatedBuilder(
+            animation: _motion,
+            builder: (context, _) {
+              final phase = _motion.value * math.pi * 2;
+              // Move the character around an elliptical path: the changing
+              // scale and perspective lean suggest near/far depth, while the
+              // shifting shadow anchors her to the scene.
+              final depth = math.cos(phase);
+              final orbitX = math.sin(phase) * 28;
+              final orbitY = depth * 7;
+              final depthScale = 0.96 + depth * 0.055;
+              final tilt = math.sin(phase) * 0.2;
+              final heading = widget.isSignUp
+                  ? 'Your people.\nYour place.'
+                  : 'Good to see you, Bro.';
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  // Deep, softly-lit stage and orbit rings.
+                  Positioned(
+                    left: constraints.maxWidth * 0.12,
+                    right: constraints.maxWidth * 0.12,
+                    top: 62,
+                    bottom: 0,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(180),
+                        gradient: RadialGradient(
+                          colors: [
+                            app_colors.P.primary.withValues(alpha: 0.12),
+                            const Color(0xFF292A35).withValues(alpha: 0.16),
+                            Colors.transparent,
+                          ],
+                          stops: const [0, 0.5, 1],
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    Text(
-                      isSignUp
-                          ? 'Make a space for the conversations that matter.'
-                          : 'All your convos, right here.',
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        fontSize: taglineSize,
-                        height: 1.35,
-                        color: app_colors.P.muted,
+                  ),
+                  Positioned(
+                    left: constraints.maxWidth * 0.19,
+                    right: constraints.maxWidth * 0.19,
+                    top: 109,
+                    height: 205,
+                    child: Transform.rotate(
+                      angle: -0.16,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(110),
+                          border: Border.all(
+                            color: app_colors.P.primary.withValues(alpha: 0.17),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: app_colors.P.primary.withValues(alpha: 0.07),
+                              blurRadius: 28,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 4,
+                    left: 0,
+                    right: 0,
+                    child: Column(
+                      children: [
+                        if (widget.showEyebrow) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 11, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: app_colors.P.surfaceHigh.withValues(alpha: 0.8),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: app_colors.P.border.withValues(alpha: 0.8),
+                              ),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.circle, size: 7, color: app_colors.P.primary),
+                                SizedBox(width: 7),
+                                Text(
+                                  'BRO  ·  YOUR PEOPLE, CLOSER',
+                                  style: TextStyle(
+                                    color: app_colors.P.muted,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 1.05,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+                        Text(
+                          heading,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: app_colors.P.text,
+                            fontSize: compact ? 25 : 28,
+                            height: 1.02,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.8,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          widget.isSignUp
+                              ? 'Make room for the conversations that matter.'
+                              : 'All your conversations, right here.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: app_colors.P.muted,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // A few glossy 3D collectibles orbit the character.
+                  Positioned(
+                    left: (compact ? 7.0 : 18.0) + math.sin(phase + 0.4) * 5,
+                    bottom: 88 + math.sin(phase + 0.9) * 8,
+                    child: _OrbitBall(phase: phase),
+                  ),
+                  Positioned(
+                    left: (compact ? 2.0 : 12.0) + math.sin(phase + 2.4) * 5,
+                    bottom: 18 + math.sin(phase + 2.1) * 6,
+                    child: _OrbitGamepad(phase: phase),
+                  ),
+                  Positioned(
+                    right: (compact ? 0.0 : 7.0) + math.sin(phase + 1.1) * 7,
+                    bottom: 67 + math.sin(phase + 1.6) * 7,
+                    child: _OrbitSupercar(phase: phase),
+                  ),
+                  // A moving contact shadow gives her path a grounded depth cue.
+                  Positioned(
+                    left: (constraints.maxWidth - 154) / 2 + orbitX * 0.65,
+                    bottom: 9 - orbitY * 0.25,
+                    width: 154 * depthScale,
+                    height: 22,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: RadialGradient(
+                          colors: [
+                            Colors.black.withValues(alpha: 0.58),
+                            Colors.black.withValues(alpha: 0.0),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // The character travels around the stage rather than staying
+                  // pinned in place. Perspective, scale and lean sell the orbit.
+                  Positioned(
+                    bottom: 5 + orbitY,
+                    left: 0,
+                    right: 0,
+                    height: artHeight,
+                    child: Transform.translate(
+                      offset: Offset(orbitX, 0),
+                      child: Center(
+                        child: SizedBox(
+                          width: artWidth,
+                          height: artHeight,
+                          child: Transform.scale(
+                            scale: depthScale,
+                            alignment: Alignment.bottomCenter,
+                            child: Transform(
+                              alignment: Alignment.bottomCenter,
+                              transform: Matrix4.identity()
+                                ..setEntry(3, 2, 0.0015)
+                                ..rotateY(tilt)
+                                ..rotateX(math.cos(phase) * 0.018),
+                              child: Semantics(
+                                image: true,
+                                label: 'BRO character moving around the welcome scene',
+                                child: Image.asset(
+                                  'assets/images/welcome_avatar_fullbody.png',
+                                  fit: BoxFit.contain,
+                                  alignment: Alignment.bottomCenter,
+                                  gaplessPlayback: true,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (widget.showFeatureCards) ...[
+                    Positioned(
+                      left: compact ? 1 : 8,
+                      top: 181 + math.sin(phase + 1) * 7,
+                      child: const _WelcomeFloatCard(
+                        icon: Icons.lock_rounded,
+                        title: 'Private by design',
+                        detail: 'Just your circle',
+                        accent: app_colors.P.primary,
+                      ),
+                    ),
+                    Positioned(
+                      right: compact ? 0 : 8,
+                      top: 132 + math.sin(phase + 2.2) * 8,
+                      child: const _WelcomeFloatCard(
+                        icon: Icons.bolt_rounded,
+                        title: 'Always in sync',
+                        detail: 'Pick up anywhere',
+                        accent: Color(0xFF8DB7FF),
                       ),
                     ),
                   ],
-                ),
-              ),
-            ],
+                  Positioned(
+                    right: constraints.maxWidth * 0.18,
+                    bottom: 22 + math.sin(phase + 3) * 5,
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: app_colors.P.primary,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: app_colors.P.primary.withValues(alpha: 0.35),
+                            blurRadius: 18,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.forum_rounded,
+                          size: 17, color: app_colors.P.darkOnAccent),
+                    ),
+                  ),
+                ],
+              );
+            },
           );
         },
+      ),
+    );
+  }
+}
+
+/// Downloaded transparent renders make the scene props real image assets.
+class _OrbitBall extends StatelessWidget {
+  const _OrbitBall({required this.phase});
+  final double phase;
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform(
+      alignment: Alignment.center,
+      transform: Matrix4.identity()
+        ..setEntry(3, 2, 0.002)
+        ..rotateY(-0.18 + math.sin(phase) * 0.34)
+        ..rotateZ(-0.12 + math.cos(phase) * 0.22),
+      child: Semantics(
+        image: true,
+        label: 'Glossy blue 3D soccer ball',
+        child: Image.asset(
+          'assets/images/welcome_3d_ball.webp',
+          width: 54,
+          height: 54,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+          gaplessPlayback: true,
+        ),
+      ),
+    );
+  }
+}
+
+class _OrbitGamepad extends StatelessWidget {
+  const _OrbitGamepad({required this.phase});
+  final double phase;
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform(
+      alignment: Alignment.center,
+      transform: Matrix4.identity()
+        ..setEntry(3, 2, 0.002)
+        ..rotateY(0.12 + math.sin(phase + 1.4) * 0.12)
+        ..rotateZ(-0.15 + math.cos(phase + 1.4) * 0.06),
+      child: Semantics(
+        image: true,
+        label: 'Black 3D game controller',
+        child: Image.asset(
+          'assets/images/welcome_3d_gamepad.png',
+          width: 84,
+          height: 58,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+          gaplessPlayback: true,
+        ),
+      ),
+    );
+  }
+}
+
+class _OrbitSupercar extends StatelessWidget {
+  const _OrbitSupercar({required this.phase});
+  final double phase;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      image: true,
+      label: 'Yellow Lamborghini supercar',
+      child: Transform(
+        alignment: Alignment.center,
+        transform: Matrix4.identity()
+          ..setEntry(3, 2, 0.002)
+          ..rotateY(-0.1 + math.sin(phase + 1.8) * 0.12)
+          ..rotateZ(-0.055),
+        child: Image.asset(
+          'assets/images/welcome_lamborghini.png',
+          width: 128,
+          height: 69,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+          gaplessPlayback: true,
+        ),
+      ),
+    );
+  }
+}
+
+class _WelcomeFloatCard extends StatelessWidget {
+  const _WelcomeFloatCard({
+    required this.icon,
+    required this.title,
+    required this.detail,
+    required this.accent,
+  });
+
+  final IconData icon;
+  final String title;
+  final String detail;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+      decoration: BoxDecoration(
+        color: app_colors.P.surface.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.32),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(color: accent.withValues(alpha: 0.09), blurRadius: 20),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 27,
+            height: 27,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, size: 15, color: accent),
+          ),
+          const SizedBox(width: 7),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(title,
+                  style: const TextStyle(
+                    color: app_colors.P.text,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                  )),
+              const SizedBox(height: 2),
+              Text(detail,
+                  style: const TextStyle(
+                    color: app_colors.P.muted,
+                    fontSize: 8,
+                  )),
+            ],
+          ),
+        ],
       ),
     );
   }
