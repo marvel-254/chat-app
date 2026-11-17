@@ -25,6 +25,7 @@ import 'theme/app_colors.dart' as app_colors;
 export 'theme/app_colors.dart';
 import 'screens/auth/auth_gate.dart' as auth_gate;
 import 'screens/auth/login_screen.dart';
+import 'screens/auth/onboarding_screen.dart' as onboarding;
 import 'screens/auth/confirmation_screen.dart';
 import 'screens/chat/conversation_list_screen.dart';
 import 'screens/chat/chat_screen.dart';
@@ -66,6 +67,7 @@ void main() async {
       }
 
       await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
+      await onboarding.loadOnboardingStatus();
       if (!kIsWeb &&
           (defaultTargetPlatform == TargetPlatform.android ||
               defaultTargetPlatform == TargetPlatform.iOS)) {
@@ -153,6 +155,10 @@ final _router = GoRouter(
   initialLocation: '/',
   routes: [
     GoRoute(path: '/', builder: (_, __) => const auth_gate.AuthGate()),
+    GoRoute(
+      path: '/onboarding',
+      builder: (_, __) => const onboarding.OnboardingScreen(),
+    ),
     GoRoute(path: '/circles', builder: (_, __) => const CirclesScreen()),
     GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
     GoRoute(
@@ -205,9 +211,18 @@ final _router = GoRouter(
   ],
   redirect: (context, state) {
     final authed = Supa.currentUser != null;
-    final loggingIn = state.matchedLocation == '/login';
-    if (!authed && !loggingIn) return '/login';
-    if (authed && loggingIn) return '/conversations';
+    final location = state.matchedLocation;
+    final isOnboarding = location == '/onboarding';
+    final loggingIn = location == '/login';
+    if (!authed) {
+      if (!onboarding.onboardingCompleted) {
+        return isOnboarding ? null : '/onboarding';
+      }
+      if (isOnboarding) return '/login';
+      if (!loggingIn) return '/login';
+      return null;
+    }
+    if (isOnboarding || loggingIn) return '/conversations';
     return null;
   },
 );

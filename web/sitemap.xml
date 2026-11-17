@@ -1,27 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://marvel-254.github.io/chat-app/</loc>
+    <loc>https://bro.omixsystems.store/</loc>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://marvel-254.github.io/chat-app/design-system.html</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://marvel-254.github.io/chat-app/legal/privacy.html</loc>
+    <loc>https://bro.omixsystems.store/legal/privacy.html</loc>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://marvel-254.github.io/chat-app/legal/terms.html</loc>
+    <loc>https://bro.omixsystems.store/legal/terms.html</loc>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://marvel-254.github.io/chat-app/legal/cookie.html</loc>
+    <loc>https://bro.omixsystems.store/legal/cookie.html</loc>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>

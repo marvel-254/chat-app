@@ -92,7 +92,7 @@ Pushing to `main` or `master` starts three workflows:
 - `.github/workflows/build-apk.yml`: builds split release APKs and publishes a GitHub Release tagged `v<run number>`.
 - `.github/workflows/pages.yml`: builds the Flutter web app and deploys it to GitHub Pages.
 
-Repository Actions secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY` must be set for the app builds. The GitHub token needs permission to create releases; the Pages deployment also requires GitHub Pages to be enabled for the repository. Cloudflare Worker deployment is a separate Wrangler operation; the GitHub workflows do not deploy it.
+The signed APK workflow uses repository Actions secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY`. The Pages workflow uses the public Supabase URL and publishable key directly because browser builds must expose client-side config; never use a service-role key there. The GitHub token needs permission to create releases; the Pages deployment also requires GitHub Pages to be enabled for the repository. Cloudflare Worker deployment is a separate Wrangler operation; the GitHub workflows do not deploy it.
 
 After pushing, check the repository’s Actions page for all three runs. The release workflow should attach the three ABI APK files; the Pages workflow should finish its deployment. If a run fails, inspect the failed step’s logs before retrying.
 
