@@ -69,7 +69,7 @@ class MainActivity : FlutterFragmentActivity() {
 
         val installIntent = Intent(Intent.ACTION_VIEW).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
-            dataAndType = uri.toString().let { Uri.parse(it) }.also { data = it }
+            data = uri
             type = "application/vnd.android.package-archive"
         }
 
