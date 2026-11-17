@@ -31,6 +31,7 @@ import 'screens/chat/conversation_list_screen.dart';
 import 'screens/chat/chat_screen.dart';
 import 'screens/settings/account_settings_screen.dart';
 import 'screens/settings/close_friends_screen.dart';
+import 'screens/settings/linked_devices_screen.dart';
 
 // Set the restart callback so auth_gate.dart can restart the app without importing BroApp
 void _restartApp() {
@@ -187,6 +188,9 @@ final _router = GoRouter(
     GoRoute(
         path: '/settings/close-friends',
         builder: (_, __) => const CloseFriendsScreen()),
+    GoRoute(
+        path: '/settings/linked-devices',
+        builder: (_, __) => const LinkedDevicesScreen()),
     GoRoute(
         path: '/call/:conversationId',
         builder: (_, state) => CallScreen(

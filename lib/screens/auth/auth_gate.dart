@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Presence;
 import '../../theme/app_colors.dart' as app_colors;
 import '../../services/supabase.dart';
+import '../../services/linked_devices.dart';
 import '../../ui/errors.dart';
 import '../../ui/states.dart';
 import 'login_screen.dart';
@@ -43,6 +44,7 @@ class AuthGate extends StatelessWidget {
         if (session != null) {
           // Ensure last_seen is recorded on cold start
           unawaited(Supa.recordLastSeen());
+          unawaited(LinkedDevices.registerCurrentDeviceSilently());
           // Navigate to conversations; the router will handle the redirect.
           return const _ConversationListPlaceholder();
         }
@@ -74,7 +76,8 @@ class _AuthErrorState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.cloud_off_outlined, color: app_colors.P.muted, size: 48),
+              Icon(Icons.cloud_off_outlined,
+                  color: app_colors.P.muted, size: 48),
               const SizedBox(height: 16),
               Text("We can't reach BRO right now",
                   style: TextStyle(

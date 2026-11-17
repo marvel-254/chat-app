@@ -658,6 +658,16 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     },
                   ),
                   const SizedBox(height: 20),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.devices_outlined),
+                    title: const Text('Linked devices'),
+                    subtitle: const Text(
+                        'Review active devices and sign out other sessions'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push('/settings/linked-devices'),
+                  ),
+                  const SizedBox(height: 8),
                   Text('Security',
                       style: TextStyle(
                           color: _P.muted, fontWeight: FontWeight.w600)),
