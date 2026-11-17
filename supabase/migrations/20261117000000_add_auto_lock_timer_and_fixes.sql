@@ -54,18 +54,20 @@ grant update (id, username, display_name, avatar_url, about, chat_background,
   on public.profiles to authenticated;
 
 -- 4. Increase chat background signed URL expiry to 30 days (2592000 seconds)
--- This is handled in the client code, but we can also create a helper function
-create or replace function public.get_chat_background_signed_url(
-  p_user_id uuid,
-  p_path text
-) returns text
-language sql
-security definer
-set search_path = public
-as $$
-  select storage.create_signed_url('chat-backgrounds', p_path, 2592000) as signed_url;
-$$;
-grant execute on function public.get_chat_background_signed_url(uuid, text) to authenticated;
+-- This is handled in the client code via storage API. The fallback to 1-hour
+-- signed URLs in the client still works, but 30-day URLs require the newer
+-- storage API. Keeping the function commented out until the correct API is available.
+-- create or replace function public.get_chat_background_signed_url(
+--   p_user_id uuid,
+--   p_path text
+-- ) returns text
+-- language sql
+-- security definer
+-- set search_path = public
+-- as $$
+--   select storage.create_signed_url('chat-backgrounds', p_path, 2592000) as signed_url;
+-- $$;
+-- grant execute on function public.get_chat_background_signed_url(uuid, text) to authenticated;
 
 -- 5. Add comment for clarity
 comment on column public.profiles.auto_lock_timer is 'Conversation auto-lock timeout for this user (0 = off)';

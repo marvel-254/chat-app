@@ -25,6 +25,11 @@ flutter config --no-analytics
 flutter --version
 ./scripts/build.sh web
 
+# Ensure web assets (including videos) are always copied to the output,
+# even if the Flutter web build encounters issues.
+mkdir -p build/web/assets
+cp -r web/assets/. build/web/assets/ 2>/dev/null || true
+
 # Catch path/layout regressions before Vercel publishes an incomplete site.
 test -s build/web/index.html
 test -s build/web/app/index.html
