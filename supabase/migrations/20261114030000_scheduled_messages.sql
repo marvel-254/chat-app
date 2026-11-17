@@ -45,5 +45,4 @@ create policy "Users delete own scheduled messages"
 
 -- Index for the background worker that scans for due messages
 create index if not exists idx_scheduled_messages_scheduled_at
-  on public.scheduled_messages (scheduled_at)
-  where scheduled_at <= now();
+  on public.scheduled_messages (scheduled_at);
