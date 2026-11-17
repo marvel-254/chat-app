@@ -1,52 +1,71 @@
 #!/usr/bin/env bash
-# Vercel's native Git integration has Node but not Flutter. Download the pinned
-# Flutter SDK into Vercel's persistent build cache, then assemble the site.
+# Vercel build script for BRO.
 #
-# The landing page (static HTML) is critical and must always deploy. If the
-# Flutter web build fails, we still copy the landing page and all assets so
-# the site remains functional with the hero video background.
-set -euo pipefail
+# The landing page (static HTML) is the priority and MUST always deploy.
+# The Flutter web app (/app/) is secondary — if the Flutter build fails,
+# we still deploy the landing page with all assets including the hero video.
+#
+# Vercel does not provide Flutter, so we clone the SDK from cache or GitHub.
+# This clone can fail (network, timeout, branch gone) — the script handles
+# that gracefully by falling back to the static landing page.
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-FLUTTER_VERSION="${FLUTTER_VERSION:-3.47.7}"
-CACHE_ROOT="${VERCEL_CACHE_DIR:-$ROOT/.vercel/cache}"
-FLUTTER_SDK="$CACHE_ROOT/flutter-$FLUTTER_VERSION"
-
-if [[ ! -x "$FLUTTER_SDK/bin/flutter" ]]; then
-  mkdir -p "$CACHE_ROOT"
-  rm -rf "$FLUTTER_SDK"
-  git clone --depth 1 --branch "$FLUTTER_VERSION" \
-    https://github.com/flutter/flutter.git "$FLUTTER_SDK"
-fi
-
-export PATH="$FLUTTER_SDK/bin:$PATH"
-export PUB_CACHE="${PUB_CACHE:-$CACHE_ROOT/pub-cache}"
-export BASE_HREF="${BASE_HREF:-/app/}"
-
-flutter config --no-analytics
-flutter --version
-
-# Try the Flutter web build; if it fails, continue so the landing page still deploys.
-if ./scripts/build.sh web; then
-  echo "✅ Flutter web build succeeded"
-else
-  echo "⚠️  Flutter web build failed — deploying landing page only"
-  # Ensure the output directory exists with the landing page
-  mkdir -p build/web
-  cp web/index-landing.html build/web/index.html
-fi
-
-# Always copy web assets (landing page assets, branding, video, etc.)
-# This ensures the hero background video is always available.
+# ── Always ensure the landing page and assets are in the output ──────────
 mkdir -p build/web/assets build/web/css build/web/icons build/web/legal
+cp web/index-landing.html build/web/index.html
 cp -r web/assets/. build/web/assets/ 2>/dev/null || true
 cp -r web/css/. build/web/css/ 2>/dev/null || true
 cp -r web/icons/. build/web/icons/ 2>/dev/null || true
 cp -r web/legal/. build/web/legal/ 2>/dev/null || true
 cp web/manifest.json web/robots.txt web/sitemap.xml web/llms.txt web/favicon.png build/web/ 2>/dev/null || true
 
-# Verify the landing page deployed
+echo "✅ Landing page + assets copied"
+
+# ── Try to build the Flutter web app (optional) ──────────────────────────
+FLUTTER_VERSION="${FLUTTER_VERSION:-3.47.7}"
+CACHE_ROOT="${VERCEL_CACHE_DIR:-$ROOT/.vercel/cache}"
+FLUTTER_SDK="$CACHE_ROOT/flutter-$FLUTTER_VERSION"
+
+if [[ -x "$FLUTTER_SDK/bin/flutter" ]]; then
+  export PATH="$FLUTTER_SDK/bin:$PATH"
+  export PUB_CACHE="${PUB_CACHE:-$CACHE_ROOT/pub-cache}"
+  export BASE_HREF="${BASE_HREF:-/app/}"
+
+  if flutter config --no-analytics 2>/dev/null && flutter --version 2>/dev/null; then
+    if ./scripts/build.sh web 2>&1; then
+      echo "✅ Flutter web build succeeded"
+    else
+      echo "⚠️  Flutter web build failed — landing page will still deploy"
+    fi
+  else
+    echo "⚠️  Flutter SDK found but not working — skipping web build"
+  fi
+else
+  echo "⚠️  Flutter SDK not cached — cloning (this may take a while)..."
+  if mkdir -p "$CACHE_ROOT" && \
+     git clone --depth 1 --branch "$FLUTTER_VERSION" \
+       https://github.com/flutter/flutter.git "$FLUTTER_SDK" 2>/dev/null && \
+     [[ -x "$FLUTTER_SDK/bin/flutter" ]]; then
+    export PATH="$FLUTTER_SDK/bin:$PATH"
+    export PUB_CACHE="${PUB_CACHE:-$CACHE_ROOT/pub-cache}"
+    export BASE_HREF="${BASE_HREF:-/app/}"
+
+    if flutter config --no-analytics 2>/dev/null && flutter --version 2>/dev/null; then
+      if ./scripts/build.sh web 2>&1; then
+        echo "✅ Flutter web build succeeded"
+      else
+        echo "⚠️  Flutter web build failed — landing page will still deploy"
+      fi
+    else
+      echo "⚠️  Flutter SDK cloned but not working — skipping web build"
+    fi
+  else
+    echo "⚠️  Flutter SDK clone failed — deploying landing page only"
+  fi
+fi
+
+# ── Verify ───────────────────────────────────────────────────────────────
 test -s build/web/index.html
-echo "✅ Landing page deployed successfully"
+echo "✅ Build complete — landing page is ready"
