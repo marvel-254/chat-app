@@ -92,7 +92,9 @@ Pushing to `main` or `master` starts three workflows:
 - `.github/workflows/build-apk.yml`: builds split release APKs and publishes a GitHub Release tagged `v<run number>`.
 - `.github/workflows/pages.yml`: builds the Flutter web app and deploys it to GitHub Pages.
 
-The signed APK workflow uses repository Actions secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY`. The Pages workflow uses the public Supabase URL and publishable key directly because browser builds must expose client-side config; never use a service-role key there. The GitHub token needs permission to create releases; the Pages deployment also requires GitHub Pages to be enabled for the repository. Cloudflare Worker deployment is a separate Wrangler operation; the GitHub workflows do not deploy it.
+The signed APK workflow uses repository Actions secrets `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, and `KEY_PASSWORD`. The workflow decodes the base64 keystore and writes `key.properties` before building. The Pages workflow uses the public Supabase URL and publishable key directly because browser builds must expose client-side config; never use a service-role key there. The GitHub token needs permission to create releases; the Pages deployment also requires GitHub Pages to be enabled for the repository. Cloudflare Worker deployment is a separate Wrangler operation; the GitHub workflows do not deploy it.
+
+**Signing note:** The release keystore (`android/app/release.keystore`) and `key.properties` are gitignored. If the keystore is ever lost or passwords forgotten, regenerate it with `keytool -genkeypair` (PKCS12 format, matching store and key passwords), base64-encode it, and update the 4 GitHub secrets. A new keystore changes the app signature — users must uninstall the old version before installing the new one.
 
 After pushing, check the repository’s Actions page for all three runs. The release workflow should attach the three ABI APK files; the Pages workflow should finish its deployment. If a run fails, inspect the failed step’s logs before retrying.
 
@@ -105,6 +107,34 @@ After pushing, check the repository’s Actions page for all three runs. The rel
 - Message notification behavior is platform-specific: Android push is wired; iOS depends on APNs setup; the Flutter web client currently skips FCM until its Web Push VAPID key and service worker are configured.
 
 ## Current work status (2026-11-17)
+
+### Fixed: App signing with release keystore (v1.3.6)
+
+All previous APK builds (v1.2.0–v1.3.5) were **debug-signed** because the GitHub Actions workflow had no access to the release keystore. The signing configuration code existed in `build.gradle.kts` and the workflow, but the required GitHub Secrets were never set.
+
+**Root cause of the v1.3.5 build failure:** The local keystore was PKCS12 format with different store and key passwords. PKCS12 keystores require both passwords to be identical. Android's signing tool rejected the mismatch with `KeytoolException: Given final block not properly padded`.
+
+**What was fixed:**
+- Regenerated `release.keystore` with matching store and key passwords.
+- Updated `key.properties` to use the same password for both `storePassword` and `keyPassword`.
+- Set up 4 GitHub repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
+- The v1.3.6 build succeeded — all steps passed including "Set up release keystore" and "Build APK".
+
+**Files involved:**
+- `android/app/build.gradle.kts` — signing config (unchanged, already correct).
+- `android/app/key.properties` — updated `keyPassword` to match `storePassword` (gitignored).
+- `android/app/release.keystore` — regenerated with matching passwords (gitignored).
+- `.github/workflows/build-apk.yml` — workflow (unchanged, already reads secrets correctly).
+
+**Important:** The keystore was regenerated, which means v1.3.6 has a **different signature** from v1.2.0–v1.3.5. Users who installed any previous version must **uninstall first** before installing v1.3.6. Future updates (v1.3.7+) will share the v1.3.6 signature and install normally.
+
+**GitHub Secrets configured:**
+| Secret | Purpose |
+|--------|---------|
+| `KEYSTORE_BASE64` | Base64-encoded release.keystore |
+| `KEYSTORE_PASSWORD` | Keystore password |
+| `KEY_ALIAS` | Key alias (`bro-release`) |
+| `KEY_PASSWORD` | Key password (matches store password) |
 
 ### GitHub links removed from landing page
 
