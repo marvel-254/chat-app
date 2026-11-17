@@ -8,11 +8,26 @@
   <meta name="description" content="A calmer, more personal place for the conversations that matter. Download BRO for Android or try the web app.">
   <meta name="keywords" content="BRO, private messaging, Android chat, real-time messaging, dark mode">
   <link rel="canonical" href="https://bro.omixsystems.store/">
+  <link rel="icon" type="image/svg+xml" href="/assets/branding/bro/logo.svg">
+  <link rel="alternate icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/icons/Icon-192.png">
+  <meta property="og:site_name" content="BRO">
   <meta property="og:title" content="BRO — Talk like you mean it">
   <meta property="og:description" content="Less noise. More you. A calmer place for your conversations.">
   <meta property="og:url" content="https://bro.omixsystems.store/">
   <meta property="og:type" content="website">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:image" content="https://bro.omixsystems.store/assets/og/bro-social-preview.png">
+  <meta property="og:image:secure_url" content="https://bro.omixsystems.store/assets/og/bro-social-preview.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="BRO — Less noise. More you. A calmer place for private conversations.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="BRO — Talk like you mean it">
+  <meta name="twitter:description" content="Less noise. More you. A calmer place for your conversations.">
+  <meta name="twitter:image" content="https://bro.omixsystems.store/assets/og/bro-social-preview.png">
+  <meta name="twitter:image:alt" content="BRO — Less noise. More you. A calmer place for private conversations.">
   <link rel="manifest" href="manifest.json">
   <style>
     :root {
@@ -32,21 +47,23 @@
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     * { box-sizing: border-box; }
-    html { scroll-padding-top: 84px; }
-    body { margin: 0; background: var(--bg); color: var(--text); line-height: 1.5; }
+    html { scroll-padding-top: 84px; scroll-behavior:smooth; }
+    body { margin: 0; overflow-x: hidden; background: radial-gradient(ellipse at 50% -25%,#d7ff5f0b,transparent 42%),var(--bg); color: var(--text); line-height: 1.5; }
     a { color: inherit; text-decoration: none; }
     button, a { -webkit-tap-highlight-color: transparent; }
+    a:focus-visible { outline:2px solid var(--lime); outline-offset:4px; border-radius:5px; }
     .wrap { width: min(var(--max), calc(100% - 48px)); margin-inline: auto; }
-    .site-header { height: 78px; display: flex; align-items: center; border-bottom: 1px solid rgba(255,255,255,.06); }
+    .site-header { position:sticky; top:0; z-index:20; height:78px; display:flex; align-items:center; border-bottom:1px solid rgba(255,255,255,.08); background:#0a0b0de8; backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); }
     .header-inner { display:flex; align-items:center; justify-content:space-between; gap:24px; }
     .wordmark { display:inline-flex; align-items:center; gap:10px; font-weight:900; font-size:20px; letter-spacing:.16em; }
-    .wordmark-mark { width:12px; height:12px; border-radius:4px 4px 4px 1px; background:var(--lime); transform:rotate(-12deg); box-shadow:0 0 22px #d7ff5f33; }
+    .brand-logo { display:block; width:30px; height:30px; flex:none; border-radius:8px; box-shadow:0 0 22px #d7ff5f22; }
     .nav-links { display:flex; align-items:center; gap:30px; color:#b8bbb5; font-size:13px; }
     .nav-links a:hover,.footer-links a:hover { color:var(--lime); }
-    .button { min-height:48px; padding:0 20px; border:1px solid var(--line); border-radius:999px; display:inline-flex; justify-content:center; align-items:center; gap:11px; font-size:14px; font-weight:750; transition:background .18s ease,border-color .18s ease,transform .18s ease; }
-    .button:hover { transform:translateY(-2px); }
-    .button-primary { background:var(--lime); color:var(--lime-ink); border-color:var(--lime); }
-    .button-primary:hover { background:#e4ff8c; border-color:#e4ff8c; }
+    .button { min-height:48px; padding:0 20px; border:1px solid var(--line); border-radius:999px; display:inline-flex; justify-content:center; align-items:center; gap:11px; font-size:14px; font-weight:750; transition:background .2s ease,border-color .2s ease,transform .2s ease,box-shadow .2s ease; }
+    .button:hover { transform:translateY(-2px); box-shadow:0 10px 30px #0004; }
+    .button:active { transform:translateY(0) scale(.985); }
+    .button-primary { background:var(--lime); color:var(--lime-ink); border-color:var(--lime); box-shadow:0 7px 28px #d7ff5f17; }
+    .button-primary:hover { background:#e4ff8c; border-color:#e4ff8c; box-shadow:0 10px 34px #d7ff5f2b; }
     .button-secondary { background:#ffffff08; color:var(--text); }
     .button-secondary:hover { background:#ffffff12; border-color:#ffffff28; }
     .button-arrow { font-size:19px; line-height:0; }
@@ -71,11 +88,11 @@
     .stage-orbit:before,.stage-orbit:after { content:""; position:absolute; inset:29px; border:1px solid #ffffff09; border-radius:50%; }
     .stage-orbit:after { inset:62px; border-color:#d7ff5f17; }
     .stage-index { position:absolute; top:25px; right:13px; color:#747971; font:11px ui-monospace,monospace; letter-spacing:.12em; }
-    .chat-window { width:min(100%,398px); padding:17px; border:1px solid #ffffff13; border-radius:24px; background:linear-gradient(155deg,#191c20,#101215 78%); box-shadow:0 35px 90px #0009, inset 0 1px #ffffff0d; }
+    .chat-window { width:min(100%,398px); padding:17px; border:1px solid #ffffff16; border-radius:24px; background:linear-gradient(155deg,#191c20,#101215 78%); box-shadow:0 35px 90px #0009, inset 0 1px #ffffff0d; animation:chat-float 7s ease-in-out infinite; }
     .window-top { display:flex; align-items:center; justify-content:space-between; padding:1px 2px 16px; border-bottom:1px solid #ffffff0b; }
     .window-label { color:#8f948e; font:700 9px ui-monospace,monospace; letter-spacing:.16em; text-transform:uppercase; }
     .online-label { display:flex; align-items:center; gap:7px; color:#c3c7bf; font-size:10px; }
-    .online-dot { width:6px; height:6px; border-radius:50%; background:#8ee6bb; box-shadow:0 0 12px #8ee6bb66; }
+    .online-dot { width:6px; height:6px; border-radius:50%; background:#8ee6bb; box-shadow:0 0 12px #8ee6bb66; animation:presence-pulse 2.6s ease-in-out infinite; }
     .chat-day { margin:15px 0 17px; color:#6d726c; text-align:center; font:9px ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; }
     .message { max-width:83%; padding:12px 14px; margin:9px 0; border:1px solid #ffffff0a; border-radius:15px 15px 15px 4px; background:#1d2024; color:#e7e9e2; font-size:12px; line-height:1.55; }
     .message .time { display:block; margin-top:7px; color:#828780; font:9px ui-monospace,monospace; }
@@ -97,13 +114,16 @@
     .compose-send { margin-left:auto; width:25px; height:25px; border-radius:8px; display:grid; place-items:center; background:var(--lime); color:#1b1e12; font-size:12px; }
     .stage-tag { position:absolute; bottom:10px; left:0; padding:10px 13px; border:1px solid #ffffff12; border-radius:12px; background:#14171aeF; color:#b5b9b2; font-size:10px; }
     .stage-tag strong { color:var(--lime); font-weight:700; }
+    @keyframes chat-float { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-7px); } }
+    @keyframes presence-pulse { 0%,100% { box-shadow:0 0 0 0 #8ee6bb55; } 50% { box-shadow:0 0 0 5px #8ee6bb00; } }
 
     .section { padding:105px 0; }
     .section-kicker { color:var(--lime); font:800 10px ui-monospace,monospace; letter-spacing:.17em; text-transform:uppercase; }
     .section-title { max-width:700px; margin:15px 0 13px; font-size:clamp(34px,5vw,58px); line-height:1.02; letter-spacing:-.065em; font-weight:720; }
     .section-lead { max-width:550px; margin-bottom:0; color:var(--muted); font-size:15px; line-height:1.8; }
     .features { display:grid; grid-template-columns:repeat(3,1fr); gap:13px; margin-top:44px; }
-    .feature { min-height:246px; padding:25px 23px; border:1px solid var(--line); border-radius:18px; background:linear-gradient(145deg,#14171a,#0e1012); }
+    .feature { min-height:246px; padding:25px 23px; border:1px solid var(--line); border-radius:18px; background:linear-gradient(145deg,#14171a,#0e1012); transition:transform .22s ease,border-color .22s ease,background .22s ease; }
+    .feature:hover { transform:translateY(-4px); border-color:#d7ff5f42; background:linear-gradient(145deg,#191d1a,#0e1012); }
     .feature-index { display:inline-flex; width:34px; height:34px; align-items:center; justify-content:center; border:1px solid #ffffff16; border-radius:10px; color:var(--lime); font:11px ui-monospace,monospace; }
     .feature h3 { margin:35px 0 10px; font-size:19px; letter-spacing:-.03em; }
     .feature p { max-width:300px; margin-bottom:0; color:#999e97; font-size:13px; line-height:1.7; }
@@ -189,14 +209,14 @@
       .footer-links { gap:14px; }
     }
     @media (prefers-reduced-motion: reduce) {
-      *,*::before,*::after { scroll-behavior:auto !important; transition:none !important; }
+      *,*::before,*::after { scroll-behavior:auto !important; transition:none !important; animation:none !important; }
     }
   </style>
 </head>
 <body>
   <header class="site-header">
     <div class="wrap header-inner">
-      <a class="wordmark" href="#top" aria-label="BRO home"><span class="wordmark-mark" aria-hidden="true"></span>BRO</a>
+      <a class="wordmark" href="#top" aria-label="BRO home"><img class="brand-logo" src="/assets/branding/bro/logo.svg" width="30" height="30" alt="">BRO</a>
       <nav class="nav-links" aria-label="Main navigation">
         <a href="#features">The feel</a>
         <a href="#privacy">Privacy</a>
@@ -314,7 +334,7 @@
   <footer class="site-footer">
     <div class="wrap">
       <div class="footer-top">
-        <a class="footer-brand" href="#top"><span class="wordmark-mark" aria-hidden="true"></span><span class="footer-brand-copy"><strong>BRO</strong><span>Talk like you mean it.</span></span></a>
+        <a class="footer-brand" href="#top"><img class="brand-logo" src="/assets/branding/bro/logo.svg" width="30" height="30" alt=""><span class="footer-brand-copy"><strong>BRO</strong><span>Talk like you mean it.</span></span></a>
         <nav class="footer-links" aria-label="Footer navigation">
           <a href="#features">The feel</a>
           <a href="#privacy">Privacy</a>
