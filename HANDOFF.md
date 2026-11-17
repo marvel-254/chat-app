@@ -186,14 +186,16 @@ Added a subtle background video to the hero section of the web landing page (`we
 
 **What changed:**
 - **`web/assets/video/man_chatting_on_phone.mp4`** — Video file (~3.3 MB) placed in web assets for serving by the landing page.
-- **`web/index-landing.html`** — Added `.hero-video-bg` wrapper with an autoplaying, muted, looping `<video>` element behind the hero content. The video is styled with `opacity: 0.15`, `blur(2px)`, and `saturate(0.8)` so it reads as ambient atmosphere rather than a focal element. A dark gradient overlay (`.hero-video-overlay`) ensures the hero text and CTAs remain fully readable. The hero grid content sits at `z-index: 3` above the video layer.
+- **`web/index-landing.html`** — Added `.hero-video-bg` wrapper with an autoplaying, muted, looping `<video>` element behind the hero content. The video uses `blur(1px)` and `saturate(0.6)` for a soft, desaturated look. A dark gradient overlay (`.hero-video-overlay`) at **40–60% opacity** keeps the hero text and CTAs fully readable while letting the video show through. The hero grid content sits at `z-index: 3` above the video layer.
 - **`vercel.json`** — Added `Cache-Control: public, max-age=31536000, immutable` header for `/assets/video/*` to ensure the video is cached aggressively.
 - **`scripts/vercel-build.sh`** — Rewrote the Vercel build script to be resilient: the landing page and all assets are copied to the output directory **first**, before attempting the Flutter web build. If the Flutter SDK clone or web build fails (common on Vercel due to network timeouts), the landing page still deploys with the video background. The Flutter web app (`/app/`) is now optional in the build.
 - Video uses `preload="metadata"` to minimize initial load impact and `playsinline` for mobile compatibility.
 
-**Why the video wasn't showing initially:** The Vercel build script used `set -euo pipefail` and attempted to clone the Flutter SDK before copying any files. When the clone failed (network timeout, branch not found), the entire build aborted and Vercel served the last successful deploy — which predates the video. The fix ensures the landing page always deploys first, with the Flutter build as a best-effort secondary step.
+**Issues resolved:**
+1. **Vercel build failure:** The original build script used `set -euo pipefail` and attempted to clone the Flutter SDK before copying any files. When the clone failed (network timeout, branch not found), the entire build aborted and Vercel served the last successful deploy — which predates the video. Fixed by making the landing page the priority and the Flutter build optional.
+2. **Video invisible on deploy:** The dark overlay was initially set to 85–90% opacity (`rgba(10,11,13,.85)` to `.9`), effectively a near-solid black layer that completely obscured the video behind it. Reduced to 40–60% opacity (`rgba(10,11,13,.55)` to `.4`) so the video is visible while text remains readable. Also removed the video's `opacity: 0.15` filter and reduced blur from `2px` to `1px`.
 
-**Design rationale:** The low opacity, blur, and desaturation keep the video from competing with the headline and CTA. It adds a subtle sense of motion and humanity — someone chatting on their phone — without feeling staged or distracting.
+**Design rationale:** The moderate overlay opacity, slight blur, and desaturation keep the video from competing with the headline and CTA. It adds a subtle sense of motion and humanity — someone chatting on their phone — without feeling staged or distracting.
 
 ### Polished onboarding flow (v1.3.3)
 
