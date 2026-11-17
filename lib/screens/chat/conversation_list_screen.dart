@@ -15,16 +15,8 @@ import '../../widgets/status_ring_avatar.dart';
 import '../../widgets/home_nav_bar.dart';
 import '../../services/push_notifications.dart';
 
-const _bg = app_colors.bg;
-const _surface = app_colors.surface;
-const _surfaceHigh = app_colors.surfaceHigh;
-const _surfaceLow = app_colors.surfaceLow;
-const _border = app_colors.border;
-const _text = app_colors.text;
-const _muted = app_colors.muted;
-const _success = app_colors.success;
-const _volt = app_colors.volt;
-const _darkOnVolt = app_colors.darkOnVolt;
+import '../../ui/motion.dart';
+
 const _adaptiveBreakpoint = app_colors.adaptiveBreakpoint;
 
 class _P {
@@ -261,6 +253,14 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
           body: wide
               ? _buildLargeScreenLayout(context)
               : _buildSmallScreenLayout(context),
+          floatingActionButton: FloatingActionButton(
+            backgroundColor: _P.primary,
+            foregroundColor: _P.darkOnAccent,
+            tooltip: 'New message',
+            elevation: 4,
+            onPressed: () => _searchFocusNode.requestFocus(),
+            child: const Icon(Icons.edit_outlined, size: 22),
+          ),
           bottomNavigationBar: wide ? null : const HomeNavBar(index: 0),
         );
       },
@@ -271,32 +271,53 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.all(16),
-          child: TextField(
-            controller: _search,
-            focusNode: _searchFocusNode,
-            style: const TextStyle(color: _P.text),
-            decoration: InputDecoration(
-              hintText: 'Search users...',
-              hintStyle: const TextStyle(color: _P.muted),
-              prefixIcon: const Icon(Icons.search, color: _P.muted),
-              filled: true,
-              fillColor: _P.surface,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            decoration: BoxDecoration(
+              color: _P.surface,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: _searchFocusNode.hasFocus
+                    ? _P.primary.withValues(alpha: 0.6)
+                    : _P.border.withValues(alpha: 0.35),
+                width: 1.2,
               ),
-              suffixIcon: _search.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear, color: _P.muted),
-                      onPressed: () {
-                        _search.clear();
-                        _onSearchChanged('');
-                      },
-                    )
-                  : null,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
-            onChanged: _onSearchChanged,
+            child: TextField(
+              controller: _search,
+              focusNode: _searchFocusNode,
+              style: const TextStyle(color: _P.text, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Search people or username...',
+                hintStyle: TextStyle(
+                    color: _P.muted.withValues(alpha: 0.7), fontSize: 14),
+                prefixIcon: const Icon(Icons.search_rounded,
+                    color: _P.primary, size: 22),
+                filled: false,
+                border: InputBorder.none,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                suffixIcon: _search.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear_rounded,
+                            color: _P.muted, size: 20),
+                        onPressed: () {
+                          _search.clear();
+                          _onSearchChanged('');
+                        },
+                      )
+                    : null,
+              ),
+              onChanged: _onSearchChanged,
+            ),
           ),
         ),
         if (_search.text.trim().isNotEmpty && _searchLoading)
@@ -387,31 +408,50 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                         scrollDirection: Axis.horizontal,
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         children: [
-                          for (final user in people.take(8))
-                            InkWell(
-                              onTap: () => _startDM(user),
-                              onLongPress: () =>
-                                  context.push('/profile/${user.id}'),
-                              child: SizedBox(
-                                width: 80,
-                                child: Column(
-                                  children: [
-                                    Avatar(
-                                      name: user.peerInitial,
-                                      url: user.avatarUrl,
-                                      size: 48,
+                          for (int idx = 0; idx < people.take(8).length; idx++)
+                            FadeSlideIn(
+                              index: idx,
+                              offset: const Offset(0.08, 0),
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: PressScale(
+                                  scaleFactor: 0.94,
+                                  onTap: () => _startDM(people[idx]),
+                                  onLongPress: () =>
+                                      context.push('/profile/${people[idx].id}'),
+                                  child: SizedBox(
+                                    width: 76,
+                                    child: Column(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(2),
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: _P.primary.withValues(alpha: 0.35),
+                                              width: 1.5,
+                                            ),
+                                          ),
+                                          child: Avatar(
+                                            name: people[idx].peerInitial,
+                                            url: people[idx].avatarUrl,
+                                            size: 44,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 5),
+                                        Text(
+                                          '@${people[idx].username}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: _P.text,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(height: 5),
-                                    Text(
-                                      '@${user.username}',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: _P.text,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ],
+                                  ),
                                 ),
                               ),
                             ),
@@ -524,95 +564,141 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                         final lastMessage = conv.lastMessage;
                         final lastMessageAt = conv.lastMessageAt;
                         final unread = conv.unreadCount > 0;
-                        return ListTile(
-                          leading: _conversationAvatar(context, conv),
-                          title: Text(
-                            conv.peerLabel,
-                            style: TextStyle(
-                              color: _P.text,
-                              fontWeight:
-                                  unread ? FontWeight.w700 : FontWeight.w600,
+                        return FadeSlideIn(
+                          key: ValueKey(conv.id),
+                          index: i.clamp(0, 8),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 3),
+                            child: PressScale(
+                              scaleFactor: 0.98,
+                              child: ListTile(
+                                leading: _conversationAvatar(context, conv),
+                                title: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        conv.peerLabel,
+                                        style: TextStyle(
+                                          color: _P.text,
+                                          fontWeight: unread
+                                              ? FontWeight.w700
+                                              : FontWeight.w600,
+                                          fontSize: 15,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (lastMessageAt != null)
+                                      Text(
+                                        _formatConversationTimestamp(lastMessageAt),
+                                        style: TextStyle(
+                                          color: unread ? _P.primary : _P.muted,
+                                          fontWeight: unread
+                                              ? FontWeight.w600
+                                              : FontWeight.normal,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (conv.peerUsername != null &&
+                                        lastMessage == null)
+                                      Text(
+                                        '@${conv.peerUsername}',
+                                        style: TextStyle(
+                                          color: _P.muted.withValues(alpha: 0.8),
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    if (lastMessage != null)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Text(
+                                          lastMessage.startsWith('attachment:')
+                                              ? '📎 Attachment'
+                                              : (lastMessage.startsWith('voice:')
+                                                  ? '🎤 Voice note'
+                                                  : lastMessage),
+                                          style: TextStyle(
+                                            color: unread ? _P.text : _P.muted,
+                                            fontWeight: unread
+                                                ? FontWeight.w500
+                                                : FontWeight.normal,
+                                            fontSize: 13,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                trailing: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    if (conv.isLocked)
+                                      Padding(
+                                        padding: const EdgeInsets.only(bottom: 4),
+                                        child: Icon(Icons.lock_outline_rounded,
+                                            size: 15, color: _P.muted),
+                                      ),
+                                    if (unread)
+                                      PulseScale(
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 7, vertical: 3),
+                                          constraints: const BoxConstraints(
+                                              minWidth: 20, minHeight: 20),
+                                          decoration: BoxDecoration(
+                                            color: _P.primary,
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: _P.primary
+                                                    .withValues(alpha: 0.4),
+                                                blurRadius: 8,
+                                                offset: const Offset(0, 1),
+                                              ),
+                                            ],
+                                          ),
+                                          child: Text(
+                                            conv.unreadCount > 99
+                                                ? '99+'
+                                                : '${conv.unreadCount}',
+                                            style: const TextStyle(
+                                                color: _P.darkOnAccent,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w800),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                tileColor: unread
+                                    ? _P.primary.withValues(alpha: 0.04)
+                                    : Colors.transparent,
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 4),
+                                onTap: () => context.go('/chat/${conv.id}',
+                                    extra: conv.toPeerProfile()),
+                                onLongPress: conv.peerId != null
+                                    ? () =>
+                                        context.push('/profile/${conv.peerId}')
+                                    : null,
+                              ),
                             ),
                           ),
-                          subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (conv.peerUsername != null)
-                                  Text('@${conv.peerUsername}',
-                                      style: TextStyle(
-                                          color:
-                                              _P.muted.withValues(alpha: 0.8),
-                                          fontSize: 11)),
-                                if (lastMessage != null)
-                                  Text(
-                                      lastMessage.startsWith('attachment:')
-                                          ? '📎 Attachment'
-                                          : lastMessage,
-                                      style: TextStyle(
-                                          color: unread ? _P.text : _P.muted,
-                                          fontWeight: unread
-                                              ? FontWeight.w500
-                                              : FontWeight.normal,
-                                          fontSize: 13),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis),
-                              ]),
-                          trailing: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              if (conv.isLocked)
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 4),
-                                  child: Icon(Icons.lock_outline_rounded,
-                                      size: 16, color: _P.muted),
-                                ),
-                              if (unread)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 2),
-                                  constraints: const BoxConstraints(
-                                      minWidth: 20, minHeight: 20),
-                                  decoration: BoxDecoration(
-                                    color: _P.primary,
-                                    borderRadius: BorderRadius.circular(10),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color:
-                                            _P.primary.withValues(alpha: 0.35),
-                                        blurRadius: 6,
-                                      ),
-                                    ],
-                                  ),
-                                  child: Text(
-                                    conv.unreadCount > 99
-                                        ? '99+'
-                                        : '${conv.unreadCount}',
-                                    style: const TextStyle(
-                                        color: _P.darkOnAccent,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w800),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                )
-                              else if (lastMessageAt != null)
-                                Text(
-                                    _formatConversationTimestamp(lastMessageAt),
-                                    style: const TextStyle(
-                                        color: _P.muted, fontSize: 11)),
-                            ],
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 4),
-                          onTap: () => context.go('/chat/${conv.id}',
-                              extra: conv.toPeerProfile()),
-                          onLongPress: conv.peerId != null
-                              ? () => context.push('/profile/${conv.peerId}')
-                              : null,
                         );
                       },
                     ),

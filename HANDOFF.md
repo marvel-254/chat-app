@@ -121,6 +121,31 @@ After pushing, check the repository’s Actions page for all three runs. The rel
 - **Fix:** Added explicit `alignment: Alignment.topLeft` to the `Stack` widget at line 339 in `lib/main.dart`. This avoids the `AlignmentDirectional` dependency on `Directionality` context.
 - **Verified:** All 20 tests pass; `flutter analyze` reports 0 errors.
 
+### Improved auto-updater (v1.3.0)
+
+The auto-updater in `lib/services/app_update.dart` was rewritten to provide a seamless in-app update experience for sideloaded APKs.
+
+**Previous behavior:** Checked GitHub Releases, opened the browser to the APK download URL, and required the user to manually download and install — all outside the app. Critically, it only ran after the first frame (`addPostFrameCallback`), so if the app crashed on startup (like BRO-4), the updater never fired.
+
+**New behavior:**
+
+- **Direct APK download:** Downloads the APK directly to the device's app documents directory with a progress bar shown in a modal dialog.
+- **Android PackageInstaller integration:** Uses a platform channel (`MethodChannel`) to `MainActivity.kt` which triggers Android's `PackageInstaller` via `Intent.ACTION_VIEW` with a `FileProvider` URI — the user sees the system install confirmation dialog without leaving the app.
+- **FileProvider configuration:** `android/app/src/main/res/xml/file_paths.xml` and a `<provider>` entry in `AndroidManifest.xml` enable secure file sharing on Android 7+ (API 24+).
+- **`REQUEST_INSTALL_PACKAGES` permission:** Added to `AndroidManifest.xml` to allow installing downloaded APKs.
+- **Periodic background checks:** Every 6 hours the app silently checks GitHub Releases for newer versions. The check interval is stored in `SharedPreferences` so repeated launches within the window skip redundant API calls.
+- **Better update dialog:** Shows release notes (truncated to 200 chars), a "Remind me later" option, and remembers which tag the user has already seen so it doesn't nag on every launch.
+- **Download progress dialog:** Non-dismissible modal with `LinearProgressIndicator` showing percentage and an "Installing..." state after download completes.
+
+**Files changed:**
+- `lib/services/app_update.dart` — complete rewrite with download, progress, and background check logic.
+- `lib/main.dart` — added `_startBackgroundUpdateChecks()` and `_periodicUpdateCheck()`.
+- `android/app/src/main/kotlin/com/omixsystems/pulsechat/MainActivity.kt` — added `installApk` method channel handler.
+- `android/app/src/main/res/xml/file_paths.xml` — new FileProvider path config.
+- `android/app/src/main/AndroidManifest.xml` — added `REQUEST_INSTALL_PACKAGES` permission and `FileProvider` registration.
+
+**Limitation:** If the app crashes before the first frame (e.g., a fatal error in `main()`), the auto-updater still cannot run. This is inherent to sideloaded APKs — there is no pre-launch update mechanism without a wrapper app or system-level installer.
+
 ## Current work status (2026-11-16)
 
 **Major refactoring completed:** The monolithic `lib/main.dart` (7,867 lines, 60+ classes) was split into a proper folder structure under `lib/screens/` with focused files. The `lib/services/supabase.dart` (1,272 lines) was split into domain-specific services. All `.md` documentation files were removed except `HANDOFF.md` and `README.md`.

@@ -21,6 +21,7 @@ import '../../models/profile.dart';
 import '../../models/pending_message.dart';
 import '../../ui/states.dart';
 import '../../ui/errors.dart';
+import '../../ui/motion.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Presence;
 import 'widgets/avatar.dart';
 import '../navigation/nav_sidebar.dart';
@@ -90,6 +91,26 @@ class _ChatScreenState extends State<ChatScreen> {
   Timer? _draftSaveTimer;
   int _lastMarkedMessageCount = 0;
   String? _lastMarkedMessageId;
+  bool _showJumpToBottom = false;
+
+  void _onScroll() {
+    if (!_scroll.hasClients) return;
+    final max = _scroll.position.maxScrollExtent;
+    final current = _scroll.offset;
+    final shouldShow = (max - current) > 350;
+    if (shouldShow != _showJumpToBottom && mounted) {
+      setState(() => _showJumpToBottom = shouldShow);
+    }
+  }
+
+  void _jumpToBottom() {
+    if (!_scroll.hasClients) return;
+    _scroll.animateTo(
+      _scroll.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+    );
+  }
 
   String _expiryLabel(Duration value) => switch (value.inDays) {
         1 => '24 hours',
@@ -110,6 +131,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _listenForCalls();
     _checkConversationLock();
     _ctrl.addListener(_onDraftChanged);
+    _scroll.addListener(_onScroll);
   }
 
   Future<void> _loadDraft() async {
@@ -390,6 +412,7 @@ class _ChatScreenState extends State<ChatScreen> {
     Supa.unsubscribeTyping(widget.conversationId);
     Presence.unfocus(_peer?.id ?? widget.initialPeer?.id);
     _ctrl.dispose();
+    _scroll.removeListener(_onScroll);
     _scroll.dispose();
     _typingTimer?.cancel();
     _peerTypingTimer?.cancel();
@@ -1096,52 +1119,77 @@ class _ChatScreenState extends State<ChatScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: _P.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _MenuTile(
-              icon: Icons.image_outlined,
-              label: 'Photo or video',
-              onTap: () {
-                Navigator.pop(context);
-                _pickPhoto();
-              },
-            ),
-            _MenuTile(
-              icon: Icons.insert_drive_file_outlined,
-              label: 'Document',
-              onTap: () {
-                Navigator.pop(context);
-                _pickDocument();
-              },
-            ),
-            _MenuTile(
-              icon: Icons.camera_alt_outlined,
-              label: 'Camera',
-              onTap: () {
-                Navigator.pop(context);
-                _pickPhoto(camera: true);
-              },
-            ),
-            _MenuTile(
-              icon: Icons.gif_box_outlined,
-              label: 'GIF',
-              onTap: () {
-                Navigator.pop(context);
-                _showGifPicker();
-              },
-            ),
-            _MenuTile(
-              icon: Icons.auto_awesome_outlined,
-              label: 'Stickers',
-              onTap: () {
-                Navigator.pop(context);
-                _showStickerPicker();
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: _P.muted.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _AttachActionItem(
+                    icon: Icons.photo_library_rounded,
+                    label: 'Gallery',
+                    color: const Color(0xFF8B5CF6),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _pickPhoto();
+                    },
+                  ),
+                  _AttachActionItem(
+                    icon: Icons.camera_alt_rounded,
+                    label: 'Camera',
+                    color: const Color(0xFFEC4899),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _pickPhoto(camera: true);
+                    },
+                  ),
+                  _AttachActionItem(
+                    icon: Icons.insert_drive_file_rounded,
+                    label: 'Document',
+                    color: const Color(0xFF3B82F6),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _pickDocument();
+                    },
+                  ),
+                  _AttachActionItem(
+                    icon: Icons.gif_box_rounded,
+                    label: 'GIF',
+                    color: const Color(0xFFF59E0B),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showGifPicker();
+                    },
+                  ),
+                  _AttachActionItem(
+                    icon: Icons.auto_awesome_rounded,
+                    label: 'Stickers',
+                    color: _P.primary,
+                    iconColor: _P.darkOnAccent,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showStickerPicker();
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1639,21 +1687,71 @@ class _ChatScreenState extends State<ChatScreen> {
                   return Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 600),
-                      child: ListView.builder(
-                        controller: _scroll,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 12),
-                        itemCount: messages.length,
-                        itemBuilder: (_, i) => _MessageRow(
-                          msg: messages[i],
-                          prev: i > 0 ? messages[i - 1] : null,
-                          next:
-                              i + 1 < messages.length ? messages[i + 1] : null,
-                          me: Supa.currentUser!.id,
-                          onLongPress: _showMessageActions,
-                          onReactionTap: _toggleReaction,
-                          messages: messages,
-                        ),
+                      child: Stack(
+                        children: [
+                          ListView.builder(
+                            controller: _scroll,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 12),
+                            itemCount: display.length,
+                            itemBuilder: (_, i) => _MessageRow(
+                              msg: display[i],
+                              prev: i > 0 ? display[i - 1] : null,
+                              next: i + 1 < display.length
+                                  ? display[i + 1]
+                                  : null,
+                              me: Supa.currentUser!.id,
+                              onLongPress: _showMessageActions,
+                              onReactionTap: _toggleReaction,
+                              messages: display,
+                              pendingStatus:
+                                  _pendingMessages[display[i].id]?.status,
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 12,
+                            right: 16,
+                            child: AnimatedScale(
+                              scale: _showJumpToBottom ? 1.0 : 0.0,
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeOutBack,
+                              child: AnimatedOpacity(
+                                opacity: _showJumpToBottom ? 1.0 : 0.0,
+                                duration: const Duration(milliseconds: 160),
+                                child: PressScale(
+                                  onTap: _jumpToBottom,
+                                  child: Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: _P.surfaceHigh,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: _P.primary.withValues(alpha: 0.4),
+                                        width: 1.2,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black
+                                              .withValues(alpha: 0.4),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.keyboard_arrow_down_rounded,
+                                        color: _P.primary,
+                                        size: 26,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   );
@@ -1776,22 +1874,69 @@ class _ChatScreenState extends State<ChatScreen> {
                         return Center(
                           child: ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 600),
-                            child: ListView.builder(
-                              controller: _scroll,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 12),
-                              itemCount: display.length,
-                              itemBuilder: (_, i) => _MessageRow(
-                                msg: display[i],
-                                prev: i > 0 ? messages[i - 1] : null,
-                                next: i + 1 < display.length
-                                    ? messages[i + 1]
-                                    : null,
-                                me: Supa.currentUser!.id,
-                                onLongPress: _showMessageActions,
-                                onReactionTap: _toggleReaction,
-                                messages: messages,
-                              ),
+                            child: Stack(
+                              children: [
+                                ListView.builder(
+                                  controller: _scroll,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 12),
+                                  itemCount: display.length,
+                                  itemBuilder: (_, i) => _MessageRow(
+                                    msg: display[i],
+                                    prev: i > 0 ? display[i - 1] : null,
+                                    next: i + 1 < display.length
+                                        ? display[i + 1]
+                                        : null,
+                                    me: Supa.currentUser!.id,
+                                    onLongPress: _showMessageActions,
+                                    onReactionTap: _toggleReaction,
+                                    messages: display,
+                                    pendingStatus: _pendingMessages[display[i].id]?.status,
+                                  ),
+                                ),
+                                Positioned(
+                                  bottom: 12,
+                                  right: 16,
+                                  child: AnimatedScale(
+                                    scale: _showJumpToBottom ? 1.0 : 0.0,
+                                    duration: const Duration(milliseconds: 220),
+                                    curve: Curves.easeOutBack,
+                                    child: AnimatedOpacity(
+                                      opacity: _showJumpToBottom ? 1.0 : 0.0,
+                                      duration: const Duration(milliseconds: 160),
+                                      child: PressScale(
+                                        onTap: _jumpToBottom,
+                                        child: Container(
+                                          width: 40,
+                                          height: 40,
+                                          decoration: BoxDecoration(
+                                            color: _P.surfaceHigh,
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: _P.primary.withValues(alpha: 0.4),
+                                              width: 1.2,
+                                            ),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black.withValues(alpha: 0.4),
+                                                blurRadius: 10,
+                                                offset: const Offset(0, 3),
+                                              ),
+                                            ],
+                                          ),
+                                          child: const Center(
+                                            child: Icon(
+                                              Icons.keyboard_arrow_down_rounded,
+                                              color: _P.primary,
+                                              size: 26,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         );
@@ -2072,7 +2217,8 @@ class _MessageRow extends StatelessWidget {
       required this.me,
       required this.onLongPress,
       this.onReactionTap,
-      this.messages});
+      this.messages,
+      this.pendingStatus});
   final Message msg;
   final Message? prev;
   final Message? next;
@@ -2080,6 +2226,7 @@ class _MessageRow extends StatelessWidget {
   final ValueChanged<Message> onLongPress;
   final void Function(String messageId, String emoji)? onReactionTap;
   final List<Message>? messages;
+  final String? pendingStatus;
 
   bool get _nowDateLine =>
       prev == null || !_sameDay(prev!.createdAt, msg.createdAt);
@@ -2122,6 +2269,7 @@ class _MessageRow extends StatelessWidget {
             mine: mine,
             onLongPress: () => onLongPress(msg),
             onReactionTap: onReactionTap,
+            pendingStatus: pendingStatus,
             replyTarget: msg.replyToId != null && messages != null
                 ? messages!.where((m) => m.id == msg.replyToId).firstOrNull
                 : null,
@@ -2555,7 +2703,8 @@ class _Bubble extends StatelessWidget {
       required this.mine,
       required this.onLongPress,
       this.onReactionTap,
-      this.replyTarget});
+      this.replyTarget,
+      this.pendingStatus});
   final Message msg;
   final bool groupedTop;
   final bool groupedBottom;
@@ -2563,6 +2712,7 @@ class _Bubble extends StatelessWidget {
   final VoidCallback onLongPress;
   final void Function(String messageId, String emoji)? onReactionTap;
   final Message? replyTarget;
+  final String? pendingStatus;
 
   @override
   Widget build(BuildContext context) {
@@ -2675,13 +2825,34 @@ class _Bubble extends StatelessWidget {
                               : _P.muted)),
                   if (mine) ...[
                     const SizedBox(width: 3),
-                    Icon(
-                      msg.readByPeer ? Icons.done_all : Icons.done,
-                      size: 13,
-                      color: msg.readByPeer
-                          ? _P.success
-                          : _P.darkOnAccent.withValues(alpha: 0.7),
-                    ),
+                    if (pendingStatus == 'sending') ...[
+                      const SizedBox(width: 2),
+                      SizedBox(
+                        width: 10,
+                        height: 10,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.5,
+                          color: _P.darkOnAccent.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ] else if (pendingStatus == 'failed') ...[
+                      const SizedBox(width: 2),
+                      Icon(
+                        Icons.error_outline_rounded,
+                        size: 13,
+                        color: Colors.red.shade900,
+                      ),
+                    ] else ...[
+                      Icon(
+                        msg.readByPeer
+                            ? Icons.done_all_rounded
+                            : Icons.done_rounded,
+                        size: 13,
+                        color: msg.readByPeer
+                            ? const Color(0xFF0D5E2F)
+                            : _P.darkOnAccent.withValues(alpha: 0.7),
+                      ),
+                    ],
                   ],
                 ],
               ),

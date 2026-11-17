@@ -1,54 +1,34 @@
 import 'dart:async';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'
     hide Presence; // app's services/presence.dart takes precedence
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:audioplayers/audioplayers.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:uuid/uuid.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'services/secure_screen.dart';
 import 'services/app_lock.dart';
 import 'services/app_update.dart';
-import 'services/scheduled_messages.dart' as scheduled;
-import 'services/voice_note.dart';
 import 'screens/call_screen.dart';
 import 'screens/circles_screen.dart';
 import 'screens/lock_gate.dart';
 import 'screens/status_composer.dart';
 import 'screens/status_screen.dart';
 import 'screens/status_viewer.dart';
-import 'followers_following_screen.dart';
-import 'widgets/home_nav_bar.dart';
-import 'widgets/status_ring_avatar.dart';
 import 'services/supabase.dart';
 import 'services/presence.dart';
 import 'services/push_notifications.dart';
 import 'services/connection_monitor.dart';
 import 'models/profile.dart';
-import 'models/pending_message.dart';
 import 'ui/states.dart';
-import 'ui/errors.dart';
 import 'app_constants.dart';
 import 'theme/app_colors.dart' as app_colors;
 export 'theme/app_colors.dart';
 import 'screens/auth/auth_gate.dart' as auth_gate;
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/confirmation_screen.dart';
-import 'screens/navigation/nav_sidebar.dart';
 import 'screens/chat/conversation_list_screen.dart';
 import 'screens/chat/chat_screen.dart';
 import 'screens/settings/account_settings_screen.dart';
-import 'screens/chat/widgets/avatar.dart';
 
 
 // Set the restart callback so auth_gate.dart can restart the app without importing BroApp
@@ -101,20 +81,6 @@ void main() async {
 
 
 
-// Re-export color constants from theme for backward compatibility
-const _bg = app_colors.bg;
-const _surface = app_colors.surface;
-const _surfaceHigh = app_colors.surfaceHigh;
-const _surfaceLow = app_colors.surfaceLow;
-const _border = app_colors.border;
-const _text = app_colors.text;
-const _muted = app_colors.muted;
-const _success = app_colors.success;
-const _volt = app_colors.volt;
-const _darkOnVolt = app_colors.darkOnVolt;
-const _adaptiveBreakpoint = app_colors.adaptiveBreakpoint;
-const _chatBackgroundOptions = app_colors.chatBackgroundOptions;
-
 class _P {
   static const bg = app_colors.bg;
   static const surface = app_colors.surface;
@@ -128,9 +94,6 @@ class _P {
   static const volt = app_colors.volt;
   static const darkOnAccent = app_colors.darkOnVolt;
 }
-
-BoxDecoration _chatCanvas(String name, {String? imageUrl}) =>
-    app_colors.chatCanvas(name, imageUrl: imageUrl);
 
 class BackendConfigurationApp extends StatelessWidget {
   const BackendConfigurationApp({super.key});
@@ -283,6 +246,7 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
     AppLock.enabled.addListener(_onLockPref);
     unawaited(AppLock.bootstrap());
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybePromptUpdate());
+    _startBackgroundUpdateChecks();
   }
 
   void _onLockPref() {
@@ -299,6 +263,24 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
     final ctx = _rootNav.currentContext;
     if (ctx == null || !ctx.mounted) return;
     await AppUpdate.promptIfNeeded(context: ctx, buildNumber: buildNumber);
+  }
+
+  /// Start periodic background update checks (every 6 hours).
+  void _startBackgroundUpdateChecks() {
+    unawaited(_periodicUpdateCheck());
+  }
+
+  Future<void> _periodicUpdateCheck() async {
+    // Check immediately in the background, then every 6 hours
+    while (mounted) {
+      await Future<void>.delayed(AppUpdate.checkInterval);
+      if (!mounted) break;
+      try {
+        await AppUpdate.backgroundCheck(buildNumber);
+      } catch (_) {
+        // Silently ignore background check failures
+      }
+    }
   }
 
   @override
@@ -367,7 +349,9 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
               primary: _P.primary,
               onPrimary: _P.darkOnAccent,
               surface: _P.surface,
+              surfaceContainerHighest: _P.surfaceHigh,
               onSurface: _P.text,
+              outline: _P.border,
             ),
             appBarTheme: const AppBarTheme(
               backgroundColor: _P.bg,
@@ -375,6 +359,51 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
               elevation: 0,
               titleTextStyle: TextStyle(
                   color: _P.text, fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            cardTheme: CardThemeData(
+              color: _P.surface,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: _P.border.withValues(alpha: 0.35)),
+              ),
+            ),
+            dialogTheme: DialogThemeData(
+              backgroundColor: _P.surface,
+              surfaceTintColor: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(color: _P.border.withValues(alpha: 0.4)),
+              ),
+              titleTextStyle: const TextStyle(
+                color: _P.text,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            bottomSheetTheme: const BottomSheetThemeData(
+              backgroundColor: _P.surface,
+              surfaceTintColor: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+            ),
+            snackBarTheme: SnackBarThemeData(
+              backgroundColor: _P.surfaceHigh,
+              contentTextStyle: const TextStyle(color: _P.text),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              behavior: SnackBarBehavior.floating,
+            ),
+            dividerTheme: DividerThemeData(
+              color: _P.border.withValues(alpha: 0.4),
+              space: 1,
+              thickness: 1,
+            ),
+            floatingActionButtonTheme: FloatingActionButtonThemeData(
+              backgroundColor: _P.primary,
+              foregroundColor: _P.darkOnAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              elevation: 4,
             ),
             textTheme: const TextTheme(
               bodyMedium: TextStyle(color: _P.text),
@@ -392,28 +421,5 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
       ],
     );
   }
-}
-
-String _formatConversationTimestamp(DateTime dt) {
-  final now = DateTime.now();
-  final local = dt.toLocal();
-  if (now.year == local.year &&
-      now.month == local.month &&
-      now.day == local.day) {
-    return DateFormat('h:mm a').format(local);
-  }
-  final yesterday = now.subtract(const Duration(days: 1));
-  if (yesterday.year == local.year &&
-      yesterday.month == local.month &&
-      yesterday.day == local.day) {
-    return 'Yesterday';
-  }
-  if (now.difference(local).inDays < 7 && now.weekday != local.weekday) {
-    return DateFormat('EEE').format(local);
-  }
-  if (now.year == local.year) {
-    return DateFormat('MMM d').format(local);
-  }
-  return DateFormat('MM/dd/yy').format(local);
 }
 
