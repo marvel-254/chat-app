@@ -121,6 +121,35 @@ After pushing, check the repository’s Actions page for all three runs. The rel
 - **Fix:** Added explicit `alignment: Alignment.topLeft` to the `Stack` widget at line 339 in `lib/main.dart`. This avoids the `AlignmentDirectional` dependency on `Directionality` context.
 - **Verified:** All 20 tests pass; `flutter analyze` reports 0 errors.
 
+### UI Upgrades, Motion & Animations (v1.3.1)
+
+Comprehensive end-to-end UI overhaul and motion polish across the client:
+- **Motion primitives (`lib/ui/motion.dart`)**:
+  - `PressScale`: interactive spring press feedback (scaling down to 0.90–0.96 with bounce back on release).
+  - `FadeSlideIn`: staggered entrance animations for chat bubbles, list tiles, and dialog items.
+  - `PulseScale`: gentle breathing/pulsing animation for live indicators, status rings, and unread count badges.
+- **Navigation & Bottom Bar**:
+  - Fixed tab index bug where `StatusScreen` highlighted Circles (index 1) instead of Status (index 2).
+  - Polished `HomeNavBar` with top border gradient and rounded Volt indicator pill.
+  - Polished desktop/tablet `NavSidebar` with active route highlight and profile avatar chip.
+- **Conversation List**:
+  - Pill search bar with glow border on focus and animated clear button.
+  - "People you may know" stories carousel with glowing avatar rings and `PressScale`.
+  - Staggered `FadeSlideIn` entry for conversation tiles.
+  - Real-time `PulseScale` badge on unread message counts.
+  - Added Floating Action Button (Volt Lime pen icon) to quickly start a new chat.
+- **Chat Screen & Messaging**:
+  - Outgoing bubbles with Electric Street Volt lime gradient and crisp high-contrast text.
+  - Delivery receipt indicators: sending spinner, sent (`✓`), delivered/read (`✓✓`), and failed exclamation.
+  - Floating "Jump to bottom" button that smoothly scales/fades in when scrolled up > 350px.
+  - Composer input bar upgraded to a floating pill with spring micro-interactions.
+  - AnimatedSwitcher button morphing between mic and arrow send buttons.
+  - Attachment action sheet redesigned into a modern 5-category icon grid modal (Gallery, Camera, Document, GIF, Stickers).
+- **Circles & Statuses**:
+  - Card elevation and interactive press feedback.
+  - Cohesive dark Material 3 dialogs and bottom sheets.
+- **Verification**: `flutter test` passed all 20 tests; `flutter analyze` zero errors.
+
 ### Improved auto-updater (v1.3.0)
 
 The auto-updater in `lib/services/app_update.dart` was rewritten to provide a seamless in-app update experience for sideloaded APKs.

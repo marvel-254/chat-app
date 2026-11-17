@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../ui/states.dart';
+import '../ui/motion.dart';
 import '../models/circle.dart';
 import '../services/circles.dart';
 import '../widgets/home_nav_bar.dart';
@@ -258,17 +259,23 @@ class _CirclesScreenState extends State<CirclesScreen> {
                                       const SizedBox(height: 12),
                                   itemBuilder: (context, index) {
                                     final circle = _circles[index];
-                                    return _CirclesCard(
-                                      circle: circle,
-                                      onEdit: () =>
-                                          _showEditCircleDialog(circle),
-                                      onDelete: () =>
-                                          _deleteCircle(circle.id, circle.name),
-                                      onTap: () => Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => CircleDetailScreen(
-                                              circleId: circle.id),
+                                    return FadeSlideIn(
+                                      index: index.clamp(0, 8),
+                                      child: PressScale(
+                                        scaleFactor: 0.98,
+                                        child: _CirclesCard(
+                                          circle: circle,
+                                          onEdit: () =>
+                                              _showEditCircleDialog(circle),
+                                          onDelete: () =>
+                                              _deleteCircle(circle.id, circle.name),
+                                          onTap: () => Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => CircleDetailScreen(
+                                                  circleId: circle.id),
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     );

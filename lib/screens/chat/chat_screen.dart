@@ -28,18 +28,7 @@ import '../navigation/nav_sidebar.dart';
 import '../lock_gate.dart';
 import '../../services/app_lock.dart';
 
-const _bg = app_colors.bg;
-const _surface = app_colors.surface;
-const _surfaceHigh = app_colors.surfaceHigh;
-const _surfaceLow = app_colors.surfaceLow;
-const _border = app_colors.border;
-const _text = app_colors.text;
-const _muted = app_colors.muted;
-const _success = app_colors.success;
-const _volt = app_colors.volt;
-const _darkOnVolt = app_colors.darkOnVolt;
 const _adaptiveBreakpoint = app_colors.adaptiveBreakpoint;
-const _chatBackgroundOptions = app_colors.chatBackgroundOptions;
 
 class _P {
   static const bg = app_colors.bg;
@@ -3023,29 +3012,48 @@ class _Composer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
       child: Container(
         decoration: BoxDecoration(
           color: _P.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _P.border),
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(color: _P.border.withValues(alpha: 0.35)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.22),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
         child: Row(
           children: [
-            const SizedBox(width: 8),
-            IconButton(
-              icon: const Icon(Icons.add_rounded, color: _P.muted, size: 22),
-              onPressed: onAttach,
+            const SizedBox(width: 4),
+            PressScale(
+              scaleFactor: 0.88,
+              onTap: onAttach,
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.add_circle_outline_rounded,
+                    color: _P.primary, size: 24),
+              ),
             ),
-            IconButton(
-              icon: const Icon(Icons.emoji_emotions_outlined,
-                  color: _P.muted, size: 22),
-              onPressed: onEmoji,
+            PressScale(
+              scaleFactor: 0.88,
+              onTap: onEmoji,
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.emoji_emotions_outlined,
+                    color: _P.muted, size: 22),
+              ),
             ),
-            IconButton(
-              icon: const Icon(Icons.schedule_outlined,
-                  color: _P.muted, size: 22),
-              onPressed: onSchedule,
+            PressScale(
+              scaleFactor: 0.88,
+              onTap: onSchedule,
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.schedule_outlined, color: _P.muted, size: 22),
+              ),
             ),
             const SizedBox(width: 4),
             Expanded(
@@ -3054,12 +3062,13 @@ class _Composer extends StatelessWidget {
                 minLines: 1,
                 maxLines: 5,
                 style: const TextStyle(color: _P.text, fontSize: 15),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: 'Message',
-                  hintStyle: TextStyle(color: _P.muted),
+                  hintStyle: TextStyle(
+                      color: _P.muted.withValues(alpha: 0.7), fontSize: 15),
                   border: InputBorder.none,
                   isDense: true,
-                  contentPadding: EdgeInsets.symmetric(vertical: 12),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
                 ),
                 onSubmitted: (_) => onSend(),
                 onChanged: onTypingChanged,
@@ -3069,22 +3078,69 @@ class _Composer extends StatelessWidget {
               valueListenable: controller,
               builder: (_, v, __) {
                 final hasText = v.text.trim().isNotEmpty;
-                return AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 150),
-                  child: hasText
-                      ? IconButton.filled(
-                          key: const ValueKey('send'),
-                          onPressed: onSend,
-                          style:
-                              IconButton.styleFrom(backgroundColor: _P.primary),
-                          icon: const Icon(Icons.arrow_upward_rounded,
-                              color: _P.darkOnAccent),
-                        )
-                      : IconButton(
-                          key: const ValueKey('mic'),
-                          onPressed: onVoice,
-                          icon: const Icon(Icons.mic_none, color: _P.muted),
-                        ),
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6, left: 4),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    transitionBuilder: (child, anim) => ScaleTransition(
+                      scale: anim,
+                      child: FadeTransition(
+                        opacity: anim,
+                        child: child,
+                      ),
+                    ),
+                    child: hasText
+                        ? PressScale(
+                            key: const ValueKey('send-btn'),
+                            scaleFactor: 0.88,
+                            onTap: onSend,
+                            child: Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: _P.primary,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _P.primary.withValues(alpha: 0.4),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.arrow_upward_rounded,
+                                  color: _P.darkOnAccent,
+                                  size: 21,
+                                ),
+                              ),
+                            ),
+                          )
+                        : PressScale(
+                            key: const ValueKey('mic-btn'),
+                            scaleFactor: 0.88,
+                            onTap: onVoice,
+                            child: Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: _P.surfaceHigh,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: _P.border.withValues(alpha: 0.35),
+                                ),
+                              ),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.mic_none_rounded,
+                                  color: _P.primary,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                          ),
+                  ),
                 );
               },
             ),
@@ -3119,6 +3175,63 @@ class _MenuTile extends StatelessWidget {
       leading: Icon(icon, color: _P.muted, size: 22),
       title: Text(label, style: const TextStyle(color: _P.text, fontSize: 15)),
       onTap: onTap,
+    );
+  }
+}
+
+class _AttachActionItem extends StatelessWidget {
+  const _AttachActionItem({
+    required this.icon,
+    required this.label,
+    required this.color,
+    this.iconColor = Colors.white,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final Color iconColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return PressScale(
+      scaleFactor: 0.9,
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.16),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: color.withValues(alpha: 0.35),
+                width: 1.5,
+              ),
+            ),
+            child: Center(
+              child: Icon(
+                icon,
+                color: color == _P.primary ? iconColor : color,
+                size: 24,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              color: _P.text,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

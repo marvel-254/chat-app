@@ -3,7 +3,8 @@ import '../../../theme/app_colors.dart' as app_colors;
 
 class Avatar extends StatelessWidget {
   const Avatar(
-      {required this.name,
+      {super.key,
+      required this.name,
       this.size = 44,
       this.url,
       this.showOnlineDot = false});

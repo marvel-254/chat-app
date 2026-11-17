@@ -85,13 +85,10 @@ class _P {
   static const bg = app_colors.bg;
   static const surface = app_colors.surface;
   static const surfaceHigh = app_colors.surfaceHigh;
-  static const surfaceLow = app_colors.surfaceLow;
   static const border = app_colors.border;
   static const text = app_colors.text;
   static const muted = app_colors.muted;
-  static const success = app_colors.success;
   static const primary = app_colors.volt;
-  static const volt = app_colors.volt;
   static const darkOnAccent = app_colors.darkOnVolt;
 }
 

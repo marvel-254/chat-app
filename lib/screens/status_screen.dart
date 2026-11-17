@@ -6,6 +6,7 @@ import '../services/status_feed.dart';
 import '../services/supabase.dart';
 import '../ui/errors.dart';
 import '../ui/states.dart';
+import '../ui/motion.dart';
 import '../widgets/home_nav_bar.dart';
 import '../widgets/status_ring_avatar.dart';
 
@@ -86,10 +87,11 @@ class _StatusScreenState extends State<StatusScreen> {
           backgroundColor: _C.primary,
           foregroundColor: _C.darkOnAccent,
           tooltip: 'New status',
+          elevation: 4,
           onPressed: () => _compose(context),
           child: const Icon(Icons.camera_alt_outlined),
         ),
-        bottomNavigationBar: wide ? null : const HomeNavBar(index: 1),
+        bottomNavigationBar: wide ? null : const HomeNavBar(index: 2),
         body: StreamBuilder<List<StatusPost>>(
           key: ValueKey(_token),
           stream: Supa.watchStatuses(),
@@ -130,7 +132,13 @@ class _StatusScreenState extends State<StatusScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(8, 8, 8, 96),
                 children: [
-                  _MyStatusTile(thread: mine),
+                  FadeSlideIn(
+                    index: 0,
+                    child: PressScale(
+                      scaleFactor: 0.98,
+                      child: _MyStatusTile(thread: mine),
+                    ),
+                  ),
                   if (others.isEmpty)
                     const Padding(
                       padding: EdgeInsets.fromLTRB(28, 48, 28, 24),
@@ -165,10 +173,17 @@ class _StatusScreenState extends State<StatusScreen> {
                               fontWeight: FontWeight.w700,
                               letterSpacing: 0.4)),
                     ),
-                    ...others.map((thread) => _PeerStatusTile(
-                          thread: thread,
-                          userIds: others.map((t) => t.userId).toList(),
-                        )),
+                    for (int i = 0; i < others.length; i++)
+                      FadeSlideIn(
+                        index: (i + 1).clamp(0, 8),
+                        child: PressScale(
+                          scaleFactor: 0.98,
+                          child: _PeerStatusTile(
+                            thread: others[i],
+                            userIds: others.map((t) => t.userId).toList(),
+                          ),
+                        ),
+                      ),
                   ],
                 ],
               ),
