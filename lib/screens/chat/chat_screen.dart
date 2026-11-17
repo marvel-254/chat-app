@@ -10,7 +10,6 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_colors.dart' as app_colors;
 import '../../services/supabase.dart';
 import '../../services/presence.dart';
@@ -81,6 +80,7 @@ class _ChatScreenState extends State<ChatScreen> {
   int _lastMarkedMessageCount = 0;
   String? _lastMarkedMessageId;
   bool _showJumpToBottom = false;
+  late final VoidCallback _chatBackgroundListener = () => _loadChatBackground();
 
   void _onScroll() {
     if (!_scroll.hasClients) return;
@@ -121,6 +121,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _checkConversationLock();
     _ctrl.addListener(_onDraftChanged);
     _scroll.addListener(_onScroll);
+    Supa.chatBackgroundChanged.addListener(_chatBackgroundListener);
   }
 
   Future<void> _loadDraft() async {
@@ -259,11 +260,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _loadChatBackground() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final cached = prefs.getString('chat_background');
-      if (cached != null && mounted) {
-        setState(() => _chatBackground = cached);
-      }
       final profile = await Supa.getProfile(Supa.currentUser!.id);
       if (profile == null) return;
       final imagePath = profile.chatBackgroundImagePath;
@@ -271,14 +267,15 @@ class _ChatScreenState extends State<ChatScreen> {
       if (profile.chatBackground == 'custom' && imagePath != null) {
         imageUrl = await Supa.chatBackgroundUrl(imagePath);
       }
-      await prefs.setString('chat_background', profile.chatBackground);
       if (mounted) {
         setState(() {
           _chatBackground = profile.chatBackground;
           _chatBackgroundImageUrl = imageUrl;
         });
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Failed to load chat background: $e');
+    }
   }
 
   void _listenForCalls() {
@@ -406,6 +403,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _typingTimer?.cancel();
     _peerTypingTimer?.cancel();
     _draftSaveTimer?.cancel();
+    Supa.chatBackgroundChanged.removeListener(_chatBackgroundListener);
     final callChannel = _callChannel;
     if (callChannel != null) Supa.client.removeChannel(callChannel);
     super.dispose();

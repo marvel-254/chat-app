@@ -15,7 +15,7 @@ class CircleDetailScreen extends StatefulWidget {
 
 class _CircleDetailScreenState extends State<CircleDetailScreen> {
   Circle? _circle;
-  List<dynamic> _members = [];
+  List<CircleMember> _members = [];
   bool _isLoading = true;
   String? _error;
   bool _isAdmin = false;
@@ -415,7 +415,7 @@ class _CircleHeader extends StatelessWidget {
 }
 
 class _MembersList extends StatelessWidget {
-  final List<dynamic> members;
+  final List<CircleMember> members;
   final bool isAdmin;
   final String? currentUserId;
   final Function(String) onRemove;
@@ -446,16 +446,16 @@ class _MembersList extends StatelessWidget {
         color: Color(0xFF444932),
       ),
       itemBuilder: (context, index) {
-        final member = members[index] as Map<String, dynamic>;
-        final userId = member['user_id'] as String;
+        final member = members[index];
+        final userId = member.userId;
         final isCurrentUser = userId == currentUserId;
-        final isMemberAdmin = member['is_admin'] as bool? ?? false;
+        final isMemberAdmin = member.isAdmin;
 
         return ListTile(
           leading: CircleAvatar(
             backgroundColor: const Color(0xFF2A2B30),
             child: Text(
-              _getInitials(member['display_name'] as String? ?? ''),
+              _getInitials(member.displayName),
               style: const TextStyle(
                 color: Color(0xFFE3E1E9),
                 fontWeight: FontWeight.bold,
@@ -463,14 +463,14 @@ class _MembersList extends StatelessWidget {
             ),
           ),
           title: Text(
-            member['display_name'] as String? ?? '',
+            member.displayName,
             style: const TextStyle(
               color: Color(0xFFE3E1E9),
               fontWeight: FontWeight.w500,
             ),
           ),
           subtitle: Text(
-            '@${member['username'] as String}',
+            '@${member.username}',
             style: const TextStyle(
               color: Color(0xFF6B7280),
               fontSize: 13,

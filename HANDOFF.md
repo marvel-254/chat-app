@@ -163,6 +163,23 @@ Comprehensive end-to-end UI overhaul and motion polish across the client:
   - Cohesive dark Material 3 dialogs and bottom sheets.
 - **Verification**: `flutter test` passed all 20 tests; `flutter analyze` zero errors.
 
+### Fixed: BRO-8 and BRO-9 — Circles null checks and type cast errors (v1.3.4)
+
+Two new issues were detected by Sentry from user devices running the circles feature.
+
+**BRO-8 — `TypeError: Null check operator used on a null value`** (54 events, escalating)
+
+- **Cause:** `circle.description!` in `circles_screen.dart` (line 434) force-unwrapped a nullable `description` field. Although guarded by `isNotEmpty`, the `!` operator could still fire if the value changed between the guard and the use (e.g., during stream refresh). Additionally, `circles.dart` used `client.auth.currentUser!.id` in `updateCircle()`, which crashes if the user is not authenticated.
+- **Fix:** Replaced `circle.description!` with `circle.description ?? ''` in `circles_screen.dart`. Replaced `currentUser!.id` with a null-safe guard in `circles.dart` that returns early if the user is not authenticated.
+
+**BRO-9 — `TypeError: type 'CircleMember' is not a subtype of type 'Map<String, dynamic>'`** (2 events)
+
+- **Cause:** `_MembersList` in `circle_detail_screen.dart` declared `members` as `List<dynamic>` and cast each element to `Map<String, dynamic>` using bracket notation (`member['user_id']`). However, `Circles.getCircleMembers()` returns `List<CircleMember>`, so the cast failed at runtime.
+- **Fix:** Changed `_MembersList` to accept `List<CircleMember>` and use property access (`member.userId`, `member.displayName`, `member.username`, `member.isAdmin`) instead of Map bracket notation. Updated the `_members` field type in `_CircleDetailScreenState` to match.
+
+**Files changed:** `lib/screens/circles_screen.dart`, `lib/services/circles.dart`, `lib/screens/circle_detail_screen.dart`
+**Verified:** `flutter analyze` reports 0 errors.
+
 ### Landing page hero video background (2026-11-17)
 
 Added a subtle background video to the hero section of the web landing page (`web/index-landing.html`) to give the download page a more natural, lived-in atmosphere.

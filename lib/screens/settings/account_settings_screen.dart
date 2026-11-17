@@ -14,7 +14,6 @@ import '../../services/presence.dart';
 import '../../followers_following_screen.dart';
 import '../../app_constants.dart';
 import '../../services/app_lock.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../chat/widgets/avatar.dart';
 
 const _chatBackgroundOptions = app_colors.chatBackgroundOptions;
@@ -140,8 +139,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
           await Supa.uploadChatBackground(await file.readAsBytes(), file.name);
       final url = await Supa.chatBackgroundUrl(path);
       await Supa.updateChatBackground('custom', imagePath: path);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('chat_background', 'custom');
+      Supa.notifyChatBackgroundChanged();
       if (mounted) {
         setState(() {
           _error = null;
@@ -436,8 +434,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                           setState(() => _chatBackground = option.$1);
                           try {
                             await Supa.updateChatBackground(option.$1);
-                            final prefs = await SharedPreferences.getInstance();
-                            await prefs.setString('chat_background', option.$1);
+                            Supa.notifyChatBackgroundChanged();
                           } catch (_) {}
                         },
                         child: Container(

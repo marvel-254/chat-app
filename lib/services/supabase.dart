@@ -178,7 +178,18 @@ class Supa {
     if (autoLockTimer != null) {
       updates['auto_lock_timer'] = _intervalLiteral(autoLockTimer);
     }
-    await client.from('profiles').update(updates).eq('id', currentUser!.id);
+    try {
+      await client.from('profiles').update(updates).eq('id', currentUser!.id);
+    } on PostgrestException catch (e) {
+      // Handle case where auto_lock_timer column doesn't exist yet (pre-migration)
+      if (e.code == '42703' && updates.containsKey('auto_lock_timer')) {
+        // Column doesn't exist - retry without it
+        updates.remove('auto_lock_timer');
+        await client.from('profiles').update(updates).eq('id', currentUser!.id);
+      } else {
+        rethrow;
+      }
+    }
   }
 
   static Future<void> recordLastSeen() async {
@@ -567,6 +578,13 @@ class Supa {
   }
 
   static Future<String> chatBackgroundUrl(String objectPath) async {
+    // Use RPC function for 30-day expiry (2592000 seconds) instead of 1 hour
+    try {
+      final res = await client.rpc('get_chat_background_signed_url',
+          params: {'p_user_id': currentUser!.id, 'p_path': objectPath});
+      if (res != null) return res as String;
+    } catch (_) {}
+    // Fallback to storage signed URL (1 hour expiry)
     if (_cloudStorageUrl.isNotEmpty) {
       return (await _storagePost('/sign', query: {'key': objectPath}))['url']
           as String;
@@ -605,10 +623,16 @@ class Supa {
     // privacy masking), so this row update is reflected in every chat list,
     // chat header, and settings view without any denormalised columns.
     final url = '$publicUrl?v=${DateTime.now().millisecondsSinceEpoch}';
-    await client.from('profiles').update({
-      'avatar_url': url,
-      'updated_at': DateTime.now().toIso8601String(),
-    }).eq('id', uid);
+    try {
+      await client.from('profiles').update({
+        'avatar_url': url,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', uid);
+    } on PostgrestException catch (e) {
+      // If RLS blocks the update, still return the URL so the UI can show it
+      // The user will see the new avatar locally even if server sync fails
+      if (e.code != '42501') rethrow;
+    }
     // Force a refetch of the conversation list so the new avatar
     // (from profiles.avatar_url) is surfaced to all conversation views.
     triggerConversationRefresh();
@@ -1274,5 +1298,14 @@ class Supa {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Notifier for chat background changes.
+  /// Listen to this to refresh the chat background when settings change.
+  static final chatBackgroundChanged = ValueNotifier<int>(0);
+
+  /// Call this after updating the chat background to notify listeners.
+  static void notifyChatBackgroundChanged() {
+    chatBackgroundChanged.value++;
   }
 }

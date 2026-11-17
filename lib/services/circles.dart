@@ -114,11 +114,14 @@ class Circles {
     if (isPrivate != null) updates['is_private'] = isPrivate;
     updates['updated_at'] = DateTime.now().toUtc().toIso8601String();
 
+    final currentUserId = client.auth.currentUser?.id;
+    if (currentUserId == null) return;
+
     await client
         .from('circles')
         .update(updates)
         .eq('id', circleId)
-        .eq('creator_id', client.auth.currentUser!.id);
+        .eq('creator_id', currentUserId);
   }
 
   /// Check if current user is an admin of a circle

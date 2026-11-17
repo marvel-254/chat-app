@@ -431,7 +431,7 @@ class _CirclesCard extends StatelessWidget {
                   ),
                   if (circle.description?.isNotEmpty == true)
                     Text(
-                      circle.description!,
+                      circle.description ?? '',
                       style: const TextStyle(
                         color: Color(0xFFC5C9AC),
                         fontSize: 13,
