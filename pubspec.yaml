@@ -58,7 +58,7 @@ dependencies:
   firebase_messaging: ^17.0.1
   path_provider: ^2.1.5
   shared_preferences: ^2.3.3
-  sentry_flutter: ^8.14.0
+  sentry_flutter: ^9.20.0
 
 dev_dependencies:
   flutter_test:
