@@ -121,6 +121,19 @@ After pushing, check the repository’s Actions page for all three runs. The rel
 - **Fix:** Added explicit `alignment: Alignment.topLeft` to the `Stack` widget at line 339 in `lib/main.dart`. This avoids the `AlignmentDirectional` dependency on `Directionality` context.
 - **Verified:** All 20 tests pass; `flutter analyze` reports 0 errors.
 
+### Fixed: BRO-5 — Missing database functions (v1.3.1)
+
+- **Issue:** `PostgrestException: Could not find the function public.get_all_conversations_for_user` (29 escalating events, 2 users affected). The app calls `get_all_conversations_for_user()` via Supabase RPC, but 5 database migrations had never been pushed to the live Supabase project. The migrations also contained bugs: `converse_rows` view was referenced but never created, functions had broken SQL (cross joins with missing columns), and type mismatches (`null` without casts).
+- **Root cause:** Migrations in `supabase/migrations/` were written locally but never deployed with `supabase db push --linked`. The `circles_conversations` migration referenced a non-existent `converse_rows` view and had broken function logic.
+- **Fix:**
+  - Created the missing `converse_rows` view in `20261114020000_circles_conversations.sql` that enriches the `conversations` table with peer identity, last message, unread count, and lock status.
+  - Rewrote `get_conversations_for_user()` and `get_all_conversations_for_user()` functions with correct SQL and proper type casts (`null::uuid`, `null::text`).
+  - Fixed migration order: table creation before function definitions.
+  - Fixed `20261114030000_scheduled_messages.sql`: removed `now()` from partial index predicate (PostgreSQL requires IMMUTABLE functions in index predicates).
+  - Pushed all 5 pending migrations to the live Supabase database.
+- **Files changed:** `supabase/migrations/20261114020000_circles_conversations.sql`, `supabase/migrations/20261114030000_scheduled_messages.sql`
+- **Verified:** `supabase db push --linked` succeeded; all 5 migrations applied. New v1.3.1 release built and published.
+
 ### UI Upgrades, Motion & Animations (v1.3.1)
 
 Comprehensive end-to-end UI overhaul and motion polish across the client:
