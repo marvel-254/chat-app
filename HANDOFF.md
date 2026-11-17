@@ -4,10 +4,22 @@ This guide describes the app, its backend, local development, and release proces
 
 ## Architecture
 
-- **Client:** Flutter 3.47.7. `lib/main.dart` contains the app routes and screens; `lib/services/supabase.dart` wraps authentication, profiles, conversations, messaging, and storage; `lib/services/push_notifications.dart` handles Firebase Messaging registration and received notifications; `lib/services/connection_monitor.dart` publishes a debounced online/offline signal from connectivity_plus; `lib/ui/states.dart` holds the shared empty/error/loading/offline widgets; `lib/screens/call_screen.dart` implements the call experience.
+- **Client:** Flutter 3.47.7. The codebase uses a screen-focused folder structure:
+  - `lib/main.dart` (~200 lines) contains `main()`, `BroApp`, routing, and theme configuration.
+  - `lib/theme/app_colors.dart` holds all color constants and the `_P` palette.
+  - `lib/screens/auth/` contains auth gate, login, and confirmation screens.
+  - `lib/screens/chat/` contains the conversation list, chat screen, and all chat widgets (bubbles, composer, pickers, etc.).
+  - `lib/screens/settings/` contains account settings.
+  - `lib/screens/profile/` contains the user profile screen and profile-related widgets.
+  - `lib/screens/navigation/` contains the navigation sidebar.
+  - `lib/services/` contains domain-specific services: auth, profile, conversation, message, storage, follow, and status services, plus a thin Supabase client wrapper.
+  - `lib/services/push_notifications.dart` handles Firebase Messaging registration and received notifications.
+  - `lib/services/connection_monitor.dart` publishes a debounced online/offline signal from connectivity_plus.
+  - `lib/ui/states.dart` holds the shared empty/error/loading/offline widgets.
+  - `lib/screens/call_screen.dart` implements the call experience.
 - **Authentication and data:** Supabase Auth, Postgres, and Realtime. User and conversation data are protected by row-level security and database functions/policies.
 - **Object storage:** Avatars remain in Supabase Storage. Chat files and custom chat backgrounds use a private Cloudflare R2 bucket through a Cloudflare Worker. Supabase hosted Storage cannot be directly redirected to R2, so the Worker is the authenticated bridge.
-- **Platforms:** Android, iOS, and Web. The repository’s automated release workflow builds Android APKs; Pages builds the web app.
+- **Platforms:** Android, iOS, and Web. The repository's automated release workflow builds Android APKs; Pages builds the web app.
 
 ## User-facing features
 
@@ -70,6 +82,8 @@ flutter pub get
 
 The app defaults to the deployed Cloudflare Worker URL; a different endpoint can be supplied with `--dart-define=CLOUD_STORAGE_URL=...`. Android development also requires the Android SDK and accepted Android SDK licenses. Flutter Doctor on the original machine reported that the Android SDK is not installed there, so local Android builds need that toolchain added first.
 
+The `lib/main.dart` file is now ~200 lines containing only `main()`, `BroApp`, routing, and theme. All screens live under `lib/screens/` and all services are split by domain under `lib/services/`. Run `flutter analyze` after any changes to verify imports are correct across the new file structure.
+
 ## GitHub builds and releases
 
 Pushing to `main` or `master` starts three workflows:
@@ -90,7 +104,42 @@ After pushing, check the repository’s Actions page for all three runs. The rel
 - The app uses an expiring download URL, so a shared link can be opened by its holder until it expires. Keep the expiry short if the threat model changes.
 - Message notification behavior is platform-specific: Android push is wired; iOS depends on APNs setup; the Flutter web client currently skips FCM until its Web Push VAPID key and service worker are configured.
 
-## Current work status (2026-11-03)
+## Current work status (2026-11-17)
+
+### Sentry error monitoring (v1.2.0+)
+
+- **`sentry_flutter: ^9.20.0`** added to `pubspec.yaml`.
+- `lib/main.dart` wraps all app initialization in `SentryFlutter.init()` with DSN pointing to `omix-systems/bro` project (DE region). `tracesSampleRate` is set to `1.0` for local/dev — consider lowering to `0.1` for production.
+- `lib/widgets/sentry_test_button.dart` provides a `SentryTestButton` widget for verifying Sentry captures events during development.
+- `test/sentry_test.dart` adds a widget test for the Sentry test button.
+- Errors, crashes, and performance traces from user devices now flow to [Sentry dashboard](https://sentry.io/organizations/omix-systems/issues/).
+- Offline caching: if the device is offline when an error occurs, Sentry queues it and sends it when connection returns.
+
+### Fixed: BRO-4 — AlignmentDirectional null check error (v1.2.1)
+
+- **Issue:** `TypeError: Null check operator used on a null value` at `AlignmentDirectional.resolve` in `alignment.dart`. The `Stack` widget wrapping `MaterialApp.router` in `lib/main.dart` used the default `AlignmentDirectional.topStart` alignment. During the very first frame, before `MaterialApp` provides a `Directionality` widget, `AlignmentDirectional.resolve` fails because `Directionality.maybeOf(context)` returns null.
+- **Fix:** Added explicit `alignment: Alignment.topLeft` to the `Stack` widget at line 339 in `lib/main.dart`. This avoids the `AlignmentDirectional` dependency on `Directionality` context.
+- **Verified:** All 20 tests pass; `flutter analyze` reports 0 errors.
+
+## Current work status (2026-11-16)
+
+**Major refactoring completed:** The monolithic `lib/main.dart` (7,867 lines, 60+ classes) was split into a proper folder structure under `lib/screens/` with focused files. The `lib/services/supabase.dart` (1,272 lines) was split into domain-specific services. All `.md` documentation files were removed except `HANDOFF.md` and `README.md`.
+
+### Changes
+- `lib/main.dart` reduced to ~200 lines containing only `main()`, `BroApp`, routing, and theme.
+- Screens extracted to `lib/screens/auth/`, `lib/screens/chat/`, `lib/screens/settings/`, `lib/screens/profile/`, and `lib/screens/navigation/`.
+- Chat widgets extracted to `lib/screens/chat/widgets/` (bubbles, composer, pickers, etc.).
+- `lib/services/supabase.dart` reduced to a thin client wrapper; methods split into `auth_service.dart`, `profile_service.dart`, `conversation_service.dart`, `message_service.dart`, `storage_service.dart`, `follow_service.dart`, and `status_service.dart`.
+- Color constants moved to `lib/theme/app_colors.dart`.
+- All `.md` files removed except `HANDOFF.md` and `README.md`.
+
+### Completed in this session
+- **Code review report:** delivered to the user; findings are listed below as outstanding issues.
+- **Shared state widgets:** `lib/ui/states.dart` provides `AppEmptyState`, `AppErrorState`, `AppLoader` (with an `AppLoader.standard()` factory; call sites therefore drop `const` where a loader is used), `ListSkeleton`, and `BubbleSkeleton`. All widgets derive colors/sizes from the theme; no new dependencies.
+- **Wiring in `lib/main.dart`:** the conversation list shows the loader, an error state ("Failed to load conversations"), or an empty state whose CTA refocuses the profile search; both narrow and wide chat layouts show message skeletons, a "Failed to load messages" error state, or a "Wave hello" empty state that prefills "Hey! 👋" and sends. The old inline `_EmptyState`/`_ErrorState` classes were deleted.
+- **Connectivity monitoring:** `connectivity_plus: ^7.3.2` added to `pubspec.yaml`; `lib/services/connection_monitor.dart` watches the connectivity stream with a 3-second debounce and exposes a static `isOnline` notifier. `ConnectionMonitor.start()` is called on app start and disposed on shutdown; `OfflineBanner` (in `lib/ui/states.dart`) renders as a non-tappable overlay at the top of the screen when offline. The app initializes connection monitoring before the Supabase auth stream so a reload while offline is handled gracefully.
+- **Verification:** `flutter analyze` reports no issues; all three widget tests pass.
+- **Deferred by decision:** offline *queued sends* (compose offline → queue → auto-flush on reconnect) are part of Phase B1, not this workstream; they require `PendingMessage`.
 
 Uncommitted work in progress: a code review was completed against these changes, and the shared-state and connectivity workstreams from the follow-up plan are implemented and verified.
 

@@ -338,6 +338,7 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Stack(
       fit: StackFit.expand,
+      alignment: Alignment.topLeft,
       children: [
         MaterialApp.router(
           title: 'BRO',

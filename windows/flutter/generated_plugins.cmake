@@ -13,6 +13,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   local_auth_windows
   permission_handler_windows
   record_windows
+  sentry_flutter
   url_launcher_windows
 )
 
