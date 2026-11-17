@@ -72,9 +72,6 @@ class _ErrorState extends StatelessWidget {
   }
 }
 
-
-
-
 String _formatConversationTimestamp(DateTime dt) {
   final now = DateTime.now();
   final local = dt.toLocal();
@@ -88,6 +85,67 @@ class ConversationListScreen extends StatefulWidget {
   const ConversationListScreen({super.key});
   @override
   State<ConversationListScreen> createState() => _ConversationListScreenState();
+}
+
+class _MessageRequestTile extends StatelessWidget {
+  const _MessageRequestTile({
+    required this.request,
+    required this.onAccept,
+    required this.onDecline,
+    required this.onOpen,
+  });
+
+  final Map<String, dynamic> request;
+  final Future<void> Function() onAccept;
+  final Future<void> Function() onDecline;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = (request['peer_display_name'] as String?)?.trim();
+    final username = (request['peer_username'] as String?)?.trim();
+    final label = name?.isNotEmpty == true
+        ? name!
+        : (username?.isNotEmpty == true ? '@$username' : 'New contact');
+    final avatarUrl = request['peer_avatar_url'] as String?;
+    final initial = label.replaceFirst('@', '').trim();
+    return ListTile(
+      onTap: onOpen,
+      leading: Avatar(
+        name: initial.isEmpty ? '?' : initial[0].toUpperCase(),
+        url: avatarUrl,
+        size: 42,
+      ),
+      title: Text(label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: _P.text, fontWeight: FontWeight.w600)),
+      subtitle: Text(
+        (request['last_message'] as String?)?.trim().isNotEmpty == true
+            ? request['last_message'] as String
+            : 'Wants to start a conversation',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: _P.muted, fontSize: 12),
+      ),
+      trailing: Wrap(
+        spacing: 2,
+        children: [
+          IconButton(
+            tooltip: 'Decline',
+            onPressed: () => onDecline(),
+            icon: const Icon(Icons.close, color: _P.muted, size: 20),
+          ),
+          IconButton(
+            tooltip: 'Accept',
+            onPressed: () => onAccept(),
+            icon: const Icon(Icons.check_circle_outline,
+                color: _P.primary, size: 22),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ConversationListScreenState extends State<ConversationListScreen> {
@@ -180,6 +238,19 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     _startDM(user);
   }
 
+  Future<void> _startDM(Profile other) async {
+    try {
+      final conv = await Supa.getOrCreateDM(other.id);
+      if (mounted) context.go('/chat/${conv.id}', extra: other);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text("We couldn't open that chat. Please try again.")),
+      );
+    }
+  }
+
   Widget _conversationAvatar(BuildContext context, Conversation conv) {
     final hasStatus =
         conv.peerId != null && _statusUserIds.contains(conv.peerId);
@@ -207,17 +278,63 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     );
   }
 
-  Future<void> _startDM(Profile other) async {
-    try {
-      final conv = await Supa.getOrCreateDM(other.id);
-      if (mounted) context.go('/chat/${conv.id}', extra: other);
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text("We couldn't open that chat. Please try again.")),
-      );
-    }
+  Widget _messageRequestsSection(BuildContext context) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: Supa.watchMessageRequests(),
+      builder: (context, snapshot) {
+        final requests = snapshot.data ?? const <Map<String, dynamic>>[];
+        if (requests.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: _P.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _P.primary.withValues(alpha: 0.28)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(14, 12, 14, 4),
+                  child: Text('Message requests',
+                      style: TextStyle(
+                          color: _P.text,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14)),
+                ),
+                for (final request in requests.take(5))
+                  _MessageRequestTile(
+                    request: request,
+                    onAccept: () async {
+                      final conversationId =
+                          request['conversation_id'] as String?;
+                      final peerId = request['peer_id'] as String?;
+                      if (conversationId == null || peerId == null) return;
+                      await Supa.acceptMessageRequest(conversationId, peerId);
+                      if (mounted) setState(() => _conversationsTick++);
+                    },
+                    onDecline: () async {
+                      final conversationId =
+                          request['conversation_id'] as String?;
+                      if (conversationId == null) return;
+                      await Supa.declineMessageRequest(conversationId);
+                      if (mounted) setState(() => _conversationsTick++);
+                    },
+                    onOpen: () {
+                      final conversationId =
+                          request['conversation_id'] as String?;
+                      if (conversationId != null) {
+                        context.go('/chat/$conversationId');
+                      }
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -345,10 +462,12 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                       child: _searchLoading
                           ? Padding(
                               key: const ValueKey('loading'),
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
                               child: _SearchSkeleton(),
                             )
-                          : const SizedBox(key: ValueKey('no-loading'), height: 0),
+                          : const SizedBox(
+                              key: ValueKey('no-loading'), height: 0),
                     ),
                     // Error state
                     if (_searchError != null)
@@ -460,6 +579,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
               );
             },
           ),
+        if (_search.text.trim().isEmpty) _messageRequestsSection(context),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
@@ -506,9 +626,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                     ? allConversations
                     : allConversations
                         .where((c) =>
-                            c.peerLabel
-                                .toLowerCase()
-                                .contains(filterQuery) ||
+                            c.peerLabel.toLowerCase().contains(filterQuery) ||
                             (c.peerUsername
                                     ?.toLowerCase()
                                     .contains(filterQuery) ??
@@ -639,7 +757,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                                     ),
                                     if (lastMessageAt != null)
                                       Text(
-                                        _formatConversationTimestamp(lastMessageAt),
+                                        _formatConversationTimestamp(
+                                            lastMessageAt),
                                         style: TextStyle(
                                           color: unread ? _P.primary : _P.muted,
                                           fontWeight: unread
@@ -659,7 +778,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                                       Text(
                                         '@${conv.peerUsername}',
                                         style: TextStyle(
-                                          color: _P.muted.withValues(alpha: 0.8),
+                                          color:
+                                              _P.muted.withValues(alpha: 0.8),
                                           fontSize: 11,
                                         ),
                                       ),
@@ -669,7 +789,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                                         child: Text(
                                           lastMessage.startsWith('attachment:')
                                               ? '📎 Attachment'
-                                              : (lastMessage.startsWith('voice:')
+                                              : (lastMessage
+                                                      .startsWith('voice:')
                                                   ? '🎤 Voice note'
                                                   : lastMessage),
                                           style: TextStyle(
@@ -691,7 +812,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                                   children: [
                                     if (conv.isLocked)
                                       Padding(
-                                        padding: const EdgeInsets.only(bottom: 4),
+                                        padding:
+                                            const EdgeInsets.only(bottom: 4),
                                         child: Icon(Icons.lock_outline_rounded,
                                             size: 15, color: _P.muted),
                                       ),
@@ -780,7 +902,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                 Container(
                   width: 46,
                   height: 46,
-                  decoration: BoxDecoration(color: block, shape: BoxShape.circle),
+                  decoration:
+                      BoxDecoration(color: block, shape: BoxShape.circle),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -816,7 +939,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   }
 
   /// Error state for search.
-  Widget _SearchError({required String message, required VoidCallback onRetry}) {
+  Widget _SearchError(
+      {required String message, required VoidCallback onRetry}) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -840,7 +964,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
               foregroundColor: _P.primary,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             ),
-            child: const Text('Retry', style: TextStyle(fontWeight: FontWeight.w700)),
+            child: const Text('Retry',
+                style: TextStyle(fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -848,7 +973,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   }
 
   /// Empty state for search results.
-  Widget _SearchEmptyState({required String query, required VoidCallback onClear}) {
+  Widget _SearchEmptyState(
+      {required String query, required VoidCallback onClear}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 32),
       child: Column(
@@ -884,12 +1010,14 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
           OutlinedButton.icon(
             onPressed: onClear,
             icon: const Icon(Icons.clear_rounded, size: 18),
-            label: const Text('Clear search', style: TextStyle(fontWeight: FontWeight.w600)),
+            label: const Text('Clear search',
+                style: TextStyle(fontWeight: FontWeight.w600)),
             style: OutlinedButton.styleFrom(
               foregroundColor: _P.primary,
               side: BorderSide(color: _P.primary.withValues(alpha: 0.5)),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24)),
             ),
           ),
         ],
@@ -1002,7 +1130,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                     onTap: onTap,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
                         color: _P.primary.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(24),
@@ -1115,4 +1244,3 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     );
   }
 }
-
