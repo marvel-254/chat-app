@@ -19,4 +19,29 @@ jobs:
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings || true
       - name: Test
-        run: flutter test
+        run: |
+          set +e
+          flutter test --machine > "$RUNNER_TEMP/flutter-test.jsonl"
+          test_status=$?
+          if [ "$test_status" -ne 0 ]; then
+            python3 - "$RUNNER_TEMP/flutter-test.jsonl" <<'PYTHON'
+          import json
+          import sys
+
+          tests = {}
+          for line in open(sys.argv[1], encoding='utf-8'):
+              try:
+                  event = json.loads(line)
+              except json.JSONDecodeError:
+                  print(line.rstrip())
+                  continue
+              if event['type'] == 'testStart':
+                  tests[event['test']['id']] = event['test']['name']
+              if event['type'] == 'error':
+                  name = tests.get(event['testID'], 'Flutter test')
+                  message = f"{name}: {event['error']}\n{event.get('stackTrace', '')}"
+                  escaped = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  print(f"::error::{escaped}")
+          PYTHON
+          fi
+          exit "$test_status"
