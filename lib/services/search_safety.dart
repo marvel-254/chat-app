@@ -6,6 +6,7 @@
 String sanitizeSearchTerm(String query, {int maxLength = 64}) {
   final cleaned = query
       .trim()
+      .replaceFirst(RegExp(r'^@+'), '')
       .replaceAll(RegExp(r'[%*,()\\"]+'), ' ')
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();

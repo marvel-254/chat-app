@@ -9,6 +9,10 @@ void main() {
       expect(sanitizeSearchTerm('  alex.vance_1-x  '), 'alex.vance_1-x');
     });
 
+    test('normalizes a leading username at-sign', () {
+      expect(sanitizeSearchTerm('@alex.vance'), 'alex.vance');
+    });
+
     test('strips PostgREST filter metacharacters', () {
       expect(
         sanitizeSearchTerm('foo,id.eq.1),username.ilike.*'),
