@@ -9,7 +9,7 @@
  *  - Supabase/API calls → never cached (network-only, pass-through).
  */
 
-const VERSION = 'bro-pwa-v1';
+const VERSION = 'bro-pwa-v2';
 const APP_SHELL = [
   'index.html',
   'app.html',
@@ -52,7 +52,31 @@ self.addEventListener('fetch', (event) => {
   // Network-only for API / auth traffic (Supabase, R2, GitHub releases)
   if (url.origin !== self.location.origin) return;
 
-  // App shell and assets: cache-first
+  // App shell and assets: cache-first, except the Dart bundle and bootstrap,
+  // which go network-first so new releases reach users without a version bump.
+  if (
+    url.pathname.endsWith('main.dart.js') ||
+    url.pathname.endsWith('flutter_bootstrap.js') ||
+    url.pathname.endsWith('flutter.js')
+  ) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const copy = response.clone();
+            caches.open(VERSION).then((cache) => {
+              cache.put(event.request, copy).catch(() => {});
+            });
+          }
+          return response;
+        })
+        .catch(() =>
+          caches.match(event.request).then((cached) => cached || Response.error())
+        )
+    );
+    return;
+  }
+
   if (
     url.pathname.endsWith('.js') ||
     url.pathname.endsWith('.wasm') ||
