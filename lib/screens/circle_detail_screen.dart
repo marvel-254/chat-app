@@ -58,8 +58,7 @@ class _CircleDetailScreenState extends State<CircleDetailScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Leave Circle'),
-        content:
-            Text('Are you sure you want to leave "${_circle?.name}"?'),
+        content: Text('Are you sure you want to leave "${_circle?.name}"?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -143,7 +142,9 @@ class _CircleDetailScreenState extends State<CircleDetailScreen> {
         // a separate invite function. For now, just show a message.
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('User "$user.username" found — direct messaging them instead')),
+          SnackBar(
+              content: Text(
+                  'User "$user.username" found — direct messaging them instead')),
         );
         if (!mounted) return;
         final conv = await Supa.getOrCreateDM(user.id);
@@ -229,7 +230,8 @@ class _CircleDetailScreenState extends State<CircleDetailScreen> {
               if (_isAdmin)
                 const PopupMenuItem(
                   value: 'delete',
-                  child: Text('Delete Circle', style: TextStyle(color: Colors.red)),
+                  child: Text('Delete Circle',
+                      style: TextStyle(color: Colors.red)),
                 ),
             ],
           ),
@@ -277,7 +279,8 @@ class _CircleDetailScreenState extends State<CircleDetailScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Circle'),
-        content: Text('This will delete "${_circle?.name}" and all its data. This cannot be undone.'),
+        content: Text(
+            'This will delete "${_circle?.name}" and all its data. This cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -360,7 +363,7 @@ class _CircleHeader extends StatelessWidget {
           if (circle.description?.isNotEmpty == true) ...[
             const SizedBox(height: 8),
             Text(
-              circle.description!,
+              circle.description ?? '',
               style: const TextStyle(
                 color: Color(0xFFC5C9AC),
                 fontSize: 16,
