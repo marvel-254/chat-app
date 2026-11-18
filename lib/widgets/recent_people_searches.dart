@@ -62,7 +62,11 @@ class _RecentSearchListState extends State<_RecentSearchList> {
     if (!widget.isActive()) return;
     try {
       await PeopleSearchHistory.clear(widget.owner);
-      if (mounted) setState(() => _history = Future.value(const <String>[]));
+      if (mounted) {
+        setState(() {
+          _history = Future.value(const <String>[]);
+        });
+      }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

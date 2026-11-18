@@ -8,11 +8,6 @@ on:
 
 jobs:
   analyze-test:
-    name: History (${{ matrix.checkpoint }})
-    strategy:
-      fail-fast: false
-      matrix:
-        checkpoint: [open, replay, reopen, clear]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,6 +19,4 @@ jobs:
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings || true
       - name: Test
-        env:
-          CHECKPOINT: ${{ matrix.checkpoint }}
-        run: flutter test test/suggest_friends_screen_test.dart --plain-name 'recent searches can be replayed' --dart-define="RECENT_CHECKPOINT=$CHECKPOINT"
+        run: flutter test
