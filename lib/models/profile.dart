@@ -20,6 +20,12 @@ class Profile {
   final bool readByPeer;
   final ProfileTheme theme;
 
+  // Gaming fields
+  final String? gamePlatform;
+  final String? gameUsername;
+  final String? gameStatus;
+  final String gameVisibility;
+
   Profile({
     required this.id,
     required this.username,
@@ -39,6 +45,10 @@ class Profile {
     this.autoLockTimer,
     this.readByPeer = false,
     this.theme = const ProfileTheme(),
+    this.gamePlatform,
+    this.gameUsername,
+    this.gameStatus,
+    this.gameVisibility = 'everyone',
   });
 
   factory Profile.fromJson(Map<String, dynamic> json) => Profile(
@@ -61,6 +71,10 @@ class Profile {
         defaultMessageExpiry: parseInterval(json['default_message_expiry']),
         autoLockTimer: parseInterval(json['auto_lock_timer']),
         theme: ProfileTheme.fromJson(json),
+        gamePlatform: json['game_platform'] as String?,
+        gameUsername: json['game_username'] as String?,
+        gameStatus: json['game_status'] as String?,
+        gameVisibility: json['game_visibility'] as String? ?? 'everyone',
       );
 
   Map<String, dynamic> toJson() => {

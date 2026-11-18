@@ -32,6 +32,8 @@ import 'screens/chat/suggest_friends_screen.dart';
 import 'screens/chat/chat_screen.dart';
 import 'screens/settings/account_settings_screen.dart';
 import 'screens/settings/close_friends_screen.dart';
+import 'screens/settings/digital_avatar_screen.dart';
+import 'screens/settings/friendship_timeline_screen.dart';
 import 'screens/settings/linked_devices_screen.dart';
 
 // Set the restart callback so auth_gate.dart can restart the app without importing BroApp
@@ -211,6 +213,9 @@ final _router = GoRouter(
         path: '/settings/linked-devices',
         builder: (_, __) => const LinkedDevicesScreen()),
     GoRoute(
+        path: '/settings/digital-avatar',
+        builder: (_, __) => const DigitalAvatarScreen()),
+    GoRoute(
         path: '/call/:conversationId',
         builder: (_, state) => CallScreen(
               conversationId: state.pathParameters['conversationId']!,
@@ -230,6 +235,13 @@ final _router = GoRouter(
       path: '/profile/:userId',
       builder: (_, state) => UserProfileScreen(
         userId: state.pathParameters['userId']!,
+      ),
+    ),
+    GoRoute(
+      path: '/friendship-timeline/:userId',
+      builder: (_, state) => FriendshipTimelineScreen(
+        peerId: state.pathParameters['userId']!,
+        peer: state.extra is Profile ? state.extra as Profile : null,
       ),
     ),
   ],

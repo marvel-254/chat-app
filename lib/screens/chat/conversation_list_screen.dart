@@ -790,6 +790,28 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
+                                    ValueListenableBuilder<int>(
+                                      valueListenable: Presence.epoch,
+                                      builder: (_, __, ___) {
+                                        final game =
+                                            Presence.game(conv.peerId);
+                                        final label = game?.playingLabel;
+                                        if (label == null) {
+                                          return const SizedBox.shrink();
+                                        }
+                                        return Text(
+                                          label,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: _P.primary
+                                                .withValues(alpha: 0.9),
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        );
+                                      },
+                                    ),
                                     if (conv.peerUsername != null &&
                                         lastMessage == null)
                                       Text(

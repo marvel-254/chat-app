@@ -9,6 +9,7 @@ import 'package:path/path.dart' as path;
 import '../models/profile.dart';
 import '../models/profile_theme.dart';
 import 'avatar_upload.dart';
+import '../models/avatar_config.dart';
 import 'search_safety.dart';
 import 'reactions.dart' as reactions;
 import 'message_safety.dart' as message_safety;
@@ -215,7 +216,11 @@ class Supa {
       required String aboutVisibility,
       bool readReceiptsEnabled = true,
       Duration? defaultMessageExpiry,
-      Duration? autoLockTimer}) async {
+      Duration? autoLockTimer,
+      String? gamePlatform,
+      String? gameUsername,
+      String? gameStatus,
+      String? gameVisibility}) async {
     final updates = <String, dynamic>{
       'about': about.trim().isEmpty ? null : about.trim(),
       'photo_visibility': photoVisibility,
@@ -232,6 +237,19 @@ class Supa {
     if (autoLockTimer != null) {
       updates['auto_lock_timer'] = _intervalLiteral(autoLockTimer);
     }
+    // Gaming fields
+    if (gamePlatform != null) {
+      updates['game_platform'] = gamePlatform;
+    }
+    if (gameUsername != null) {
+      updates['game_username'] = gameUsername;
+    }
+    if (gameStatus != null) {
+      updates['game_status'] = gameStatus;
+    }
+    if (gameVisibility != null) {
+      updates['game_visibility'] = gameVisibility;
+    }
     try {
       await client.from('profiles').update(updates).eq('id', currentUser!.id);
     } on PostgrestException catch (e) {
@@ -246,12 +264,50 @@ class Supa {
     }
   }
 
+  /// Save the gaming profile: handle, platform, current game, and visibility.
+  ///
+  /// Always writes all four columns (nulls included) so the editor can clear
+  /// them. Callers must send a consistent set — a platform implies a handle,
+  /// matching `profiles_game_username_check`.
+  static Future<void> updateGameProfile({
+    String? platform,
+    String? username,
+    String? status,
+    required String visibility,
+  }) async {
+    final me = currentUser;
+    if (me == null) return;
+    await client.from('profiles').update({
+      'game_platform': platform,
+      'game_username': username,
+      'game_status': status,
+      'game_visibility': visibility,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    }).eq('id', me.id);
+  }
+
   static Future<void> updateProfileTheme(ProfileTheme theme) async {
     final updates = <String, dynamic>{
       ...theme.toJson(),
       'updated_at': DateTime.now().toUtc().toIso8601String(),
     };
     await client.from('profiles').update(updates).eq('id', currentUser!.id);
+  }
+
+  // Digital avatar (issue #74)
+  //
+  // The config lives in `profiles.avatar_config` (jsonb). Reads go through a
+  // SECURITY DEFINER function because `profiles` itself is not selectable by
+  // clients; the function re-applies the same photo_visibility masking used by
+  // the `visible_profiles` view so a hidden avatar stays hidden.
+  static Future<AvatarConfig> getDigitalAvatarConfig(String uid) async {
+    final res = await client.rpc('digital_avatar_config', params: {'uid': uid});
+    return AvatarConfig.fromStorage(res);
+  }
+
+  static Future<void> setDigitalAvatarConfig(AvatarConfig config) async {
+    await client
+        .rpc('set_digital_avatar_config', params: {'cfg': config.toJson()});
   }
 
   static String profileMediaUrl(String objectPath) {

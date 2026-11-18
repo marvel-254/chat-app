@@ -11,6 +11,7 @@ import '../../services/supabase.dart';
 import '../../services/avatar_upload.dart';
 import '../../models/profile.dart';
 import '../../models/profile_theme.dart';
+import '../../models/game_profile.dart';
 import '../../ui/states.dart';
 import '../../ui/errors.dart';
 import '../lock_gate.dart';
@@ -18,6 +19,8 @@ import '../../services/presence.dart';
 import '../../followers_following_screen.dart';
 import '../../app_constants.dart';
 import '../../services/app_lock.dart';
+import '../../models/avatar_config.dart';
+import '../../widgets/digital_avatar.dart';
 import '../chat/widgets/avatar.dart';
 import '../../widgets/responsive_app_shell.dart';
 
@@ -55,6 +58,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   final _about = TextEditingController();
   final _profileStatus = TextEditingController();
   final _profileColor = TextEditingController(text: '#D4FF00');
+  final _gameUsername = TextEditingController();
+  final _gameStatus = TextEditingController();
   Profile? _profile;
   Uint8List? _avatarPreview;
   String? _avatarUrlOverride;
@@ -68,6 +73,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   String? _profileMusicName;
   bool _animatedAvatarEnabled = false;
   String? _animatedAvatarPath;
+  AvatarConfig? _digitalAvatar;
   bool _uploadingProfileMedia = false;
   bool _loading = true;
   bool _saving = false;
@@ -78,6 +84,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   bool _readReceiptsEnabled = true;
   Duration? _defaultMessageExpiry;
   Duration? _autoLockTimer;
+  String? _gamePlatform;
+  String _gameVisibility = 'everyone';
 
   @override
   void initState() {
@@ -109,11 +117,23 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       _readReceiptsEnabled = profile?.readReceiptsEnabled ?? true;
       _defaultMessageExpiry = profile?.defaultMessageExpiry;
       _autoLockTimer = profile?.autoLockTimer;
+      _gamePlatform = profile?.gamePlatform;
+      _gameUsername.text = profile?.gameUsername ?? '';
+      _gameStatus.text = profile?.gameStatus ?? '';
+      _gameVisibility = profile?.gameVisibility ?? 'everyone';
       _chatBackground = profile?.chatBackground ?? 'default';
       _chatBackgroundImagePath = profile?.chatBackgroundImagePath;
       if (_chatBackgroundImagePath != null) {
         _chatBackgroundImageUrl =
             await Supa.chatBackgroundUrl(_chatBackgroundImagePath!);
+      }
+      final avatarUid = profile?.id ?? Supa.currentUser?.id;
+      if (avatarUid != null) {
+        try {
+          _digitalAvatar = await Supa.getDigitalAvatarConfig(avatarUid);
+        } catch (_) {
+          _digitalAvatar = null;
+        }
       }
       if (!mounted) return;
       setState(() => _loading = false);
@@ -296,6 +316,15 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       setState(() => _error = "Those passwords don't match yet.");
       return;
     }
+    final gameError = gameProfileError(
+      platform: _gamePlatform,
+      username: _gameUsername.text,
+      status: _gameStatus.text,
+    );
+    if (gameError != null) {
+      setState(() => _error = gameError);
+      return;
+    }
     setState(() {
       _saving = true;
       _error = null;
@@ -311,6 +340,14 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
           readReceiptsEnabled: _readReceiptsEnabled,
           defaultMessageExpiry: _defaultMessageExpiry,
           autoLockTimer: _autoLockTimer);
+      await Supa.updateGameProfile(
+        platform: _gamePlatform,
+        username: _gamePlatform == null ? null : _gameUsername.text.trim(),
+        status: _gamePlatform == null || _gameStatus.text.trim().isEmpty
+            ? null
+            : _gameStatus.text.trim(),
+        visibility: _gameVisibility,
+      );
       await Supa.updateProfileTheme(ProfileTheme(
         colorHex: profileColor,
         coverImagePath: _coverImagePath,
@@ -356,6 +393,14 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
         size: 96,
       );
 
+  void _clearGameProfile() {
+    setState(() {
+      _gamePlatform = null;
+      _gameUsername.clear();
+      _gameStatus.clear();
+    });
+  }
+
   Color _profileColorValue() {
     final value = _profileColor.text.trim();
     if (!RegExp(r'^#[0-9A-Fa-f]{6}$').hasMatch(value)) return _P.primary;
@@ -371,6 +416,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     _about.dispose();
     _profileStatus.dispose();
     _profileColor.dispose();
+    _gameUsername.dispose();
+    _gameStatus.dispose();
     super.dispose();
   }
 
@@ -395,6 +442,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                             width: 96, height: 96, fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) => _settingsAvatar()),
                       )
+                    else if (_avatarUrlOverride == null &&
+                        (_digitalAvatar?.enabled ?? false))
+                      DigitalAvatar(config: _digitalAvatar!, size: 96)
                     else
                       _settingsAvatar(),
                     TextButton.icon(
@@ -421,6 +471,90 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       controller: _about,
                       label: 'About (max 160 characters)',
                       icon: Icons.info_outline),
+                  const SizedBox(height: 20),
+                  Text('Gaming profile',
+                      style: TextStyle(
+                          color: _P.muted, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Text(
+                      'Show friends your game handle and what you are playing.',
+                      style: TextStyle(
+                          color: _P.muted.withValues(alpha: 0.7),
+                          fontSize: 12)),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String?>(
+                    initialValue: _gamePlatform,
+                    decoration: const InputDecoration(labelText: 'Platform'),
+                    hint: const Text('Not set'),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('Not set')),
+                      for (final entry in gamePlatforms)
+                        DropdownMenuItem(
+                            value: entry.value, child: Text(entry.label)),
+                    ],
+                    onChanged: (v) => setState(() => _gamePlatform = v),
+                  ),
+                  const SizedBox(height: 12),
+                  _SettingsField(
+                      controller: _gameUsername,
+                      label: 'Game username',
+                      icon: Icons.sports_esports_outlined,
+                      enabled: _gamePlatform != null),
+                  const SizedBox(height: 12),
+                  _SettingsField(
+                      controller: _gameStatus,
+                      label: 'Currently playing',
+                      icon: Icons.videogame_asset_outlined,
+                      enabled: _gamePlatform != null,
+                      maxLength: gameStatusMaxLength),
+                  if (_gamePlatform != null) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final game in suggestedGames)
+                          ActionChip(
+                            label: Text(game),
+                            backgroundColor: _P.surfaceHigh,
+                            side: BorderSide(
+                                color: _P.border.withValues(alpha: 0.5)),
+                            labelStyle: const TextStyle(
+                                color: _P.text,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500),
+                            onPressed: () => setState(
+                                () => _gameStatus.text = game),
+                          ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: _gameVisibility,
+                    decoration: const InputDecoration(
+                        labelText: 'Gaming profile visible to'),
+                    items: const [
+                      DropdownMenuItem(
+                          value: 'everyone', child: Text('Everyone')),
+                      DropdownMenuItem(
+                          value: 'contacts', child: Text('My contacts')),
+                      DropdownMenuItem(value: 'nobody', child: Text('Nobody')),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setState(() => _gameVisibility = v);
+                    },
+                  ),
+                  if (_gamePlatform != null)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: _clearGameProfile,
+                        icon: const Icon(Icons.delete_outline_outlined,
+                            size: 16),
+                        label: const Text('Clear gaming profile'),
+                      ),
+                    ),
                   const SizedBox(height: 20),
                   Text('Profile theme',
                       style: TextStyle(
@@ -546,6 +680,21 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                           ? 'Choose animated GIF'
                           : 'Replace animated GIF'),
                     ),
+                  ),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.view_in_ar_outlined),
+                    title: const Text('3D digital avatar'),
+                    subtitle: Text(
+                      (_digitalAvatar?.enabled ?? false)
+                          ? 'Shown on your profile'
+                          : 'Build a customizable avatar with reactions',
+                      style:
+                          const TextStyle(color: _P.muted, fontSize: 12),
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push('/settings/digital-avatar'),
                   ),
                   const SizedBox(height: 20),
                   Text('Privacy',
@@ -886,11 +1035,15 @@ class _SettingsField extends StatefulWidget {
     required this.label,
     required this.icon,
     this.obscure = false,
+    this.enabled = true,
+    this.maxLength,
   });
   final TextEditingController controller;
   final String label;
   final IconData icon;
   final bool obscure;
+  final bool enabled;
+  final int? maxLength;
 
   @override
   State<_SettingsField> createState() => _SettingsFieldState();
@@ -903,6 +1056,8 @@ class _SettingsFieldState extends State<_SettingsField> {
   Widget build(BuildContext context) => TextField(
         controller: widget.controller,
         obscureText: _obscured,
+        enabled: widget.enabled,
+        maxLength: widget.maxLength,
         style: const TextStyle(color: _P.text),
         decoration: InputDecoration(
           labelText: widget.label,
@@ -946,6 +1101,7 @@ class UserProfileScreen extends StatefulWidget {
 
 class _UserProfileScreenState extends State<UserProfileScreen> {
   Profile? _profile;
+  AvatarConfig? _digitalAvatar;
   bool _loading = true;
   bool _isFollowing = false;
   int _followersCount = 0;
@@ -985,6 +1141,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         if (!_isSelf) Supa.isFollowing(widget.userId),
         Supa.getFollowersCount(widget.userId),
         Supa.getFollowingCount(widget.userId),
+        _safeDigitalAvatar(widget.userId),
       ]);
       if (!mounted) return;
       setState(() {
@@ -992,6 +1149,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         if (!_isSelf) _isFollowing = results[1] as bool;
         _followersCount = results[_isSelf ? 1 : 2] as int;
         _followingCount = results[_isSelf ? 2 : 3] as int;
+        _digitalAvatar = results[_isSelf ? 3 : 4] as AvatarConfig?;
         _loading = false;
       });
     } catch (e) {
@@ -1001,6 +1159,16 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           _loading = false;
         });
       }
+    }
+  }
+
+  /// The avatar config is optional: if the migration has not been applied yet
+  /// the RPC is missing and the profile should still render.
+  Future<AvatarConfig?> _safeDigitalAvatar(String uid) async {
+    try {
+      return await Supa.getDigitalAvatarConfig(uid);
+    } catch (_) {
+      return null;
     }
   }
 
@@ -1151,11 +1319,17 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           Center(
             child: Stack(
               children: [
-                Avatar(
-                  name: profile.peerInitial,
-                  url: avatarUrl,
-                  size: 92,
-                ),
+                if (_digitalAvatar?.enabled ?? false)
+                  DigitalAvatar(
+                    config: _digitalAvatar!,
+                    size: 104,
+                  )
+                else
+                  Avatar(
+                    name: profile.peerInitial,
+                    url: avatarUrl,
+                    size: 92,
+                  ),
                 // Subtle glow ring
                 Positioned.fill(
                   child: IgnorePointer(
@@ -1224,6 +1398,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               },
             ),
           ],
+          _GamePresenceCard(profile: profile),
           const SizedBox(height: 20),
 
           // ── Follower / following counts ─────────────────────────────────
@@ -1494,6 +1669,68 @@ class _ProfileStatChip extends StatelessWidget {
   }
 }
 
+// Gaming presence card shown on a profile when the viewer may see it.
+class _GamePresenceCard extends StatelessWidget {
+  const _GamePresenceCard({required this.profile});
+
+  final Profile profile;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: Presence.epoch,
+      builder: (_, __, ___) {
+        final game =
+            Presence.game(profile.id) ?? GamePresence.fromProfile(profile);
+        if (!game.isVisible) return const SizedBox.shrink();
+        final color = _profileThemeColor(profile.theme);
+        return Container(
+          margin: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: _P.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.sports_esports_outlined,
+                    color: color, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (game.playingLabel != null) ...[
+                      Text(game.playingLabel!,
+                          style: const TextStyle(
+                              color: _P.text,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 2),
+                    ],
+                    Text(game.handleLabel ?? '',
+                        style: TextStyle(color: _P.muted, fontSize: 12)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Followers / Following Sheet
 // ---------------------------------------------------------------------------
@@ -1658,8 +1895,25 @@ class _FollowersFollowingSheetState extends State<_FollowersFollowingSheet>
           title: Text(p.label,
               style:
                   const TextStyle(color: _P.text, fontWeight: FontWeight.w600)),
-          subtitle: Text('@${p.username}',
-              style: TextStyle(color: _P.muted, fontSize: 12)),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('@${p.username}',
+                  style: TextStyle(color: _P.muted, fontSize: 12)),
+              if (GamePresence.fromProfile(p).isVisible)
+                Text(
+                  GamePresence.fromProfile(p).playingLabel ??
+                      '@${p.gameUsername}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: _P.primary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600),
+                ),
+            ],
+          ),
           trailing: p.id == Supa.currentUser?.id
               ? null
               : _FollowToggleButton(userId: p.id),

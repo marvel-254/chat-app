@@ -23,6 +23,7 @@ import '../../models/pending_message.dart';
 import '../../ui/states.dart';
 import '../../ui/errors.dart';
 import '../../ui/motion.dart';
+import '../../widgets/game_presence.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Presence;
 import 'widgets/avatar.dart';
 import '../navigation/nav_sidebar.dart';
@@ -798,6 +799,23 @@ class _ChatScreenState extends State<ChatScreen> {
                     return;
                   }
                   context.push('/profile/${peer.id}');
+                });
+              },
+            ),
+            _MenuTile(
+              icon: Icons.auto_awesome_outlined,
+              label: 'Friendship timeline',
+              onTap: () {
+                Navigator.pop(context);
+                final peer = _peer;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  if (peer == null) {
+                    _unsupported(
+                        "That friendship is still loading. Try again in a moment.");
+                    return;
+                  }
+                  context.push('/friendship-timeline/${peer.id}', extra: peer);
                 });
               },
             ),
@@ -2281,6 +2299,10 @@ class _PeerStatusLine extends StatelessWidget {
               key: const ValueKey('presence'),
               valueListenable: Presence.epoch,
               builder: (_, __, ___) {
+                final game = Presence.game(peerId)?.playingLabel;
+                if (game != null) {
+                  return GamePresenceTag(label: game, color: _P.primary);
+                }
                 final presence = Presence.label(peerId) ?? fallback;
                 final online = Presence.isOnline(peerId);
                 return Text(

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/game_profile.dart';
+
 /// Shared last-seen cache so chat list, chat header, and profile agree.
 ///
 /// `record_last_seen` used to run only when the app resumed, so anyone sitting
@@ -21,6 +23,7 @@ class Presence {
   static Set<String> _listPeers = {};
   static final Set<String> _focus = {};
   static final Map<String, DateTime?> _lastSeen = {};
+  static final Map<String, GamePresence> _games = {};
   static final Set<String> _hidden = {};
 
   static Set<String> get _watched => {..._listPeers, ..._focus};
@@ -37,7 +40,7 @@ class Presence {
     _poll = null;
     _listPeers = {};
     _focus.clear();
-    // Preserve _lastSeen and _hidden so presence survives auth rebind.
+    // Preserve _lastSeen, _games and _hidden so presence survives auth rebind.
   }
 
   static void resume() {
@@ -110,6 +113,47 @@ class Presence {
     return formatPresenceLabel(at, onlineFor: onlineFor);
   }
 
+  /// Game presence for watched peers, or null when they are not showing one.
+  static GamePresence? game(String? userId) {
+    if (userId == null || userId.isEmpty) return null;
+    return _games[userId];
+  }
+
+  /// Best-effort game presence for the watched peers.
+  ///
+  /// Deliberately separate from [refresh]: a deployment that has not applied
+  /// the gaming migration yet (undefined columns) must not take last-seen
+  /// presence down with it.
+  static Future<void> _refreshGames(List<String> ids) async {
+    if (ids.isEmpty) return;
+    try {
+      final rows = await Supabase.instance.client
+          .from('visible_profiles')
+          .select('id,game_platform,game_username,game_status')
+          .filter('id', 'in', ids);
+      final fetchedIds = <String>{};
+      for (final row in rows as List) {
+        final id = row['id'] as String;
+        fetchedIds.add(id);
+        final presence = GamePresence(
+          platform: row['game_platform'] as String?,
+          username: row['game_username'] as String?,
+          status: row['game_status'] as String?,
+        );
+        if (presence.isVisible) {
+          _games[id] = presence;
+        } else {
+          _games.remove(id);
+        }
+      }
+      for (final id in ids) {
+        if (!fetchedIds.contains(id)) _games.remove(id);
+      }
+    } catch (e) {
+      debugPrint('Presence._refreshGames failed: $e');
+    }
+  }
+
   static Future<void> refresh() async {
     final ids = _watched.toList();
     if (ids.isEmpty) return;
@@ -140,6 +184,7 @@ class Presence {
           _hidden.remove(id);
         }
       }
+      await _refreshGames(ids);
       epoch.value++;
     } catch (e) {
       debugPrint('Presence.refresh failed: $e');
