@@ -152,7 +152,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   StreamSubscription<List<StatusPost>>? _statusSub;
   Set<String> _statusUserIds = {};
 
-  Future<List<Profile>>? _suggestions;
+  Future<List<FriendSuggestion>>? _suggestions;
   List<Profile> _searchResults = [];
   Timer? _searchDebounce;
   int _searchRequestId = 0;
@@ -163,9 +163,9 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   @override
   void initState() {
     super.initState();
-    _suggestions = Supa.searchUsers('').catchError((e) {
+    _suggestions = Supa.getFriendSuggestions(limit: 8).catchError((e) {
       debugPrint('Failed to load chat suggestions: $e');
-      return <Profile>[];
+      return <FriendSuggestion>[];
     });
     _statusSub = Supa.watchStatuses().listen((posts) {
       if (!mounted) return;
@@ -174,7 +174,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   }
 
   void _reloadSuggestions() {
-    if (mounted) setState(() => _suggestions = Supa.searchUsers(''));
+    if (mounted) setState(() => _suggestions = Supa.getFriendSuggestions(limit: 8));
   }
 
   void _onSearchChanged(String value) {
@@ -234,7 +234,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     _startDM(user);
   }
 
-  Future<void> _startDM(Profile other) async {
+  Future<void> _startDM(dynamic other) async {
     try {
       final conv = await Supa.getOrCreateDM(other.id);
       if (mounted) context.go('/chat/${conv.id}', extra: other);
@@ -501,13 +501,13 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                 ),
         ),
         if (_search.text.trim().isEmpty)
-          FutureBuilder<List<Profile>>(
+          FutureBuilder<List<FriendSuggestion>>(
             future: _suggestions,
             builder: (context, snapshot) {
-              final people = snapshot.data ?? const <Profile>[];
+              final people = snapshot.data ?? const <FriendSuggestion>[];
               if (people.isEmpty) return const SizedBox.shrink();
               return SizedBox(
-                height: 128,
+                height: 136,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -527,6 +527,22 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                           const SizedBox(width: 8),
                           Icon(Icons.psychology_outlined,
                               size: 13, color: _P.muted.withValues(alpha: 0.6)),
+                          const Spacer(),
+                          TextButton.icon(
+                            onPressed: () => context.push('/suggest-friends'),
+                            icon: Icon(Icons.chevron_right, size: 16, color: _P.primary),
+                            label: Text('See all',
+                                style: TextStyle(
+                                  color: _P.primary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                )),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -544,7 +560,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                                 user: people[idx],
                                 onTap: () => _startDM(people[idx]),
                                 onLongPress: () =>
-                                    context.push('/profile/${people[idx].id}'),
+                                    context.push('/profile/${people[idx].userId}'),
                               ),
                             ),
                         ],
@@ -1144,11 +1160,11 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
 
   /// Suggestion tile for 'People you may know' section.
   Widget _SuggestionTile({
-    required Profile user,
+    required FriendSuggestion user,
     required VoidCallback onTap,
     required VoidCallback onLongPress,
   }) {
-    final isOnline = Presence.isOnline(user.id);
+    final isOnline = user.isOnline;
     return PressScale(
       scaleFactor: 0.94,
       onTap: onTap,

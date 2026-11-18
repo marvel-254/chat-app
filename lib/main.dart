@@ -28,6 +28,7 @@ import 'screens/auth/login_screen.dart';
 import 'screens/auth/onboarding_screen.dart' as onboarding;
 import 'screens/auth/confirmation_screen.dart';
 import 'screens/chat/conversation_list_screen.dart';
+import 'screens/chat/suggest_friends_screen.dart';
 import 'screens/chat/chat_screen.dart';
 import 'screens/settings/account_settings_screen.dart';
 import 'screens/settings/close_friends_screen.dart';
@@ -174,6 +175,9 @@ final _router = GoRouter(
     GoRoute(
         path: '/conversations',
         builder: (_, __) => const ConversationListScreen()),
+    GoRoute(
+        path: '/suggest-friends',
+        builder: (_, __) => const SuggestFriendsScreen()),
     GoRoute(path: '/status', builder: (_, __) => const StatusScreen()),
     GoRoute(
         path: '/status/new',
