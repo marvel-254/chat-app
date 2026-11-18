@@ -38,6 +38,14 @@ for key in SUPABASE_URL SUPABASE_ANON_KEY; do
   fi
 done
 
+# Tag Sentry events with the same release across Vercel, GitHub Pages, and
+# local builds. APP_RELEASE can be overridden by CI when needed.
+if [[ -z "${APP_RELEASE:-}" ]]; then
+  APP_VERSION="$(awk '/^version:/{print $2; exit}' pubspec.yaml)"
+  APP_RELEASE="bro@${APP_VERSION:-dev}"
+fi
+DEFINES+=(--dart-define="APP_RELEASE=${APP_RELEASE}")
+
 TARGET="${1:-apk}"
 # Base href for the PWA. Local dev defaults to /app/; CI (GitHub Pages
 # project site) passes e.g. /chat-app/app/ via BASE_HREF env var.

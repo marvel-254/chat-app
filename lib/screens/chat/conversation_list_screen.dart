@@ -7,21 +7,17 @@ import '../../services/supabase.dart';
 import '../../services/presence.dart';
 import '../../models/profile.dart';
 import '../../ui/states.dart';
-import '../navigation/nav_sidebar.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Presence;
 import 'widgets/avatar.dart';
 import '../../widgets/status_ring_avatar.dart';
-import '../../widgets/home_nav_bar.dart';
+import '../../widgets/responsive_app_shell.dart';
 import '../../services/push_notifications.dart';
 import '../../ui/motion.dart';
 import '../../widgets/search_highlight.dart';
 
-const _adaptiveBreakpoint = app_colors.adaptiveBreakpoint;
-
 class _P {
   static const surface = app_colors.surface;
   static const surfaceHigh = app_colors.surfaceHigh;
-  static const surfaceLow = app_colors.surfaceLow;
   static const border = app_colors.border;
   static const text = app_colors.text;
   static const muted = app_colors.muted;
@@ -337,59 +333,39 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     );
   }
 
+  Future<void> _signOut() async {
+    await PushNotifications.unregisterCurrentToken();
+    await Supa.signOut();
+    if (mounted) context.go('/login');
+  }
+
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth > _adaptiveBreakpoint;
-        return Scaffold(
-          appBar: AppBar(
-            title: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Image.asset(
-                  'assets/images/bro_logo.png',
-                  height: 26,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) =>
-                      const Icon(Icons.flash_on, color: _P.primary, size: 24),
-                ),
-                const SizedBox(width: 10),
-                const Text('BRO',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w700, letterSpacing: 0.5)),
-              ],
-            ),
-            actions: [
-              IconButton(
-                  icon: const Icon(Icons.settings_outlined),
-                  tooltip: 'Settings',
-                  onPressed: () => context.push('/settings')),
-              IconButton(
-                icon: const Icon(Icons.logout),
-                tooltip: 'Sign out',
-                onPressed: () async {
-                  await PushNotifications.unregisterCurrentToken();
-                  await Supa.signOut();
-                  if (context.mounted) context.go('/login');
-                },
-              ),
-            ],
-          ),
-          body: wide
-              ? _buildLargeScreenLayout(context)
-              : _buildSmallScreenLayout(context),
-          floatingActionButton: FloatingActionButton(
-            backgroundColor: _P.primary,
-            foregroundColor: _P.darkOnAccent,
-            tooltip: 'New message',
-            elevation: 4,
-            onPressed: () => _searchFocusNode.requestFocus(),
-            child: const Icon(Icons.edit_outlined, size: 22),
-          ),
-          bottomNavigationBar: wide ? null : const HomeNavBar(index: 0),
-        );
-      },
+    return ResponsiveAppShell(
+      title: 'Chats',
+      subtitle: 'Your conversations and new contacts',
+      navIndex: 0,
+      body: _buildSmallScreenLayout(context),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.settings_outlined),
+          tooltip: 'Settings',
+          onPressed: () => context.push('/settings'),
+        ),
+        IconButton(
+          icon: const Icon(Icons.logout),
+          tooltip: 'Sign out',
+          onPressed: _signOut,
+        ),
+      ],
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: _P.primary,
+        foregroundColor: _P.darkOnAccent,
+        tooltip: 'New message',
+        elevation: 4,
+        onPressed: () => _searchFocusNode.requestFocus(),
+        child: const Icon(Icons.edit_outlined, size: 22),
+      ),
     );
   }
 
@@ -1230,17 +1206,6 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildLargeScreenLayout(BuildContext context) {
-    return Row(
-      children: [
-        const NavSidebar(),
-        Expanded(
-          child: _buildSmallScreenLayout(context),
-        ),
-      ],
     );
   }
 }

@@ -23,49 +23,44 @@ cp web/manifest.json web/robots.txt web/sitemap.xml web/llms.txt web/favicon.png
 
 echo "✅ Landing page + assets copied"
 
-# ── Try to build the Flutter web app (optional) ──────────────────────────
+# ── Build the Flutter web app ────────────────────────────────────────────
+# The authenticated app is the primary product. Never silently deploy a
+# landing-only build: a green Vercel deployment must contain /app/.
 FLUTTER_VERSION="${FLUTTER_VERSION:-3.47.7}"
 CACHE_ROOT="${VERCEL_CACHE_DIR:-$ROOT/.vercel/cache}"
 FLUTTER_SDK="$CACHE_ROOT/flutter-$FLUTTER_VERSION"
+export PUB_CACHE="${PUB_CACHE:-$CACHE_ROOT/pub-cache}"
+export BASE_HREF="${BASE_HREF:-/app/}"
 
-if [[ -x "$FLUTTER_SDK/bin/flutter" ]]; then
+clone_flutter() {
+  rm -rf "$FLUTTER_SDK"
+  mkdir -p "$CACHE_ROOT"
+  echo "Cloning Flutter $FLUTTER_VERSION..."
+  git clone --depth 1 --branch "$FLUTTER_VERSION" \
+    https://github.com/flutter/flutter.git "$FLUTTER_SDK"
+}
+
+prepare_flutter() {
   export PATH="$FLUTTER_SDK/bin:$PATH"
-  export PUB_CACHE="${PUB_CACHE:-$CACHE_ROOT/pub-cache}"
-  export BASE_HREF="${BASE_HREF:-/app/}"
+  flutter config --no-analytics >/dev/null
+  # A cached SDK can exist without its web engine artifacts. Precache is
+  # deliberately part of validation so the build cannot fail halfway through.
+  flutter precache --web
+  flutter --version
+}
 
-  if flutter config --no-analytics 2>/dev/null && flutter --version 2>/dev/null; then
-    if ./scripts/build.sh web 2>&1; then
-      echo "✅ Flutter web build succeeded"
-    else
-      echo "⚠️  Flutter web build failed — landing page will still deploy"
-    fi
-  else
-    echo "⚠️  Flutter SDK found but not working — skipping web build"
-  fi
-else
-  echo "⚠️  Flutter SDK not cached — cloning (this may take a while)..."
-  if mkdir -p "$CACHE_ROOT" && \
-     git clone --depth 1 --branch "$FLUTTER_VERSION" \
-       https://github.com/flutter/flutter.git "$FLUTTER_SDK" 2>/dev/null && \
-     [[ -x "$FLUTTER_SDK/bin/flutter" ]]; then
-    export PATH="$FLUTTER_SDK/bin:$PATH"
-    export PUB_CACHE="${PUB_CACHE:-$CACHE_ROOT/pub-cache}"
-    export BASE_HREF="${BASE_HREF:-/app/}"
-
-    if flutter config --no-analytics 2>/dev/null && flutter --version 2>/dev/null; then
-      if ./scripts/build.sh web 2>&1; then
-        echo "✅ Flutter web build succeeded"
-      else
-        echo "⚠️  Flutter web build failed — landing page will still deploy"
-      fi
-    else
-      echo "⚠️  Flutter SDK cloned but not working — skipping web build"
-    fi
-  else
-    echo "⚠️  Flutter SDK clone failed — deploying landing page only"
-  fi
+if [[ ! -x "$FLUTTER_SDK/bin/flutter" ]]; then
+  clone_flutter
 fi
 
-# ── Verify ───────────────────────────────────────────────────────────────
+if ! prepare_flutter; then
+  echo "Cached Flutter SDK is unusable. Recreating it."
+  clone_flutter
+  prepare_flutter
+fi
+
+./scripts/build.sh web
+
 test -s build/web/index.html
-echo "✅ Build complete — landing page is ready"
+test -s build/web/app/index.html
+echo "✅ Build complete — landing page and Flutter app are ready"

@@ -7,11 +7,10 @@ import '../services/supabase.dart';
 import '../ui/errors.dart';
 import '../ui/states.dart';
 import '../ui/motion.dart';
-import '../widgets/home_nav_bar.dart';
+import '../widgets/responsive_app_shell.dart';
 import '../widgets/status_ring_avatar.dart';
 
 class _C {
-  static const bg = Color(0xFF121318);
   static const surface = Color(0xFF1E1F25);
   static const surfaceHigh = Color(0xFF292A2F);
   static const text = Color(0xFFE3E1E9);
@@ -22,8 +21,6 @@ class _C {
 
 class StatusScreen extends StatefulWidget {
   const StatusScreen({super.key});
-
-  static const _wide = 600.0;
 
   @override
   State<StatusScreen> createState() => _StatusScreenState();
@@ -41,20 +38,21 @@ class _StatusScreenState extends State<StatusScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.photo_camera_outlined, color: _C.primary),
+              leading:
+                  const Icon(Icons.photo_camera_outlined, color: _C.primary),
               title: const Text('Camera', style: TextStyle(color: _C.text)),
               onTap: () => Navigator.pop(ctx, 'camera'),
             ),
             ListTile(
               leading: const Icon(Icons.photo_outlined, color: _C.primary),
-              title: const Text('Photo library',
-                  style: TextStyle(color: _C.text)),
+              title:
+                  const Text('Photo library', style: TextStyle(color: _C.text)),
               onTap: () => Navigator.pop(ctx, 'gallery'),
             ),
             ListTile(
               leading: const Icon(Icons.text_fields, color: _C.primary),
-              title: const Text('Text status',
-                  style: TextStyle(color: _C.text)),
+              title:
+                  const Text('Text status', style: TextStyle(color: _C.text)),
               onTap: () => Navigator.pop(ctx, 'text'),
             ),
             const SizedBox(height: 8),
@@ -68,130 +66,116 @@ class _StatusScreenState extends State<StatusScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      final wide = constraints.maxWidth > StatusScreen._wide;
-      return Scaffold(
-        backgroundColor: _C.bg,
-        appBar: AppBar(
-          leading: wide
-              ? IconButton(
-                  tooltip: 'Chats',
-                  icon: const Icon(Icons.forum_outlined),
-                  onPressed: () => context.go('/conversations'),
+    final content = StreamBuilder<List<StatusPost>>(
+      key: ValueKey(_token),
+      stream: Supa.watchStatuses(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const ListSkeleton(label: 'Loading statuses');
+        }
+        if (snapshot.hasError) {
+          return AppErrorState(
+            title: "Statuses didn't load",
+            detail: friendlyErrorMessage(snapshot.error,
+                fallback:
+                    'Give it another try - updates usually come right back.'),
+            onRetry: () => setState(() => _token++),
+          );
+        }
+        final me = Supa.currentUser?.id ?? '';
+        final threads = groupStatusFeed(snapshot.data ?? [], me);
+        StatusThread? mine;
+        for (final thread in threads) {
+          if (thread.userId == me) {
+            mine = thread;
+            break;
+          }
+        }
+        final others = threads.where((t) => t.userId != me).toList();
+        return RefreshIndicator(
+          color: _C.primary,
+          backgroundColor: _C.surface,
+          onRefresh: () async {
+            setState(() => _token++);
+            await Future<void>.delayed(const Duration(milliseconds: 400));
+          },
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 96),
+            children: [
+              FadeSlideIn(
+                index: 0,
+                child: PressScale(
+                  scaleFactor: 0.98,
+                  child: _MyStatusTile(thread: mine),
+                ),
+              ),
+              if (others.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(28, 48, 28, 24),
+                  child: Column(
+                    children: [
+                      Icon(Icons.slow_motion_video_outlined,
+                          color: _C.muted, size: 48),
+                      SizedBox(height: 14),
+                      Text('No updates yet',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              color: _C.text,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600)),
+                      SizedBox(height: 8),
+                      Text(
+                        'When contacts share a photo or a thought, it shows up here for 24 hours.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            color: _C.muted, fontSize: 13, height: 1.4),
+                      ),
+                    ],
+                  ),
                 )
-              : null,
-          title: const Text('Status',
-              style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.3)),
-        ),
-        floatingActionButton: FloatingActionButton(
-          backgroundColor: _C.primary,
-          foregroundColor: _C.darkOnAccent,
-          tooltip: 'New status',
-          elevation: 4,
-          onPressed: () => _compose(context),
-          child: const Icon(Icons.camera_alt_outlined),
-        ),
-        bottomNavigationBar: wide ? null : const HomeNavBar(index: 2),
-        body: StreamBuilder<List<StatusPost>>(
-          key: ValueKey(_token),
-          stream: Supa.watchStatuses(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting &&
-                !snapshot.hasData) {
-              return const ListSkeleton(label: 'Loading statuses');
-            }
-            if (snapshot.hasError) {
-              return AppErrorState(
-                title: "Statuses didn't load",
-                detail: friendlyErrorMessage(snapshot.error,
-                    fallback:
-                        'Give it another try — updates usually come right back.'),
-                onRetry: () => setState(() => _token++),
-              );
-            }
-            final me = Supa.currentUser?.id ?? '';
-            final threads = groupStatusFeed(snapshot.data ?? [], me);
-            StatusThread? mine;
-            for (final thread in threads) {
-              if (thread.userId == me) {
-                mine = thread;
-                break;
-              }
-            }
-            final others = threads.where((t) => t.userId != me).toList();
-            return RefreshIndicator(
-              color: _C.primary,
-              backgroundColor: _C.surface,
-              onRefresh: () async {
-                // Recreate the stream subscription (new ValueKey) so the list
-                // re-queries immediately instead of waiting on a realtime
-                // event that may never arrive.
-                setState(() => _token++);
-                await Future<void>.delayed(const Duration(milliseconds: 400));
-              },
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(8, 8, 8, 96),
-                children: [
+              else ...[
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
+                  child: Text('Recent updates',
+                      style: TextStyle(
+                          color: _C.muted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.4)),
+                ),
+                for (int i = 0; i < others.length; i++)
                   FadeSlideIn(
-                    index: 0,
+                    index: (i + 1).clamp(0, 8),
                     child: PressScale(
                       scaleFactor: 0.98,
-                      child: _MyStatusTile(thread: mine),
+                      child: _PeerStatusTile(
+                        thread: others[i],
+                        userIds: others.map((t) => t.userId).toList(),
+                      ),
                     ),
                   ),
-                  if (others.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(28, 48, 28, 24),
-                      child: Column(
-                        children: [
-                          Icon(Icons.slow_motion_video_outlined,
-                              color: _C.muted, size: 48),
-                          SizedBox(height: 14),
-                          Text('No updates yet',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                  color: _C.text,
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w600)),
-                          SizedBox(height: 8),
-                          Text(
-                            'When contacts share a photo or a thought, it shows up here for 24 hours.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                color: _C.muted, fontSize: 13, height: 1.4),
-                          ),
-                        ],
-                      ),
-                    )
-                  else ...[
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
-                      child: Text('Recent updates',
-                          style: TextStyle(
-                              color: _C.muted,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.4)),
-                    ),
-                    for (int i = 0; i < others.length; i++)
-                      FadeSlideIn(
-                        index: (i + 1).clamp(0, 8),
-                        child: PressScale(
-                          scaleFactor: 0.98,
-                          child: _PeerStatusTile(
-                            thread: others[i],
-                            userIds: others.map((t) => t.userId).toList(),
-                          ),
-                        ),
-                      ),
-                  ],
-                ],
-              ),
-            );
-          },
-        ),
-      );
-    });
+              ],
+            ],
+          ),
+        );
+      },
+    );
+
+    return ResponsiveAppShell(
+      title: 'Status',
+      subtitle: 'Share a moment with your people',
+      navIndex: 2,
+      body: content,
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: _C.primary,
+        foregroundColor: _C.darkOnAccent,
+        tooltip: 'New status',
+        elevation: 4,
+        onPressed: () => _compose(context),
+        child: const Icon(Icons.camera_alt_outlined),
+      ),
+    );
   }
 }
 

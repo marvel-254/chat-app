@@ -3,7 +3,7 @@ import '../ui/states.dart';
 import '../ui/motion.dart';
 import '../models/circle.dart';
 import '../services/circles.dart';
-import '../widgets/home_nav_bar.dart';
+import '../widgets/responsive_app_shell.dart';
 import 'circle_detail_screen.dart';
 
 class CirclesScreen extends StatefulWidget {
@@ -198,29 +198,20 @@ class _CirclesScreenState extends State<CirclesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF121318),
+    return ResponsiveAppShell(
+      title: 'Circles',
+      subtitle: 'Small groups for the people who matter',
+      navIndex: 1,
+      actions: [
+        IconButton(
+          tooltip: 'Create circle',
+          icon: const Icon(Icons.add),
+          onPressed: _showCreateCircleDialog,
+        ),
+      ],
       body: CustomScrollView(
         controller: _scrollController,
         slivers: [
-          SliverAppBar(
-            expandedHeight: 200,
-            pinned: true,
-            backgroundColor: const Color(0xFF1E1F25),
-            flexibleSpace: FlexibleSpaceBar(
-              title: const Text(
-                'Circles',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              centerTitle: true,
-            ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.add),
-                onPressed: _showCreateCircleDialog,
-              ),
-            ],
-          ),
           SliverToBoxAdapter(
             child: _isLoading
                 ? const AppLoader()
@@ -267,13 +258,14 @@ class _CirclesScreenState extends State<CirclesScreen> {
                                           circle: circle,
                                           onEdit: () =>
                                               _showEditCircleDialog(circle),
-                                          onDelete: () =>
-                                              _deleteCircle(circle.id, circle.name),
+                                          onDelete: () => _deleteCircle(
+                                              circle.id, circle.name),
                                           onTap: () => Navigator.push(
                                             context,
                                             MaterialPageRoute(
-                                              builder: (_) => CircleDetailScreen(
-                                                  circleId: circle.id),
+                                              builder: (_) =>
+                                                  CircleDetailScreen(
+                                                      circleId: circle.id),
                                             ),
                                           ),
                                         ),
@@ -286,9 +278,6 @@ class _CirclesScreenState extends State<CirclesScreen> {
                           ),
           ),
         ],
-      ),
-      bottomNavigationBar: const HomeNavBar(
-        index: 1,
       ),
     );
   }

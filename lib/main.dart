@@ -50,7 +50,14 @@ void main() async {
     (options) {
       options.dsn =
           'https://fd8f1fbe2d70d8f8dcd5d5434a361ab5@o4510827799707648.ingest.de.sentry.io/4512197248745552';
-      options.tracesSampleRate = 1.0;
+      options.environment = kReleaseMode ? 'production' : 'development';
+      options.release = const String.fromEnvironment(
+        'APP_RELEASE',
+        defaultValue: 'bro@dev',
+      );
+      options.dist = buildNumber.isEmpty ? null : buildNumber;
+      options.sendDefaultPii = false;
+      options.tracesSampleRate = kReleaseMode ? 0.1 : 1.0;
       options.debug = false;
     },
     appRunner: () async {
