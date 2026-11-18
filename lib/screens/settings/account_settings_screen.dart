@@ -8,6 +8,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Presence;
 import '../../theme/app_colors.dart' as app_colors;
 import '../../services/supabase.dart';
+import '../../services/avatar_upload.dart';
 import '../../models/profile.dart';
 import '../../models/profile_theme.dart';
 import '../../ui/states.dart';
@@ -55,7 +56,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   final _profileStatus = TextEditingController();
   final _profileColor = TextEditingController(text: '#D4FF00');
   Profile? _profile;
-  XFile? _avatarFile;
+  Uint8List? _avatarPreview;
   String? _avatarUrlOverride;
   bool _uploadingAvatar = false;
   String _chatBackground = 'default';
@@ -127,31 +128,37 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   }
 
   Future<void> _pickAvatar() async {
-    if (_uploadingAvatar) return;
-    final file = await ImagePicker().pickImage(
-        source: ImageSource.gallery, imageQuality: 85, maxWidth: 1200);
-    if (file == null || !mounted) return;
-    setState(() {
-      _avatarFile = file;
-      _error = null;
-      _uploadingAvatar = true;
-    });
+    if (_uploadingAvatar || _saving) return;
+    final owner = Supa.currentUser?.id;
+    if (owner == null) return;
+    setState(() => _uploadingAvatar = true);
     try {
-      final url = await Supa.uploadAvatar(await file.readAsBytes(), file.name);
-      if (!mounted) return;
-      setState(() {
-        _avatarUrlOverride = url;
-        _avatarFile = null;
-        _uploadingAvatar = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _uploadingAvatar = false;
-        _error = friendlyErrorMessage(e,
-            fallback:
-                "We couldn't update your photo. Try a JPEG, PNG, WebP, or GIF under 5 MB.");
-      });
+      final file = await ImagePicker().pickImage(
+          source: ImageSource.gallery, imageQuality: 85, maxWidth: 1200);
+      if (file == null || !mounted || Supa.currentUser?.id != owner) return;
+      final bytes = await file.readAsBytes();
+      if (!mounted || Supa.currentUser?.id != owner) return;
+      avatarFormat(bytes);
+      setState(() => _avatarPreview = bytes);
+      final url = await Supa.uploadAvatar(bytes);
+      if (!mounted || Supa.currentUser?.id != owner) return;
+      setState(() => _avatarUrlOverride = url);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile picture updated.')),
+      );
+    } catch (error) {
+      if (!mounted || Supa.currentUser?.id != owner) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(friendlyErrorMessage(error,
+            fallback: "We couldn't update your photo. Try a JPEG, PNG, WebP, or GIF under 5 MB.")),
+      ));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _avatarPreview = null;
+          _uploadingAvatar = false;
+        });
+      }
     }
   }
 
@@ -267,6 +274,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   }
 
   Future<void> _save() async {
+    if (_uploadingAvatar) return;
     final username = _username.text.trim();
     final profileColor = _profileColor.text.trim().toUpperCase();
     if (username.length < 3 ||
@@ -319,10 +327,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
         imagePath:
             _chatBackground == 'custom' ? _chatBackgroundImagePath : null,
       );
-      if (_avatarFile != null) {
-        await Supa.uploadAvatar(
-            await _avatarFile!.readAsBytes(), _avatarFile!.name);
-      }
       if (_password.text.isNotEmpty) {
         await Supa.client.auth
             .updateUser(UserAttributes(password: _password.text));
@@ -330,7 +334,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       _password.clear();
       _confirmPassword.clear();
       await _loadProfile();
-      _avatarFile = null;
       _avatarUrlOverride = null;
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -346,6 +349,12 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       if (mounted) setState(() => _saving = false);
     }
   }
+
+  Widget _settingsAvatar() => Avatar(
+        name: _profile?.peerInitial ?? '?',
+        url: _avatarUrlOverride ?? _profile?.avatarUrl,
+        size: 96,
+      );
 
   Color _profileColorValue() {
     final value = _profileColor.text.trim();
@@ -380,20 +389,16 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                 child: ListView(padding: const EdgeInsets.all(24), children: [
                   Center(
                       child: Column(children: [
-                    FutureBuilder<List<int>>(
-                      future: _avatarFile?.readAsBytes(),
-                      builder: (_, snap) => _avatarFile != null && snap.hasData
-                          ? CircleAvatar(
-                              radius: 48,
-                              backgroundImage:
-                                  MemoryImage(Uint8List.fromList(snap.data!)))
-                          : Avatar(
-                              name: _profile?.peerInitial ?? '?',
-                              url: _avatarUrlOverride ?? _profile?.avatarUrl,
-                              size: 96),
-                    ),
+                    if (_avatarPreview case final bytes?)
+                      ClipOval(
+                        child: Image.memory(bytes,
+                            width: 96, height: 96, fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => _settingsAvatar()),
+                      )
+                    else
+                      _settingsAvatar(),
                     TextButton.icon(
-                        onPressed: _uploadingAvatar ? null : _pickAvatar,
+                        onPressed: _uploadingAvatar || _saving ? null : _pickAvatar,
                         icon: _uploadingAvatar
                             ? const BroSpinner(size: 16)
                             : const Icon(Icons.photo_camera_outlined),
@@ -549,7 +554,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   DropdownButtonFormField<String>(
                       initialValue: _photoVisibility,
                       decoration: const InputDecoration(
-                          labelText: 'Profile photo visible to'),
+                          labelText: 'Profile photo visible to',
+                          helperText: 'Applies in BRO. Direct image links are public.',
+                          helperMaxLines: 2),
                       items: const [
                         DropdownMenuItem(
                             value: 'everyone', child: Text('Everyone')),
@@ -841,7 +848,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                         child: SoftErrorBanner(message: _error!)),
                   const SizedBox(height: 22),
                   FilledButton(
-                      onPressed: _saving ? null : _save,
+                      onPressed: _saving || _uploadingAvatar ? null : _save,
                       style: FilledButton.styleFrom(
                         backgroundColor: _P.primary,
                         foregroundColor: _P.darkOnAccent,

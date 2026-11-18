@@ -15,35 +15,41 @@ class Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final initials = name.trim().isEmpty ? '?' : name.trim().toUpperCase();
+    final fallback = Center(
+      child: Text(initials,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+              color: Colors.white,
+              fontSize: size * 0.4,
+              fontWeight: FontWeight.w600)),
+    );
+    final photo = url?.trim();
     final avatar = Container(
       width: size,
       height: size,
       alignment: Alignment.center,
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
             colors: [app_colors.bg, app_colors.surfaceHigh],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight),
         shape: BoxShape.circle,
-        border: Border.all(color: Colors.white24, width: 1),
+        border: Border.all(color: Colors.white24),
       ),
-      child: url == null || url!.isEmpty
-          ? Text(name.toUpperCase(),
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: size * 0.4,
-                  fontWeight: FontWeight.w600))
-          : ClipOval(
-              child: Image.network(url!,
-                  width: size,
-                  height: size,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Center(
-                      child: Text(name.toUpperCase(),
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: size * 0.4,
-                              fontWeight: FontWeight.w600))))),
+      child: photo == null || photo.isEmpty
+          ? fallback
+          : Image.network(
+              photo,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              frameBuilder: (_, child, frame, __) =>
+                  frame == null ? fallback : child,
+              errorBuilder: (_, __, ___) => fallback,
+            ),
     );
 
     if (!showOnlineDot) return avatar;
@@ -79,5 +85,3 @@ class Avatar extends StatelessWidget {
     );
   }
 }
-
-

@@ -8,7 +8,6 @@ type DatabaseWebhook = {
     id: string;
     conversation_id: string;
     sender_id: string;
-    content: string;
   };
 };
 
@@ -81,11 +80,6 @@ async function firebaseAccessToken(
   return cachedAccessToken.value;
 }
 
-function messagePreview(content: string): string {
-  if (content.startsWith('attachment:')) return 'Sent you an attachment';
-  return content.length > 180 ? `${content.slice(0, 177)}…` : content;
-}
-
 Deno.serve(async (request) => {
   if (request.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
@@ -102,7 +96,8 @@ Deno.serve(async (request) => {
     const webhook = await request.json() as DatabaseWebhook;
     if (
       webhook.type !== 'INSERT' || webhook.schema !== 'public' ||
-      webhook.table !== 'messages' || !webhook.record?.conversation_id ||
+      webhook.table !== 'messages' || !webhook.record?.id ||
+      !webhook.record.conversation_id ||
       !webhook.record.sender_id
     ) {
       return Response.json({ ignored: true });
@@ -125,33 +120,23 @@ Deno.serve(async (request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
       { auth: { persistSession: false, autoRefreshToken: false } },
     );
-    const [{ data: participants, error: participantError }, { data: sender }] =
-      await Promise.all([
-        supabase
-          .from('conversation_participants')
-          .select('user_id')
-          .eq('conversation_id', webhook.record.conversation_id)
-          .neq('user_id', webhook.record.sender_id),
-        supabase
-          .from('profiles')
-          .select('username, display_name')
-          .eq('id', webhook.record.sender_id)
-          .maybeSingle(),
-      ]);
+    const { data: participants, error: participantError } = await supabase
+      .from('conversation_participants')
+      .select('user_id')
+      .eq('conversation_id', webhook.record.conversation_id)
+      .neq('user_id', webhook.record.sender_id);
     if (participantError) throw participantError;
     const recipients = (participants ?? []).map((item) => item.user_id);
     if (recipients.length === 0) return Response.json({ sent: 0 });
 
     const { data: devices, error: deviceError } = await supabase
       .from('push_tokens')
-      .select('firebase_installation_id, platform')
+      .select('firebase_installation_id, user_id')
       .in('user_id', recipients);
     if (deviceError) throw deviceError;
     if (!devices?.length) return Response.json({ sent: 0 });
 
     const accessToken = await firebaseAccessToken(serviceAccount);
-    const senderName = sender?.display_name || sender?.username || 'New message';
-    const content = messagePreview(webhook.record.content ?? '');
     const results = await Promise.all(devices.map(async (device) => {
       const response = await fetch(
         `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
@@ -164,10 +149,13 @@ Deno.serve(async (request) => {
           body: JSON.stringify({
             message: {
               fid: device.firebase_installation_id,
-              notification: { title: senderName, body: content },
+              // A lock-screen notification should not contain plaintext,
+              // ciphertext, or the sender's identity.
+              notification: { title: 'BRO', body: 'You have a new message.' },
               data: {
                 conversation_id: webhook.record.conversation_id,
                 message_id: webhook.record.id,
+                recipient_user_id: device.user_id,
               },
               android: { priority: 'HIGH' },
             },
@@ -176,12 +164,14 @@ Deno.serve(async (request) => {
       );
       if (!response.ok) {
         const result = await response.json().catch(() => ({}));
-        const errorCode = result?.error?.details?.[0]?.errorCode;
-        if (errorCode === 'UNREGISTERED') {
+        const details: { errorCode?: string }[] = Array.isArray(result?.error?.details)
+          ? result.error.details : [];
+        if (details.some((entry) => entry?.errorCode === 'UNREGISTERED')) {
           await supabase
             .from('push_tokens')
             .delete()
-            .eq('firebase_installation_id', device.firebase_installation_id);
+            .eq('firebase_installation_id', device.firebase_installation_id)
+            .eq('user_id', device.user_id);
           return { ok: false, removed: true };
         }
         console.error('Firebase push delivery failed:', result?.error?.status);

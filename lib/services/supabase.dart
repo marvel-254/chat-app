@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import '../models/profile.dart';
 import '../models/profile_theme.dart';
+import 'avatar_upload.dart';
 import 'search_safety.dart';
 import 'reactions.dart' as reactions;
 import 'message_safety.dart' as message_safety;
@@ -782,49 +783,56 @@ class Supa {
         .createSignedUrl(objectPath, 3600);
   }
 
-  static Future<String> uploadAvatar(Uint8List bytes, String filename) async {
-    if (bytes.length > 5 * 1024 * 1024) {
-      throw ArgumentError('Profile photos must be 5 MB or smaller.');
-    }
-    final uid = currentUser!.id;
-    final extension = path.extension(filename).toLowerCase();
-    final objectPath = '$uid/avatar${extension.isEmpty ? '.jpg' : extension}';
-    final contentType = switch (extension) {
-      '.png' => 'image/png',
-      '.webp' => 'image/webp',
-      '.gif' => 'image/gif',
-      '.heic' => 'image/heic',
-      '.heif' => 'image/heif',
-      _ => 'image/jpeg',
-    };
-    await client.storage.from('avatars').uploadBinary(
-          objectPath,
-          bytes,
-          fileOptions: FileOptions(
-              upsert: true, cacheControl: '3600', contentType: contentType),
-        );
-    final publicUrl = client.storage.from('avatars').getPublicUrl(objectPath);
-    // Cache-bust so peers and this device pick up the new object immediately.
-    // peer_avatar_url is RPC output only — never write it onto participants.
-    // The canonical write target is `profiles` (itself). The UI reads
-    // `visible_profiles` (a live view over `profiles` that re-implements the
-    // privacy masking), so this row update is reflected in every chat list,
-    // chat header, and settings view without any denormalised columns.
-    final url = '$publicUrl?v=${DateTime.now().millisecondsSinceEpoch}';
+  static Future<String> uploadAvatar(Uint8List bytes) async {
+    final uid = currentUser?.id;
+    if (uid == null) throw StateError('Sign in to change your profile photo.');
+    final format = await validateAvatarImage(bytes);
+    if (currentUser?.id != uid) throw StateError('Your session changed. Try again.');
+
+    final profile = await client.from('profiles').select('avatar_url').eq('id', uid).single();
+    if (currentUser?.id != uid) throw StateError('Your session changed. Try again.');
+    final bucket = client.storage.from('avatars');
+    final previous = managedAvatarPath(
+      profile['avatar_url'] as String?,
+      bucket.getPublicUrl('$uid/'),
+      uid,
+    );
+    final objectPath = '$uid/avatar-${const Uuid().v4()}.${format.extension}';
+    await bucket.uploadBinary(
+      objectPath,
+      bytes,
+      fileOptions: FileOptions(cacheControl: '3600', contentType: format.contentType),
+    );
+    final url = bucket.getPublicUrl(objectPath);
     try {
+      if (currentUser?.id != uid) throw StateError('Your session changed. Try again.');
+      // Returning the row confirms the update wasn't silently filtered by RLS.
       await client.from('profiles').update({
         'avatar_url': url,
-        'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', uid);
-    } on PostgrestException catch (e) {
-      // If RLS blocks the update, still return the URL so the UI can show it
-      // The user will see the new avatar locally even if server sync fails
-      if (e.code != '42501') rethrow;
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', uid).select('id').single();
+    } on PostgrestException catch (error) {
+      // A rejected write must not replace the existing photo. Don't delete on
+      // ambiguous network errors, since the database may have committed it.
+      if (currentUser?.id == uid &&
+          (error.code == '42501' || error.code == 'PGRST116')) {
+        unawaited(_cleanUpAvatar(objectPath));
+      }
+      rethrow;
     }
-    // Force a refetch of the conversation list so the new avatar
-    // (from profiles.avatar_url) is surfaced to all conversation views.
+    if (previous != null && currentUser?.id == uid) {
+      unawaited(_cleanUpAvatar(previous));
+    }
     triggerConversationRefresh();
     return url;
+  }
+
+  static Future<void> _cleanUpAvatar(String objectPath) async {
+    try {
+      await client.storage.from('avatars').remove([objectPath]);
+    } catch (_) {
+      // Cleanup is best effort. It must not mask the result of the profile write.
+    }
   }
 
   static Future<Map<String, dynamic>> uploadAttachment(String conversationId,
