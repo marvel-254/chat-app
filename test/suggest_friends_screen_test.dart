@@ -203,6 +203,7 @@ void main() {
   });
 
   testWidgets('recent searches can be replayed and cleared', (tester) async {
+    const checkpoint = String.fromEnvironment('RECENT_CHECKPOINT');
     SharedPreferences.setMockInitialValues({
       'bro.people_search_history.v1.alice': ['@alex'],
     });
@@ -221,16 +222,20 @@ void main() {
     await tester.tap(field);
     await tester.pumpAndSettle();
     expect(find.text('Recent searches'), findsOneWidget);
+    if (checkpoint == 'open') return;
     final chip = find.widgetWithText(ActionChip, '@alex');
     tester.widget<ActionChip>(chip).onPressed!();
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pumpAndSettle();
     expect(queries, ['@alex']);
     expect(tester.widget<TextField>(field).controller!.text, '@alex');
+    if (checkpoint == 'replay') return;
 
     await tester.enterText(field, '');
     await tester.pumpAndSettle();
     final clear = find.widgetWithText(TextButton, 'Clear all');
+    expect(clear, findsOneWidget);
+    if (checkpoint == 'reopen') return;
     tester.widget<TextButton>(clear).onPressed!();
     await tester.pumpAndSettle();
     expect(find.text('Recent searches'), findsNothing);
