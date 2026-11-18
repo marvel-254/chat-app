@@ -317,6 +317,22 @@ class FriendSuggestion {
     this.profileColor,
   });
 
+  FriendSuggestion withFollowing(bool following) => FriendSuggestion(
+        userId: userId,
+        username: username,
+        displayName: displayName,
+        avatarUrl: avatarUrl,
+        lastSeenAt: lastSeenAt,
+        isOnline: isOnline,
+        mutualCount: mutualCount,
+        suggestionReason: suggestionReason,
+        suggestionType: suggestionType,
+        isFollowing: following,
+        isCloseFriend: isCloseFriend,
+        profileStatus: profileStatus,
+        profileColor: profileColor,
+      );
+
   factory FriendSuggestion.fromJson(Map<String, dynamic> json) {
     final userId = json['user_id'] as String;
     return FriendSuggestion(

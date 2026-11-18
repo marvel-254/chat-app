@@ -84,15 +84,33 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _showJumpToBottom = false;
   late final VoidCallback _chatBackgroundListener = () => _loadChatBackground();
   late final VoidCallback _outboxConnectivityListener = _onConnectivityChanged;
+  StreamSubscription<AuthState>? _outboxAuthSubscription;
+  String? _outboxSenderId;
+
+  void _onOutboxAuthChanged(AuthState _) {
+    final senderId = Supa.currentUser?.id;
+    if (!mounted || _outboxSenderId == senderId) return;
+    setState(() {
+      _outboxSenderId = senderId;
+      _pendingMessages.clear();
+    });
+    unawaited(_restorePendingMessages());
+  }
 
   void _onConnectivityChanged() {
     if (ConnectionMonitor.isOnline.value) unawaited(_flushOutbox());
   }
 
+  List<PendingMessage> _outboxFor(String senderId) =>
+      MessageOutbox.forConversation(widget.conversationId, senderId: senderId);
+
   Future<void> _restorePendingMessages() async {
+    final senderId = Supa.currentUser?.id;
+    if (senderId == null) return;
     await MessageOutbox.load();
-    final restored = MessageOutbox.forConversation(widget.conversationId);
-    if (!mounted || restored.isEmpty) return;
+    if (!mounted || Supa.currentUser?.id != senderId) return;
+    final restored = _outboxFor(senderId);
+    if (restored.isEmpty) return;
     setState(() {
       for (final item in restored) {
         _pendingMessages[item.localId] = item;
@@ -102,24 +120,31 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _flushOutbox() async {
-    if (!ConnectionMonitor.isOnline.value) return;
-    await MessageOutbox.flush((item) async {
-      await Supa.sendMessage(
-        item.conversationId,
-        item.content,
-        expiry: item.expiresAt == null
-            ? null
-            : item.expiresAt!.difference(DateTime.now()),
-        replyToId: item.replyToId,
-      );
-      if (item.conversationId == widget.conversationId && mounted) {
-        setState(() => _pendingMessages.remove(item.localId));
-        _rollToBottom();
-      }
-      Supa.triggerConversationRefresh();
-    });
-    if (!mounted) return;
-    final remaining = MessageOutbox.forConversation(widget.conversationId);
+    final senderId = Supa.currentUser?.id;
+    if (senderId == null || !ConnectionMonitor.isOnline.value) return;
+    bool isSenderActive() => Supa.currentUser?.id == senderId;
+    await MessageOutbox.flush(
+      (item) async {
+        await Supa.sendMessage(
+          item.conversationId,
+          item.content,
+          expiry: item.expiresAt?.difference(DateTime.now()),
+          replyToId: item.replyToId,
+          expectedSenderId: item.senderId,
+        );
+        if (mounted &&
+            isSenderActive() &&
+            item.conversationId == widget.conversationId) {
+          setState(() => _pendingMessages.remove(item.localId));
+          _rollToBottom();
+        }
+        if (isSenderActive()) Supa.triggerConversationRefresh();
+      },
+      senderId: senderId,
+      isSenderActive: isSenderActive,
+    );
+    if (!mounted || !isSenderActive()) return;
+    final remaining = _outboxFor(senderId);
     setState(() {
       _pendingMessages
         ..clear()
@@ -167,6 +192,8 @@ class _ChatScreenState extends State<ChatScreen> {
     _ctrl.addListener(_onDraftChanged);
     _scroll.addListener(_onScroll);
     ConnectionMonitor.isOnline.addListener(_outboxConnectivityListener);
+    _outboxSenderId = Supa.currentUser?.id;
+    _outboxAuthSubscription = Supa.authStateChanges.listen(_onOutboxAuthChanged);
     unawaited(_restorePendingMessages());
     Supa.chatBackgroundChanged.addListener(_chatBackgroundListener);
   }
@@ -451,6 +478,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _peerTypingTimer?.cancel();
     _draftSaveTimer?.cancel();
     ConnectionMonitor.isOnline.removeListener(_outboxConnectivityListener);
+    unawaited(_outboxAuthSubscription?.cancel());
     Supa.chatBackgroundChanged.removeListener(_chatBackgroundListener);
     final callChannel = _callChannel;
     if (callChannel != null) Supa.client.removeChannel(callChannel);
@@ -471,7 +499,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _send() async {
     final draft = _ctrl.text;
     final content = draft.trim();
-    if (content.isEmpty || _sendingMessage) return;
+    final senderId = Supa.currentUser?.id;
+    if (senderId == null || content.isEmpty || _sendingMessage) return;
 
     setState(() => _sendingMessage = true);
     _typingTimer?.cancel();
@@ -481,20 +510,26 @@ class _ChatScreenState extends State<ChatScreen> {
     final localId = const Uuid().v4();
     final expiresAt =
         _messageExpiry == null ? null : DateTime.now().add(_messageExpiry!);
+    final pending = PendingMessage(
+      localId: localId,
+      conversationId: widget.conversationId,
+      senderId: senderId,
+      content: content,
+      createdAt: DateTime.now(),
+      expiresAt: expiresAt,
+      replyToId: replyToId,
+    );
     try {
-      final pending = PendingMessage(
-        localId: localId,
-        conversationId: widget.conversationId,
-        senderId: Supa.currentUser!.id,
-        content: content,
-        createdAt: DateTime.now(),
-        expiresAt: expiresAt,
-        replyToId: replyToId,
-      );
       await _addPending(pending);
-      await Supa.sendMessage(widget.conversationId, content,
-          expiry: _messageExpiry, replyToId: replyToId);
+      await Supa.sendMessage(
+        widget.conversationId,
+        content,
+        expiry: _messageExpiry,
+        replyToId: replyToId,
+        expectedSenderId: senderId,
+      );
       _removePending(localId);
+      if (Supa.currentUser?.id != senderId) return;
       // Trigger chat list refresh so the sender sees the updated preview
       Supa.triggerConversationRefresh();
       if (!mounted) return;
@@ -503,8 +538,8 @@ class _ChatScreenState extends State<ChatScreen> {
       unawaited(Supa.saveDraft(widget.conversationId, ''));
       _rollToBottom();
     } catch (e) {
-      _markPendingFailed(localId);
-      if (mounted) {
+      _markPendingFailed(pending);
+      if (mounted && Supa.currentUser?.id == senderId) {
         _unsupported(friendlyErrorMessage(e,
             fallback:
                 "That message didn't go through. It's still in the box if you want to retry."));
@@ -527,21 +562,22 @@ class _ChatScreenState extends State<ChatScreen> {
     unawaited(MessageOutbox.remove(localId));
   }
 
-  void _markPendingFailed(String localId) {
-    final pm = _pendingMessages[localId];
-    if (pm != null && pm.status != 'sent') {
-      pm.status = 'failed';
-      pm.retryCount += 1;
-      unawaited(MessageOutbox.update(pm));
-      if (mounted) setState(() {});
-    }
+  void _markPendingFailed(PendingMessage item) {
+    if (item.status == 'sent') return;
+    item.status = 'failed';
+    item.retryCount += 1;
+    unawaited(MessageOutbox.update(item));
+    if (mounted && Supa.currentUser?.id == item.senderId) setState(() {});
   }
 
   /// The messages the UI should render: server rows merged with in-flight
   /// pending rows, deduplicated and sorted oldest-to-newest.
   List<Message> _displayMessages(List<Message> serverMessages) {
+    final senderId = Supa.currentUser?.id;
     final pending = _pendingMessages.values
-        .where((pm) => pm.status == 'sending' || pm.status == 'failed')
+        .where((pm) =>
+            pm.senderId == senderId &&
+            (pm.status == 'sending' || pm.status == 'failed'))
         .toList();
     final byId = <String, Message>{};
     for (final m in serverMessages) {
@@ -637,14 +673,32 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _showOutbox() async {
-    final items = MessageOutbox.forConversation(widget.conversationId)
+    final senderId = Supa.currentUser?.id;
+    if (senderId == null) return;
+    await MessageOutbox.load();
+    if (!mounted || Supa.currentUser?.id != senderId) return;
+    final items = _outboxFor(senderId)
         .where((item) => item.status == 'failed' || item.status == 'queued')
         .toList();
-    if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: _P.surface,
-      builder: (sheetContext) => SafeArea(
+      builder: (sheetContext) => StreamBuilder<AuthState>(
+        stream: Supa.authStateChanges,
+        builder: (context, _) {
+          if (Supa.currentUser?.id != senderId) return const SizedBox.shrink();
+          return _buildOutboxSheet(sheetContext, items, senderId);
+        },
+      ),
+    );
+  }
+
+  Widget _buildOutboxSheet(
+    BuildContext sheetContext,
+    List<PendingMessage> items,
+    String senderId,
+  ) =>
+      SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
           child: items.isEmpty
@@ -682,25 +736,26 @@ class _ChatScreenState extends State<ChatScreen> {
                           tooltip: 'Retry now',
                           icon: const Icon(Icons.refresh),
                           onPressed: () async {
+                            if (Supa.currentUser?.id != senderId) return;
                             item.status = 'queued';
                             await MessageOutbox.update(item);
-                            if (mounted) {
+                            if (mounted && Supa.currentUser?.id == senderId) {
                               setState(
                                   () => _pendingMessages[item.localId] = item);
                             }
                             if (sheetContext.mounted) {
                               Navigator.pop(sheetContext);
                             }
-                            await _flushOutbox();
+                            if (Supa.currentUser?.id == senderId) {
+                              await _flushOutbox();
+                            }
                           },
                         ),
                       ),
                   ],
                 ),
         ),
-      ),
-    );
-  }
+      );
 
   void _showChatMenu(BuildContext context) {
     showModalBottomSheet(
@@ -1521,7 +1576,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _sendAttachment(
       Uint8List bytes, String name, String mimeType) async {
-    if (_sendingMessage) return;
+    final senderId = Supa.currentUser?.id;
+    if (senderId == null || _sendingMessage) return;
     if (bytes.length > 20 * 1024 * 1024) {
       _unsupported('Files must be 20 MB or smaller.');
       return;
@@ -1533,25 +1589,31 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final attachment = await Supa.uploadAttachment(
           widget.conversationId, bytes, name, mimeType);
+      if (!mounted || Supa.currentUser?.id != senderId) return;
       final pending = PendingMessage(
         localId: localId,
         conversationId: widget.conversationId,
-        senderId: Supa.currentUser!.id,
+        senderId: senderId,
         content: 'attachment:${jsonEncode(attachment)}',
         createdAt: DateTime.now(),
         expiresAt: expiresAt,
       );
-      await _addPending(pending);
       try {
+        await _addPending(pending);
         await Supa.sendMessage(
-            widget.conversationId, 'attachment:${jsonEncode(attachment)}');
+          widget.conversationId,
+          pending.content,
+          expectedSenderId: senderId,
+        );
         _removePending(localId);
-        _rollToBottom();
+        if (Supa.currentUser?.id == senderId) _rollToBottom();
       } catch (e) {
-        _markPendingFailed(localId);
-        _unsupported(friendlyErrorMessage(e,
-            fallback:
-                "We couldn't upload that file. Check your connection and try again."));
+        _markPendingFailed(pending);
+        if (Supa.currentUser?.id == senderId) {
+          _unsupported(friendlyErrorMessage(e,
+              fallback:
+                  "We couldn't upload that file. Check your connection and try again."));
+        }
       }
     } finally {
       if (mounted) setState(() => _sendingMessage = false);

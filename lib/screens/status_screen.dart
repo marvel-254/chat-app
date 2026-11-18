@@ -126,7 +126,7 @@ class _StatusScreenState extends State<StatusScreen> {
                               fontWeight: FontWeight.w600)),
                       SizedBox(height: 8),
                       Text(
-                        'When contacts share a photo or a thought, it shows up here for 24 hours.',
+                        'When contacts share a photo or a thought, it shows up here for $statusLifetimeHours hours.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                             color: _C.muted, fontSize: 13, height: 1.4),

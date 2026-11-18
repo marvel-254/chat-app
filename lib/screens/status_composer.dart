@@ -309,7 +309,7 @@ class _StatusComposerScreenState extends State<StatusComposerScreen> {
                   ),
                 ),
                 Text(
-                  'Visible to ${statusPrivacyLabel(_privacy).toLowerCase()} · 24 hours',
+                  'Visible to ${statusPrivacyLabel(_privacy).toLowerCase()} · $statusLifetimeHours hours',
                   style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
                 const SizedBox(height: 12),

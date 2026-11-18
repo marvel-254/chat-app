@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_colors.dart' as app_colors;
+import '../../services/search_safety.dart';
 import '../../services/supabase.dart';
+import '../../services/people_search_history.dart';
 import '../../services/presence.dart';
 import '../../models/profile.dart';
 import '../../ui/states.dart';
@@ -11,6 +13,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' hide Presence;
 import 'widgets/avatar.dart';
 import '../../widgets/status_ring_avatar.dart';
 import '../../widgets/responsive_app_shell.dart';
+import '../../widgets/recent_people_searches.dart';
 import '../../services/push_notifications.dart';
 import '../../ui/motion.dart';
 import '../../widgets/search_highlight.dart';
@@ -148,7 +151,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   final _search = TextEditingController();
   final _searchFocusNode = FocusNode();
   final _refreshKey = GlobalKey<RefreshIndicatorState>();
-  int _conversationsTick = 0;
+  late Stream<List<Conversation>> _conversations = Supa.watchConversations();
   StreamSubscription<List<StatusPost>>? _statusSub;
   Set<String> _statusUserIds = {};
 
@@ -163,6 +166,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   @override
   void initState() {
     super.initState();
+    _searchFocusNode.addListener(_onSearchFocusChanged);
     _suggestions = Supa.getFriendSuggestions(limit: 8).catchError((e) {
       debugPrint('Failed to load chat suggestions: $e');
       return <FriendSuggestion>[];
@@ -177,7 +181,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     if (mounted) setState(() => _suggestions = Supa.getFriendSuggestions(limit: 8));
   }
 
-  void _onSearchChanged(String value) {
+  void _onSearchChanged(String value, {bool immediate = false}) {
     _searchDebounce?.cancel();
     final requestId = ++_searchRequestId;
     final query = value.trim();
@@ -189,7 +193,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     });
     if (query.isEmpty) return;
 
-    _searchDebounce = Timer(const Duration(milliseconds: 300), () async {
+    final delay = immediate ? Duration.zero : const Duration(milliseconds: 300);
+    _searchDebounce = Timer(delay, () async {
       if (!mounted || requestId != _searchRequestId) return;
       setState(() => _searchLoading = true);
       try {
@@ -219,8 +224,27 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     _statusSub?.cancel();
     _searchDebounce?.cancel();
     _search.dispose();
+    _searchFocusNode.removeListener(_onSearchFocusChanged);
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  String? _searchAccountId() => Supa.currentUser?.id;
+
+  void _onSearchFocusChanged() => setState(() {});
+
+  void _rememberSearch(String value) {
+    unawaited(PeopleSearchHistory.remember(_searchAccountId(), value));
+  }
+
+  void _selectRecentSearch(String value) {
+    _search.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+    _searchFocusNode.requestFocus();
+    _rememberSearch(value);
+    _onSearchChanged(value, immediate: true);
   }
 
   void _clearSearch() {
@@ -230,6 +254,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   }
 
   void _onSearchResultTap(Profile user) {
+    _rememberSearch(_search.text);
     FocusScope.of(context).unfocus();
     _startDM(user);
   }
@@ -308,14 +333,14 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                       final peerId = request['peer_id'] as String?;
                       if (conversationId == null || peerId == null) return;
                       await Supa.acceptMessageRequest(conversationId, peerId);
-                      if (mounted) setState(() => _conversationsTick++);
+                      _reloadConversations();
                     },
                     onDecline: () async {
                       final conversationId =
                           request['conversation_id'] as String?;
                       if (conversationId == null) return;
                       await Supa.declineMessageRequest(conversationId);
-                      if (mounted) setState(() => _conversationsTick++);
+                      _reloadConversations();
                     },
                     onOpen: () {
                       final conversationId =
@@ -369,6 +394,73 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     );
   }
 
+  Widget _buildPeopleSearchResults() {
+    if (_searchLoading) {
+      return ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [_SearchSkeleton()],
+      );
+    }
+    if (_searchError != null) {
+      return ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+        children: [
+          _SearchError(
+            message: _searchError!,
+            onRetry: () => _onSearchChanged(_search.text),
+          ),
+        ],
+      );
+    }
+    if (_searchCompleted && _searchResults.isEmpty) {
+      return ListView(
+        shrinkWrap: true,
+        children: [
+          _SearchEmptyState(query: _search.text.trim(), onClear: _clearSearch),
+        ],
+      );
+    }
+    if (_searchResults.isEmpty) return const SizedBox.shrink();
+
+    return ListView.builder(
+      key: const ValueKey('chats-people-search-results'),
+      shrinkWrap: true,
+      itemCount: _searchResults.length + 1,
+      padding: const EdgeInsets.only(bottom: 8),
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return const Padding(
+            padding: EdgeInsets.fromLTRB(16, 10, 16, 4),
+            child: Text('People',
+                style: TextStyle(
+                  color: _P.muted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.4,
+                )),
+          );
+        }
+        final user = _searchResults[index - 1];
+        return FadeSlideIn(
+          key: ValueKey(user.id),
+          index: (index - 1).clamp(0, 7),
+          child: _SearchResultTile(
+            user: user,
+            query: sanitizeSearchTerm(_search.text),
+            isOnline: Presence.isOnline(user.id),
+            onTap: () => _onSearchResultTap(user),
+            onProfileTap: () {
+              _rememberSearch(_search.text);
+              context.push('/profile/${user.id}');
+            },
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildSmallScreenLayout(BuildContext context) {
     return Column(
       children: [
@@ -416,91 +508,22 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                       )
                     : null,
               ),
+              textInputAction: TextInputAction.search,
+              onSubmitted: _rememberSearch,
               onChanged: _onSearchChanged,
               onTapOutside: (_) => _searchFocusNode.unfocus(),
             ),
           ),
         ),
-        AnimatedSize(
-          duration: const Duration(milliseconds: 280),
-          curve: Curves.easeOutCubic,
-          child: _search.text.trim().isEmpty
-              ? const SizedBox.shrink()
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Loading skeleton
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      child: _searchLoading
-                          ? Padding(
-                              key: const ValueKey('loading'),
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              child: _SearchSkeleton(),
-                            )
-                          : const SizedBox(
-                              key: ValueKey('no-loading'), height: 0),
-                    ),
-                    // Error state
-                    if (_searchError != null)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-                        child: _SearchError(
-                          message: _searchError!,
-                          onRetry: () => _onSearchChanged(_search.text),
-                        ),
-                      ),
-                    // Empty state
-                    if (_searchCompleted &&
-                        _searchError == null &&
-                        _searchResults.isEmpty)
-                      _SearchEmptyState(
-                        query: _search.text.trim(),
-                        onClear: _clearSearch,
-                      ),
-                    // Search results
-                    if (_searchResults.isNotEmpty) ...[
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-                        child: Text(
-                          'People',
-                          style: TextStyle(
-                              color: _P.muted,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.4),
-                        ),
-                      ),
-                      ListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: _searchResults.length,
-                        padding: const EdgeInsets.only(bottom: 8),
-                        itemBuilder: (context, index) {
-                          final u = _searchResults[index];
-                          final isOnline = Presence.isOnline(u.id);
-                          return FadeSlideIn(
-                            index: index.clamp(0, 7),
-                            child: _SearchResultTile(
-                              user: u,
-                              query: _search.text,
-                              isOnline: isOnline,
-                              onTap: () => _onSearchResultTap(u),
-                              onProfileTap: () =>
-                                  context.push('/profile/${u.id}'),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ],
-                ),
+        RecentPeopleSearches(
+          controller: _search,
+          focusNode: _searchFocusNode,
+          accountId: _searchAccountId,
+          onSelected: _selectRecentSearch,
         ),
-        if (_search.text.trim().isEmpty)
+        if (_search.text.trim().isNotEmpty)
+          Flexible(flex: 2, child: _buildPeopleSearchResults()),
+        if (_search.text.trim().isEmpty && !_searchFocusNode.hasFocus)
           FutureBuilder<List<FriendSuggestion>>(
             future: _suggestions,
             builder: (context, snapshot) {
@@ -571,7 +594,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
               );
             },
           ),
-        if (_search.text.trim().isEmpty) _messageRequestsSection(context),
+        if (_search.text.trim().isEmpty && !_searchFocusNode.hasFocus)
+          _messageRequestsSection(context),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
@@ -597,8 +621,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
             color: _P.primary,
             backgroundColor: _P.primary.withValues(alpha: 0.12),
             child: StreamBuilder<List<Conversation>>(
-              key: ValueKey(_conversationsTick),
-              stream: Supa.watchConversations(),
+              stream: _conversations,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting &&
                     !snapshot.hasData) {
@@ -609,24 +632,26 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                       message: "Your chats didn't load",
                       detail:
                           'Give it another try — they usually come right back.',
-                      onRetry: () => setState(() => _conversationsTick++));
+                      onRetry: _reloadConversations);
                 }
                 final allConversations = snapshot.data ?? [];
                 Presence.setListPeers(allConversations.map((c) => c.peerId));
-                final filterQuery = _search.text.trim().toLowerCase();
-                final conversations = filterQuery.isEmpty
+                final rawQuery = _search.text.trim();
+                final normalizedQuery = sanitizeSearchTerm(rawQuery);
+                final filterQuery = normalizedQuery.toLowerCase();
+                final conversations = rawQuery.isEmpty
                     ? allConversations
-                    : allConversations
-                        .where((c) =>
-                            c.peerLabel.toLowerCase().contains(filterQuery) ||
-                            (c.peerUsername
-                                    ?.toLowerCase()
-                                    .contains(filterQuery) ??
-                                false))
-                        .toList();
+                    : filterQuery.isEmpty
+                        ? <Conversation>[]
+                        : allConversations.where((c) {
+                            final name = c.peerLabel.toLowerCase();
+                            final username = c.peerUsername?.toLowerCase();
+                            return name.contains(filterQuery) ||
+                                (username?.contains(filterQuery) ?? false);
+                          }).toList();
                 if (conversations.isEmpty && allConversations.isNotEmpty) {
                   return Center(
-                    child: Padding(
+                    child: SingleChildScrollView(
                       padding: const EdgeInsets.symmetric(horizontal: 32),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -657,7 +682,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                 }
                 if (allConversations.isEmpty) {
                   return Center(
-                    child: Padding(
+                    child: SingleChildScrollView(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -730,7 +755,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                                     Expanded(
                                       child: SearchHighlightText(
                                         text: conv.peerLabel,
-                                        query: _search.text,
+                                        query: normalizedQuery,
                                         style: TextStyle(
                                           color: _P.text,
                                           fontWeight: unread
@@ -873,8 +898,12 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     );
   }
 
+  void _reloadConversations() {
+    if (mounted) setState(() => _conversations = Supa.watchConversations());
+  }
+
   Future<void> _onRefresh() async {
-    if (mounted) setState(() => _conversationsTick++);
+    _reloadConversations();
     _reloadSuggestions();
   }
 

@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../theme/app_colors.dart' as app_colors;
 import '../../services/supabase.dart';
+import '../../services/people_search_history.dart';
 import '../../services/presence.dart';
 import '../../models/profile.dart';
 import '../../ui/states.dart';
 import '../../ui/motion.dart';
 import 'widgets/avatar.dart';
 import '../../widgets/responsive_app_shell.dart';
+import '../../widgets/recent_people_searches.dart';
 
 class _P {
   static const surface = app_colors.surface;
@@ -23,7 +25,28 @@ class _P {
 }
 
 class SuggestFriendsScreen extends StatefulWidget {
-  const SuggestFriendsScreen({super.key});
+  const SuggestFriendsScreen({
+    super.key,
+    this.loadSuggestions = _defaultLoadSuggestions,
+    this.searchUsers = Supa.searchUsers,
+    this.getFollowedUserIds = Supa.getFollowedUserIds,
+    this.setFollowing = Supa.setFollowing,
+    this.recentSearchAccountId = _currentAccountId,
+  });
+
+  final Future<List<FriendSuggestion>> Function(String category) loadSuggestions;
+  final Future<List<Profile>> Function(String query) searchUsers;
+  final Future<Set<String>> Function(List<String> userIds) getFollowedUserIds;
+  final Future<void> Function(String userId, bool follow) setFollowing;
+  final String? Function() recentSearchAccountId;
+
+  static String? _currentAccountId() => Supa.currentUser?.id;
+
+  static Future<List<FriendSuggestion>> _defaultLoadSuggestions(
+    String category,
+  ) =>
+      Supa.getFriendSuggestionsByCategory(category, limit: 20);
+
   @override
   State<SuggestFriendsScreen> createState() => _SuggestFriendsScreenState();
 }
@@ -37,6 +60,8 @@ class _SuggestFriendsScreenState extends State<SuggestFriendsScreen> {
   List<FriendSuggestion> _searchResults = [];
   bool _searchCompleted = false;
   String? _searchError;
+  bool _searchFollowReady = false;
+  bool _searchFollowFailed = false;
 
   // Category tabs
   final _categories = [
@@ -48,9 +73,19 @@ class _SuggestFriendsScreenState extends State<SuggestFriendsScreen> {
   ];
 
   int _selectedCategoryIndex = 0;
-  Map<String, List<FriendSuggestion>> _categoryCache = {};
-  Set<String> _loadingCategories = {};
-  Set<String> _completedCategories = {};
+  final Map<String, List<FriendSuggestion>> _categoryCache = {};
+  final Set<String> _loadingCategories = {};
+  final Set<String> _failedCategories = {};
+  final Set<String> _followInFlight = {};
+  final _followChanges = <String, ({bool following, int revision})>{};
+  int _followRevision = 0;
+
+  FriendSuggestion _mergeFollowChange(FriendSuggestion user, int since) {
+    final change = _followChanges[user.userId];
+    return change != null && change.revision > since
+        ? user.withFollowing(change.following)
+        : user;
+  }
 
   @override
   void initState() {
@@ -58,21 +93,28 @@ class _SuggestFriendsScreenState extends State<SuggestFriendsScreen> {
     _loadCategory('all');
   }
 
-  Future<void> _loadCategory(String category) async {
-    if (_completedCategories.contains(category) || _loadingCategories.contains(category)) return;
-    setState(() => _loadingCategories.add(category));
+  Future<void> _loadCategory(String category, {bool refresh = false}) async {
+    if (_loadingCategories.contains(category) ||
+        (!refresh && _categoryCache.containsKey(category) &&
+            !_failedCategories.contains(category))) {
+      return;
+    }
+    setState(() {
+      _loadingCategories.add(category);
+      _failedCategories.remove(category);
+    });
     try {
-      final results = await Supa.getFriendSuggestionsByCategory(category, limit: 20);
+      final followRevision = _followRevision;
+      final results = await widget.loadSuggestions(category);
       if (!mounted) return;
-      setState(() {
-        _categoryCache[category] = results;
-        _completedCategories.add(category);
-        _loadingCategories.remove(category);
-      });
-    } catch (e) {
-      debugPrint('Failed to load category $category: $e');
+      setState(() => _categoryCache[category] =
+          results.map((user) => _mergeFollowChange(user, followRevision)).toList());
+    } catch (error) {
+      debugPrint('Failed to load category $category: $error');
       if (!mounted) return;
-      setState(() => _loadingCategories.remove(category));
+      setState(() => _failedCategories.add(category));
+    } finally {
+      if (mounted) setState(() => _loadingCategories.remove(category));
     }
   }
 
@@ -82,23 +124,26 @@ class _SuggestFriendsScreenState extends State<SuggestFriendsScreen> {
     _loadCategory(category);
   }
 
-  void _onSearchChanged(String value) {
+  void _onSearchChanged(String value, {bool immediate = false}) {
     _searchDebounce?.cancel();
     final requestId = ++_searchRequestId;
     final query = value.trim();
     setState(() {
       _searchResults = [];
       _searchError = null;
+      _searchFollowReady = false;
+      _searchFollowFailed = false;
       _searchLoading = false;
       _searchCompleted = false;
     });
     if (query.isEmpty) return;
 
-    _searchDebounce = Timer(const Duration(milliseconds: 300), () async {
+    final delay = immediate ? Duration.zero : const Duration(milliseconds: 300);
+    _searchDebounce = Timer(delay, () async {
       if (!mounted || requestId != _searchRequestId) return;
       setState(() => _searchLoading = true);
       try {
-        final results = await Supa.searchUsers(query);
+        final results = await widget.searchUsers(query);
         if (!mounted || requestId != _searchRequestId) return;
         setState(() {
           _searchResults = results
@@ -119,6 +164,9 @@ class _SuggestFriendsScreenState extends State<SuggestFriendsScreen> {
           _searchLoading = false;
           _searchCompleted = true;
         });
+        if (results.isNotEmpty) {
+          unawaited(_loadSearchFollowStatus(requestId));
+        }
       } catch (e) {
         debugPrint('Search failed: $e');
         if (!mounted || requestId != _searchRequestId) return;
@@ -129,6 +177,44 @@ class _SuggestFriendsScreenState extends State<SuggestFriendsScreen> {
         });
       }
     });
+  }
+
+  Future<void> _loadSearchFollowStatus(int requestId) async {
+    if (!mounted || requestId != _searchRequestId) return;
+    if (_searchFollowFailed) setState(() => _searchFollowFailed = false);
+    final revision = _followRevision;
+    final ids = _searchResults.map((user) => user.userId).toList();
+    try {
+      final followedIds = await widget.getFollowedUserIds(ids);
+      if (!mounted || requestId != _searchRequestId) return;
+      setState(() {
+        _searchResults = _searchResults
+            .map((user) => _mergeFollowChange(
+                  user.withFollowing(followedIds.contains(user.userId)),
+                  revision,
+                ))
+            .toList();
+        _searchFollowReady = true;
+      });
+    } catch (error) {
+      debugPrint('Follow status lookup failed: $error');
+      if (!mounted || requestId != _searchRequestId) return;
+      setState(() => _searchFollowFailed = true);
+    }
+  }
+
+  void _rememberSearch(String value) {
+    unawaited(PeopleSearchHistory.remember(widget.recentSearchAccountId(), value));
+  }
+
+  void _selectRecentSearch(String value) {
+    _search.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+    _searchFocusNode.requestFocus();
+    _rememberSearch(value);
+    _onSearchChanged(value, immediate: true);
   }
 
   void _clearSearch() {
@@ -150,40 +236,31 @@ class _SuggestFriendsScreenState extends State<SuggestFriendsScreen> {
   }
 
   Future<void> _toggleFollow(FriendSuggestion user) async {
+    if (!_followInFlight.add(user.userId)) return;
+    final following = !user.isFollowing;
     try {
-      await Supa.setFollowing(user.userId, !user.isFollowing);
+      await widget.setFollowing(user.userId, following);
       if (!mounted) return;
-      // Update local cache
       setState(() {
-        final currentCategory = _categories[_selectedCategoryIndex].id;
-        final list = _categoryCache[currentCategory];
-        if (list != null) {
-          final idx = list.indexWhere((u) => u.userId == user.userId);
-          if (idx != -1) {
-            _categoryCache[currentCategory] = [
-              ...list.take(idx),
-              FriendSuggestion(
-                userId: user.userId,
-                username: user.username,
-                displayName: user.displayName,
-                avatarUrl: user.avatarUrl,
-                lastSeenAt: user.lastSeenAt,
-                isOnline: user.isOnline,
-                mutualCount: user.mutualCount,
-                suggestionReason: user.suggestionReason,
-                suggestionType: user.suggestionType,
-                isFollowing: !user.isFollowing,
-                isCloseFriend: user.isCloseFriend,
-                profileStatus: user.profileStatus,
-                profileColor: user.profileColor,
-              ),
-              ...list.skip(idx + 1),
-            ];
-          }
-        }
+        _followChanges[user.userId] = (
+          following: following,
+          revision: ++_followRevision,
+        );
+        List<FriendSuggestion> update(List<FriendSuggestion> users) => users
+            .map((item) => item.userId == user.userId
+                ? item.withFollowing(following)
+                : item)
+            .toList();
+        _searchResults = update(_searchResults);
+        _categoryCache.updateAll((_, suggestions) => update(suggestions));
       });
-    } catch (e) {
-      debugPrint('Follow failed: $e');
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Couldn't update follow status. Try again.")),
+      );
+    } finally {
+      _followInFlight.remove(user.userId);
     }
   }
 
@@ -218,7 +295,7 @@ class _SuggestFriendsScreenState extends State<SuggestFriendsScreen> {
       title: 'Suggest Friends',
       subtitle: 'Find and connect with people',
       navIndex: 0,
-      body: _buildBody(context),
+      body: _buildBody(),
       actions: [
         IconButton(
           icon: const Icon(Icons.settings_outlined),
@@ -229,7 +306,7 @@ class _SuggestFriendsScreenState extends State<SuggestFriendsScreen> {
     );
   }
 
-  Widget _buildBody(BuildContext context) {
+  Widget _buildBody() {
     return Column(
       children: [
         // Search bar
@@ -277,12 +354,20 @@ class _SuggestFriendsScreenState extends State<SuggestFriendsScreen> {
                       )
                     : null,
               ),
+              textInputAction: TextInputAction.search,
+              onSubmitted: _rememberSearch,
               onChanged: _onSearchChanged,
               onTapOutside: (_) => _searchFocusNode.unfocus(),
             ),
           ),
         ),
 
+        RecentPeopleSearches(
+          controller: _search,
+          focusNode: _searchFocusNode,
+          accountId: widget.recentSearchAccountId,
+          onSelected: _selectRecentSearch,
+        ),
         // Category tabs (hidden during search)
         if (_search.text.trim().isEmpty)
           SizedBox(
@@ -329,126 +414,150 @@ class _SuggestFriendsScreenState extends State<SuggestFriendsScreen> {
         // Content
         Expanded(
           child: _search.text.trim().isEmpty
-              ? _buildCategoryView(context)
-              : _buildSearchView(context),
+              ? _buildCategoryView()
+              : _buildSearchView(),
         ),
       ],
     );
   }
 
-  Widget _buildCategoryView(BuildContext context) {
+  Widget _buildCategoryView() {
     final category = _categories[_selectedCategoryIndex].id;
-    final suggestions = _categoryCache[category] ?? [];
-    final isLoading = _loadingCategories.contains(category);
+    final suggestions = _categoryCache[category];
+    final failed = _failedCategories.contains(category);
+    Future<void> refresh() => _loadCategory(category, refresh: true);
 
-    if (isLoading && suggestions.isEmpty) {
+    if (suggestions == null && _loadingCategories.contains(category)) {
       return _buildSkeleton();
     }
 
-    if (suggestions.isEmpty) {
-      return _buildEmptyState(category);
-    }
+    final errorBanner = failed
+        ? Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+            child: _buildError(
+              message: "We couldn't load suggestions. Please try again.",
+              onRetry: refresh,
+            ),
+          )
+        : null;
 
     return RefreshIndicator(
-      onRefresh: () => _loadCategory(category),
+      onRefresh: refresh,
       color: _P.primary,
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: suggestions.length + 1, // +1 for footer
-        itemBuilder: (context, index) {
-          if (index == suggestions.length) {
-            // Footer with "Load more" or end message
-            return _buildFooter(context);
-          }
-          final user = suggestions[index];
-          return FadeSlideIn(
-            index: index.clamp(0, 7),
-            child: _SuggestionTile(
-              user: user,
-              onMessage: () => _startDM(user),
-              onFollow: () => _toggleFollow(user),
-              onCloseFriend: () => _toggleCloseFriend(user),
-              onProfileTap: () => context.push('/profile/${user.userId}'),
+      child: CustomScrollView(
+        key: PageStorageKey('suggestions-$category'),
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          if (errorBanner != null) SliverToBoxAdapter(child: errorBanner),
+          if (suggestions == null || suggestions.isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: failed
+                  ? const SizedBox.shrink()
+                  : _buildEmptyState(category),
+            )
+          else ...[
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              sliver: SliverList.builder(
+                itemCount: suggestions.length,
+                itemBuilder: (context, index) =>
+                    _buildSuggestion(suggestions[index], index),
+              ),
             ),
-          );
-        },
+            SliverToBoxAdapter(child: _buildFooter()),
+          ],
+        ],
       ),
     );
   }
 
-  Widget _buildSearchView(BuildContext context) {
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 280),
-      curve: Curves.easeOutCubic,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+  Widget _buildSuggestion(
+    FriendSuggestion user,
+    int index, {
+    bool showFollow = true,
+    bool fromSearch = false,
+  }) =>
+      FadeSlideIn(
+        key: ValueKey(user.userId),
+        index: index.clamp(0, 7),
+        child: _SuggestionTile(
+          user: user,
+          onMessage: () {
+            if (fromSearch) _rememberSearch(_search.text);
+            _startDM(user);
+          },
+          onFollow: showFollow ? () => _toggleFollow(user) : null,
+          onCloseFriend: () => _toggleCloseFriend(user),
+          onProfileTap: () {
+            if (fromSearch) _rememberSearch(_search.text);
+            context.push('/profile/${user.userId}');
+          },
+        ),
+      );
+
+  Widget _buildSearchView() {
+    if (_searchLoading) {
+      return ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [_buildSearchSkeleton()],
+      );
+    }
+    if (_searchError != null) {
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
         children: [
-          // Loading skeleton
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
-            child: _searchLoading
-                ? Padding(
-                    key: const ValueKey('loading'),
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: _SearchSkeleton(),
-                  )
-                : const SizedBox(key: ValueKey('no-loading'), height: 0),
+          _buildError(
+            message: _searchError!,
+            onRetry: () => _onSearchChanged(_search.text),
           ),
-          // Error state
-          if (_searchError != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-              child: _SearchError(
-                message: _searchError!,
-                onRetry: () => _onSearchChanged(_search.text),
-              ),
-            ),
-          // Empty state
-          if (_searchCompleted &&
-              _searchError == null &&
-              _searchResults.isEmpty)
-            _SearchEmptyState(
-              query: _search.text.trim(),
-              onClear: _clearSearch,
-            ),
-          // Search results
-          if (_searchResults.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-              child: Text(
-                'People',
-                style: TextStyle(
-                    color: _P.muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.4),
-              ),
-            ),
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _searchResults.length,
-              padding: const EdgeInsets.only(bottom: 8),
-              itemBuilder: (context, index) {
-                final u = _searchResults[index];
-                return FadeSlideIn(
-                  index: index.clamp(0, 7),
-                  child: _SuggestionTile(
-                    user: u,
-                    onMessage: () => _startDM(u),
-                    onFollow: () => _toggleFollow(u),
-                    onCloseFriend: () => _toggleCloseFriend(u),
-                    onProfileTap: () => context.push('/profile/${u.userId}'),
-                  ),
-                );
-              },
-            ),
-          ],
         ],
-      ),
+      );
+    }
+    if (_searchCompleted && _searchResults.isEmpty) {
+      return ListView(
+        children: [
+          _SearchEmptyState(query: _search.text.trim(), onClear: _clearSearch),
+        ],
+      );
+    }
+    if (_searchResults.isEmpty) return const SizedBox.shrink();
+
+    return ListView.builder(
+      key: const ValueKey('people-search-results'),
+      itemCount: _searchResults.length + 1,
+      padding: const EdgeInsets.only(bottom: 8),
+      itemBuilder: (context, index) {
+        if (index > 0) {
+          return _buildSuggestion(
+            _searchResults[index - 1],
+            index - 1,
+            showFollow: _searchFollowReady,
+            fromSearch: true,
+          );
+        }
+        if (_searchFollowFailed) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+            child: _buildError(
+              message: "Follow buttons couldn't load. You can still open a profile or chat.",
+              onRetry: () => _loadSearchFollowStatus(_searchRequestId),
+            ),
+          );
+        }
+        return const Padding(
+          padding: EdgeInsets.fromLTRB(16, 10, 16, 4),
+          child: Text(
+            'People',
+            style: TextStyle(
+              color: _P.muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.4,
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -569,7 +678,7 @@ class _SuggestFriendsScreenState extends State<SuggestFriendsScreen> {
     );
   }
 
-  Widget _buildFooter(BuildContext context) {
+  Widget _buildFooter() {
     final category = _categories[_selectedCategoryIndex].id;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 24),
@@ -584,7 +693,7 @@ class _SuggestFriendsScreenState extends State<SuggestFriendsScreen> {
 
   // ===== Search UI Components =====
 
-  Widget _SearchSkeleton() {
+  Widget _buildSearchSkeleton() {
     final scheme = Theme.of(context).colorScheme;
     final block = scheme.onSurface.withValues(alpha: 0.08);
     return Column(
@@ -632,7 +741,7 @@ class _SuggestFriendsScreenState extends State<SuggestFriendsScreen> {
     );
   }
 
-  Widget _SearchError({required String message, required VoidCallback onRetry}) {
+  Widget _buildError({required String message, required VoidCallback onRetry}) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -740,7 +849,7 @@ class _SuggestionTile extends StatelessWidget {
 
   final FriendSuggestion user;
   final VoidCallback onMessage;
-  final VoidCallback onFollow;
+  final VoidCallback? onFollow;
   final VoidCallback onCloseFriend;
   final VoidCallback onProfileTap;
 
@@ -906,7 +1015,7 @@ class _SuggestionTile extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       // Follow/Following button
-                      if (!user.isFollowing) ...[
+                      if (onFollow != null && !user.isFollowing) ...[
                         PressScale(
                           scaleFactor: 0.92,
                           onTap: onFollow,
@@ -942,7 +1051,7 @@ class _SuggestionTile extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                      ] else ...[
+                      ] else if (onFollow != null) ...[
                         PressScale(
                           scaleFactor: 0.92,
                           onTap: onFollow,

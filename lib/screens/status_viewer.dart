@@ -16,6 +16,8 @@ class _C {
   static const muted = Color(0xFFC5C9AC);
 }
 
+const _statusViewDuration = Duration(minutes: 2, seconds: 30);
+
 const _backdrops = <List<Color>>[
   [Color(0xFF1A1C12), Color(0xFF3D4A00)],
   [Color(0xFF102438), Color(0xFF0D1724)],
@@ -29,10 +31,18 @@ class StatusViewerScreen extends StatefulWidget {
     super.key,
     required this.userId,
     this.peerUserIds = const [],
+    this.loadStatuses = Supa.fetchStatusesOnce,
+    this.recordView = Supa.recordStatusView,
+    this.currentUserId = _currentUserId,
   });
 
   final String userId;
   final List<String> peerUserIds;
+  final Future<List<StatusPost>> Function() loadStatuses;
+  final Future<void> Function(String statusId) recordView;
+  final String? Function() currentUserId;
+
+  static String? _currentUserId() => Supa.currentUser?.id;
 
   @override
   State<StatusViewerScreen> createState() => _StatusViewerScreenState();
@@ -50,15 +60,16 @@ class _StatusViewerScreenState extends State<StatusViewerScreen>
   StatusPost? get _current =>
       _posts.isEmpty ? null : _posts[_index.clamp(0, _posts.length - 1)];
 
-  bool get _isMine =>
-      Supa.currentUser != null && widget.userId == Supa.currentUser!.id;
+  bool get _isMine => widget.userId == widget.currentUserId();
 
   @override
   void initState() {
     super.initState();
     _progress = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 5),
+      duration: _statusViewDuration,
+      // Reduced motion must not shorten the time available to read a status.
+      animationBehavior: AnimationBehavior.preserve,
     )..addStatusListener((status) {
         if (status == AnimationStatus.completed) _next();
       });
@@ -69,7 +80,7 @@ class _StatusViewerScreenState extends State<StatusViewerScreen>
     try {
       // One-shot REST fetch: the viewer doesn't need live updates, and this
       // keeps it working even when the realtime channel is slow or down.
-      final posts = await Supa.fetchStatusesOnce().timeout(
+      final posts = await widget.loadStatuses().timeout(
             const Duration(seconds: 10),
           );
       final mine = posts
@@ -85,7 +96,7 @@ class _StatusViewerScreenState extends State<StatusViewerScreen>
       if (mine.isNotEmpty) {
           _progress.forward(from: 0);
           // Record view for the first status
-          unawaited(Supa.recordStatusView(mine.first.id));
+          unawaited(widget.recordView(mine.first.id));
         }
     } catch (e) {
       if (!mounted) return;
@@ -107,7 +118,7 @@ class _StatusViewerScreenState extends State<StatusViewerScreen>
     if (_index + 1 < _posts.length) {
       setState(() => _index++);
       _progress.forward(from: 0);
-      unawaited(Supa.recordStatusView(_posts[_index].id));
+      unawaited(widget.recordView(_posts[_index].id));
       return;
     }
     final ids = widget.peerUserIds.where((id) => id != widget.userId).toList();
@@ -128,7 +139,7 @@ class _StatusViewerScreenState extends State<StatusViewerScreen>
     if (_index > 0) {
       setState(() => _index--);
       _progress.forward(from: 0);
-      unawaited(Supa.recordStatusView(_posts[_index].id));
+      unawaited(widget.recordView(_posts[_index].id));
       return;
     }
     final pos = widget.peerUserIds.indexOf(widget.userId);

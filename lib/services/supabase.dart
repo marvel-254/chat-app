@@ -123,21 +123,37 @@ class Supa {
 
   static Future<List<Profile>> searchUsers(String query,
       {int limit = 20}) async {
+    if (limit <= 0) return [];
+    final term = sanitizeSearchTerm(query);
+    // Keep the explicit empty-query behavior used by the Close Friends picker.
+    if (term.isEmpty && query.trim().isNotEmpty) return [];
+
     var request = client.from('visible_profiles').select();
     final me = currentUser?.id;
     if (me != null) request = request.neq('id', me);
-    final term = sanitizeSearchTerm(query);
-    if (term.isNotEmpty) {
-      request = request.or('username.ilike.%$term%,display_name.ilike.%$term%');
+    if (term.isEmpty) {
+      final rows = await request.order('username').limit(limit);
+      return rows.map(Profile.fromJson).toList();
     }
-    try {
-      final res = await request.order('username').limit(limit);
-      debugPrint('searchUsers("$query") -> ${res.length} results');
-      return (res as List).map((e) => Profile.fromJson(e)).toList();
-    } catch (e) {
-      debugPrint('searchUsers("$query") failed: $e');
-      rethrow;
-    }
+
+    // Fetch prefixes independently so a crowded contains result cannot push
+    // all username completions beyond the server-side limit. Multiword and
+    // non-username queries only need the normal name search.
+    final contains = request
+        .or('username.ilike.%$term%,display_name.ilike.%$term%')
+        .order('username')
+        .limit(limit);
+    final prefixTerm = term.replaceAll('_', r'\_');
+    final results = await Future.wait([
+      if (RegExp(r'^[a-zA-Z0-9_.-]+$').hasMatch(term))
+        request.ilike('username', '$prefixTerm%').order('username').limit(limit),
+      contains,
+    ]);
+    return rankPeopleSearchResults(
+      results.expand((rows) => rows.map(Profile.fromJson)),
+      term,
+      limit: limit,
+    );
   }
 
   // Friend Suggestions
@@ -337,6 +353,17 @@ class Supa {
         .eq('followed_id', userId)
         .maybeSingle();
     return row != null;
+  }
+
+  static Future<Set<String>> getFollowedUserIds(List<String> userIds) async {
+    final me = currentUser?.id;
+    if (me == null || userIds.isEmpty) return <String>{};
+    final rows = await client
+        .from('user_follows')
+        .select('followed_id')
+        .eq('follower_id', me)
+        .inFilter('followed_id', userIds);
+    return rows.map((row) => row['followed_id'] as String).toSet();
   }
 
   static Future<void> setFollowing(String userId, bool follow) async {
@@ -1119,12 +1146,13 @@ class Supa {
   }
 
   static Future<Message> sendMessage(String conversationId, String content,
-      {Duration? expiry, String? replyToId}) async {
+      {Duration? expiry, String? replyToId, String? expectedSenderId}) async {
     return sendMessageWithReply(
       conversationId: conversationId,
       content: content,
       replyToId: replyToId,
       expiry: expiry,
+      expectedSenderId: expectedSenderId,
     );
   }
 
@@ -1355,12 +1383,14 @@ class Supa {
     required String content,
     String? replyToId,
     Duration? expiry,
+    String? expectedSenderId,
   }) =>
       message_safety.MessageSafety.send(
         conversationId: conversationId,
         content: content,
         replyToId: replyToId,
         expiry: expiry,
+        expectedSenderId: expectedSenderId,
       );
 
   static Future<Message?> getReplyPreview(String messageId) =>
