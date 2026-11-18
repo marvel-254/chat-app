@@ -13,7 +13,7 @@ StatusPost _post({
     userId: userId,
     content: 'hello $id',
     createdAt: created,
-    expiresAt: created.add(const Duration(hours: 24)),
+    expiresAt: created.add(const Duration(hours: statusLifetimeHours)),
     userDisplayName: name,
   );
 }
@@ -30,7 +30,7 @@ void main() {
       'mood': '🔥',
       'privacy': 'followers',
       'created_at': '2026-11-13T10:00:00.000Z',
-      'expires_at': '2026-11-14T10:00:00.000Z',
+      'expires_at': '2026-11-15T10:00:00.000Z',
       'profiles': {
         'username': 'maya',
         'display_name': 'Maya',
@@ -79,6 +79,11 @@ void main() {
     expect(
         statusTimeAgo(now.subtract(const Duration(hours: 3)), now), '3h ago');
     expect(statusTimeLeft(now.add(const Duration(hours: 9)), now), '9h left');
+    expect(statusTimeLeft(now.add(const Duration(hours: 47)), now),
+        '1d 23h left');
+    expect(statusTimeLeft(now.add(const Duration(hours: 48)), now),
+        '2d left');
+    expect(statusTimeLeft(now, now), 'expired');
     expect(statusTimeLeft(now.subtract(const Duration(minutes: 1)), now),
         'expired');
   });

@@ -83,17 +83,25 @@ class MessageSafety {
     required String content,
     String? replyToId,
     Duration? expiry,
+    String? expectedSenderId,
   }) async {
+    final me = _currentUser;
+    if (me == null || (expectedSenderId != null && me.id != expectedSenderId)) {
+      throw StateError('The sender is no longer signed in.');
+    }
     final validationError = validateContent(content);
     if (validationError != null) {
       throw StateError(validationError);
     }
-    final me = _currentUser!;
     final now = DateTime.now().toUtc();
 
     // Encrypt the content before storing
     final encryptedContent =
         await supa.Supa.encryptForConversation(conversationId, content);
+
+    if (_currentUser?.id != me.id) {
+      throw StateError('The sender is no longer signed in.');
+    }
 
     final insert = {
       'conversation_id': conversationId,

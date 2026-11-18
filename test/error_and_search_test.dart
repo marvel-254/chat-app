@@ -1,4 +1,6 @@
+import 'package:bro_chat/models/profile.dart';
 import 'package:bro_chat/services/search_safety.dart';
+import 'package:bro_chat/services/supabase.dart' show Supa;
 import 'package:bro_chat/ui/errors.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -11,6 +13,14 @@ void main() {
 
     test('normalizes a leading username at-sign', () {
       expect(sanitizeSearchTerm('@alex.vance'), 'alex.vance');
+    });
+
+    test('collapses repeated spaces and line breaks', () {
+      expect(sanitizeSearchTerm('  Alex  \t Vance\n Jr.  '), 'Alex Vance Jr.');
+    });
+
+    test('returns empty for a bare username prefix', () {
+      expect(sanitizeSearchTerm('  @  '), '');
     });
 
     test('strips PostgREST filter metacharacters', () {
@@ -27,6 +37,27 @@ void main() {
     test('caps length', () {
       expect(sanitizeSearchTerm('a' * 80).length, 64);
     });
+  });
+
+  test('exact and prefix username matches rank above other matches', () {
+    Profile profile(String id, String username) => Profile.fromJson({
+          'id': id,
+          'username': username,
+          'created_at': '2026-11-18T00:00:00Z',
+          'updated_at': '2026-11-18T00:00:00Z',
+        });
+    final other = profile('1', 'amy_alex');
+    final prefix = profile('2', 'Alex_1');
+    final exact = profile('3', 'alex');
+    final results = [other, prefix, exact, prefix, exact];
+
+    expect(rankPeopleSearchResults(results, 'alex', limit: 3),
+        [exact, prefix, other]);
+    expect(rankPeopleSearchResults(results, 'alex', limit: 2), [exact, prefix]);
+  });
+
+  test('a bare @ does not require a network lookup or list profiles', () async {
+    expect(await Supa.searchUsers('@'), isEmpty);
   });
 
   group('friendlyErrorMessage', () {

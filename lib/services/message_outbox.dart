@@ -13,11 +13,12 @@ class MessageOutbox {
   static final _items = <String, PendingMessage>{};
   static final revision = ValueNotifier<int>(0);
   static bool _loaded = false;
-  static bool _flushing = false;
+  static final _flushingSenders = <String>{};
 
   static Future<void> load() async {
     if (_loaded) return;
     final prefs = await SharedPreferences.getInstance();
+    if (_loaded) return;
     final raw = prefs.getString(_storageKey);
     if (raw != null && raw.isNotEmpty) {
       try {
@@ -44,13 +45,18 @@ class MessageOutbox {
     _notify();
   }
 
-  static List<PendingMessage> get all =>
-      List.unmodifiable(_items.values.toList()
-        ..sort((a, b) => a.createdAt.compareTo(b.createdAt)));
+  static List<PendingMessage> _forSender(String senderId) => _items.values
+      .where((item) => item.senderId == senderId)
+      .toList()
+    ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
-  static List<PendingMessage> forConversation(String conversationId) => all
-      .where((item) => item.conversationId == conversationId)
-      .toList(growable: false);
+  static List<PendingMessage> forConversation(
+    String conversationId, {
+    required String senderId,
+  }) =>
+      _forSender(senderId)
+          .where((item) => item.conversationId == conversationId)
+          .toList(growable: false);
 
   static Future<void> put(PendingMessage item) async {
     await load();
@@ -74,15 +80,18 @@ class MessageOutbox {
     _notify();
   }
 
-  /// Flush queued and failed messages. The callback is responsible for the
-  /// actual network send and must throw when delivery fails.
+  /// Flush this account's queued and failed messages while it remains active.
+  /// The send callback must throw when delivery fails.
   static Future<void> flush(
-      Future<void> Function(PendingMessage item) send) async {
+    Future<void> Function(PendingMessage item) send, {
+    required String senderId,
+    required bool Function() isSenderActive,
+  }) async {
     await load();
-    if (_flushing) return;
-    _flushing = true;
+    if (!_flushingSenders.add(senderId)) return;
     try {
-      for (final item in all) {
+      for (final item in _forSender(senderId)) {
+        if (!isSenderActive()) break;
         if (item.status != 'queued' && item.status != 'failed') continue;
         if (item.expiresAt != null &&
             item.expiresAt!.isBefore(DateTime.now())) {
@@ -91,6 +100,11 @@ class MessageOutbox {
         }
         item.status = 'sending';
         await update(item);
+        if (!isSenderActive()) {
+          item.status = 'queued';
+          await update(item);
+          break;
+        }
         try {
           await send(item);
           await remove(item.localId);
@@ -101,7 +115,7 @@ class MessageOutbox {
         }
       }
     } finally {
-      _flushing = false;
+      _flushingSenders.remove(senderId);
     }
   }
 

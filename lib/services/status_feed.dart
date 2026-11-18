@@ -1,5 +1,8 @@
 import '../models/profile.dart';
 
+// Keep the display copy in sync with the Supabase statuses default.
+const statusLifetimeHours = 48;
+
 /// One person's active statuses, oldest first for the viewer.
 class StatusThread {
   StatusThread({required this.userId, required this.posts});
@@ -52,8 +55,11 @@ String statusTimeAgo(DateTime dt, DateTime now) {
 
 String statusTimeLeft(DateTime expiresAt, DateTime now) {
   final delta = expiresAt.toLocal().difference(now);
-  if (delta.isNegative) return 'expired';
+  if (delta <= Duration.zero) return 'expired';
   if (delta.inMinutes < 60) return '${delta.inMinutes.clamp(1, 59)}m left';
   if (delta.inHours < 24) return '${delta.inHours}h left';
-  return '${delta.inDays}d left';
+  final hours = delta.inHours % 24;
+  return hours == 0
+      ? '${delta.inDays}d left'
+      : '${delta.inDays}d ${hours}h left';
 }
