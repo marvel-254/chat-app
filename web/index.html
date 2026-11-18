@@ -85,6 +85,17 @@
   -->
   <script src="flutter_bootstrap.js" async></script>
   <script>
+    // Remove the static loader once Flutter has painted its first frame.
+    function hideFlutterLoader() {
+      var root = document.getElementById('app-root');
+      if (root) root.remove();
+    }
+    window.addEventListener('flutter-first-frame', hideFlutterLoader);
+    new MutationObserver(function () {
+      if (document.querySelector('flutter-view')) hideFlutterLoader();
+    }).observe(document.body, { childList: true, subtree: true });
+  </script>
+  <script>
     // Register PWA service worker for offline caching.
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
