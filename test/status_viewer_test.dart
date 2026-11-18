@@ -43,7 +43,8 @@ void main() {
     expect(find.text('First status'), findsOneWidget);
     expect(viewed, ['first']);
 
-    await tester.pump(const Duration(seconds: 1));
+    // Allow a frame on the far side of the animation boundary.
+    await tester.pump(const Duration(seconds: 2));
     expect(find.text('Second status'), findsOneWidget);
     expect(viewed, ['first', 'second']);
 

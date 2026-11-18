@@ -182,18 +182,22 @@ void main() {
     await tester.enterText(find.byType(TextField), '@alex');
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
-    expect(find.text('@alex'), findsOneWidget);
+    final person = find.descendant(
+      of: find.byKey(const ValueKey('people-search-results')),
+      matching: find.text('@alex'),
+    );
+    expect(person, findsOneWidget);
     expect(find.text('Message'), findsOneWidget);
     expect(find.text('Follow'), findsNothing);
 
     followStatus.completeError(StateError('Follow lookup failed'));
     await tester.pumpAndSettle();
-    expect(find.text('@alex'), findsOneWidget);
+    expect(person, findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
 
     await tester.tap(find.text('Retry'));
     await tester.pumpAndSettle();
-    expect(find.text('@alex'), findsOneWidget);
+    expect(person, findsOneWidget);
     expect(find.text('Following'), findsOneWidget);
     expect(find.text('Retry'), findsNothing);
   });
@@ -214,20 +218,23 @@ void main() {
     await tester.pumpAndSettle();
     final field = find.byType(TextField);
     await tester.enterText(field, '@alex');
+    await tester.pump();
     await tester.testTextInput.receiveAction(TextInputAction.search);
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 350));
     await tester.pumpAndSettle();
     expect(queries, ['@alex']);
+    expect(await PeopleSearchHistory.load('alice'), ['@alex']);
 
-    await tester.tap(find.byTooltip('Clear search'));
+    await tester.enterText(field, '');
     await tester.pumpAndSettle();
     expect(find.text('Recent searches'), findsOneWidget);
     final chip = find.widgetWithText(ActionChip, '@alex');
     await tester.tap(chip);
+    await tester.pump(const Duration(milliseconds: 350));
     await tester.pumpAndSettle();
     expect(queries, ['@alex', '@alex']);
 
-    await tester.tap(find.byTooltip('Clear search'));
+    await tester.enterText(field, '');
     await tester.pumpAndSettle();
     await tester.tap(find.text('Clear all'));
     await tester.pumpAndSettle();

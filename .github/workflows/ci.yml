@@ -8,27 +8,6 @@ on:
 
 jobs:
   analyze-test:
-    name: Flutter (${{ matrix.filter }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - suite: suggest_friends_screen
-            filter: refresh fetches
-          - suite: suggest_friends_screen
-            filter: failed load
-          - suite: suggest_friends_screen
-            filter: long search
-          - suite: suggest_friends_screen
-            filter: search shows
-          - suite: suggest_friends_screen
-            filter: people appear
-          - suite: suggest_friends_screen
-            filter: submitted searches
-          - suite: status_viewer
-            filter: each status
-          - suite: status_viewer
-            filter: holding pauses
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +19,4 @@ jobs:
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings || true
       - name: Test
-        env:
-          SUITE: ${{ matrix.suite }}
-          FILTER: ${{ matrix.filter }}
-        run: flutter test "test/${SUITE}_test.dart" --plain-name "$FILTER"
+        run: flutter test
