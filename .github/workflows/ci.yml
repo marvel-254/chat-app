@@ -8,9 +8,12 @@ on:
 
 jobs:
   analyze-test:
+    name: Flutter (${{ matrix.suite }})
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [suggest_friends_screen, status_viewer, people_search_history, error_and_search, message_outbox, status_feed]
     runs-on: ubuntu-latest
-    outputs:
-      diagnostics: ${{ steps.tests.outputs.diagnostics }}
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -21,48 +24,4 @@ jobs:
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings || true
       - name: Test
-        id: tests
-        run: |
-          set +e
-          flutter test --machine > "$RUNNER_TEMP/flutter-test.jsonl" 2>&1
-          test_status=$?
-          cat "$RUNNER_TEMP/flutter-test.jsonl"
-          if [ "$test_status" -ne 0 ]; then
-            python3 - "$RUNNER_TEMP/flutter-test.jsonl" <<'PYTHON'
-          import json
-          import os
-          import sys
-
-          tests = {}
-          failures = []
-          event_types = set()
-          for line in open(sys.argv[1], encoding='utf-8'):
-              try:
-                  event = json.loads(line)
-              except json.JSONDecodeError:
-                  continue
-              event_types.add(event.get('type', 'missing'))
-              if event.get('type') == 'testStart':
-                  tests[event['test']['id']] = event['test']['name']
-              if event.get('type') == 'error':
-                  name = tests.get(event.get('testID'), 'Flutter test')
-                  message = f"{name}: {event.get('error', '')}"
-                  short = ' '.join(message.split())
-                  failures.extend(short[i:i+140] for i in range(0, min(len(short), 1120), 140))
-          if not failures:
-              failures = [str(sorted(event_types))[:140]]
-          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
-              print('diagnostics=' + json.dumps(failures[:30]), file=output)
-          PYTHON
-          fi
-          exit "$test_status"
-  test-diagnostics:
-    if: ${{ always() && needs.analyze-test.outputs.diagnostics != '' }}
-    needs: analyze-test
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        message: ${{ fromJSON(needs.analyze-test.outputs.diagnostics || '["No failures reported"]') }}
-    name: ${{ matrix.message }}
-    steps:
-      - run: echo 'See the failing Flutter test step for the full report.'
+        run: flutter test test/${{ matrix.suite }}_test.dart
