@@ -78,16 +78,24 @@ void main() async {
 
       await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
       await onboarding.loadOnboardingStatus();
+      _setupAuthGateCallback();
+      runApp(const BroApp());
       if (!kIsWeb &&
           (defaultTargetPlatform == TargetPlatform.android ||
               defaultTargetPlatform == TargetPlatform.iOS)) {
-        await Firebase.initializeApp();
+        unawaited(_initializeMobilePush());
       }
-      _setupAuthGateCallback();
-      runApp(const BroApp());
-      unawaited(PushNotifications.initialize());
     },
   );
+}
+
+Future<void> _initializeMobilePush() async {
+  try {
+    await Firebase.initializeApp();
+    await PushNotifications.initialize();
+  } catch (_) {
+    debugPrint('Notifications could not start. Chat is still available.');
+  }
 }
 
 class _P {
