@@ -140,6 +140,41 @@ class Supa {
     }
   }
 
+  // Friend Suggestions
+  static Future<List<FriendSuggestion>> getFriendSuggestions(
+      {int limit = 20, int offset = 0}) async {
+    try {
+      final res = await client.rpc('get_friend_suggestions', params: {
+        'p_limit': limit,
+        'p_offset': offset,
+      });
+      debugPrint('getFriendSuggestions -> ${(res as List).length} results');
+      return (res as List)
+          .map((e) => FriendSuggestion.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('getFriendSuggestions failed: $e');
+      rethrow;
+    }
+  }
+
+  static Future<List<FriendSuggestion>> getFriendSuggestionsByCategory(
+      String category, {int limit = 10}) async {
+    try {
+      final res = await client.rpc('get_friend_suggestions_by_category', params: {
+        'p_category': category,
+        'p_limit': limit,
+      });
+      debugPrint('getFriendSuggestionsByCategory("$category") -> ${(res as List).length} results');
+      return (res as List)
+          .map((e) => FriendSuggestion.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('getFriendSuggestionsByCategory("$category") failed: $e');
+      rethrow;
+    }
+  }
+
   static Future<void> updateProfile(
       {required String username, required String displayName}) async {
     await client.from('profiles').update({

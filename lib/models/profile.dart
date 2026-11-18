@@ -286,6 +286,87 @@ Duration? parseInterval(dynamic raw) {
   return null;
 }
 
+class FriendSuggestion {
+  final String userId;
+  final String username;
+  final String? displayName;
+  final String? avatarUrl;
+  final DateTime? lastSeenAt;
+  final bool isOnline;
+  final int mutualCount;
+  final String suggestionReason;
+  final String suggestionType;
+  final bool isFollowing;
+  final bool isCloseFriend;
+  final String? profileStatus;
+  final String? profileColor;
+
+  FriendSuggestion({
+    required this.userId,
+    required this.username,
+    this.displayName,
+    this.avatarUrl,
+    this.lastSeenAt,
+    required this.isOnline,
+    required this.mutualCount,
+    required this.suggestionReason,
+    required this.suggestionType,
+    required this.isFollowing,
+    required this.isCloseFriend,
+    this.profileStatus,
+    this.profileColor,
+  });
+
+  factory FriendSuggestion.fromJson(Map<String, dynamic> json) {
+    final userId = json['user_id'] as String;
+    return FriendSuggestion(
+      userId: userId,
+      username: json['username'] as String,
+      displayName: json['display_name'] as String?,
+      avatarUrl: json['avatar_url'] as String?,
+      lastSeenAt: json['last_seen_at'] == null
+          ? null
+          : DateTime.parse(json['last_seen_at'] as String),
+      isOnline: json['is_online'] as bool? ?? false,
+      mutualCount: (json['mutual_count'] as num?)?.toInt() ?? 0,
+      suggestionReason: json['suggestion_reason'] as String? ?? 'Suggested for you',
+      suggestionType: json['suggestion_type'] as String? ?? 'People you may know',
+      isFollowing: json['is_following'] as bool? ?? false,
+      isCloseFriend: json['is_close_friend'] as bool? ?? false,
+      profileStatus: json['profile_status'] as String?,
+      profileColor: json['profile_color'] as String?,
+    );
+  }
+
+  String get label {
+    final name = displayName?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    final user = username.trim();
+    return user.isNotEmpty ? user : 'User';
+  }
+
+  String get peerInitial {
+    final name = label;
+    return name.isNotEmpty ? name.trim()[0].toUpperCase() : '?';
+  }
+
+  Map<String, dynamic> toJson() => {
+    'user_id': userId,
+    'username': username,
+    'display_name': displayName,
+    'avatar_url': avatarUrl,
+    'last_seen_at': lastSeenAt?.toIso8601String(),
+    'is_online': isOnline,
+    'mutual_count': mutualCount,
+    'suggestion_reason': suggestionReason,
+    'suggestion_type': suggestionType,
+    'is_following': isFollowing,
+    'is_close_friend': isCloseFriend,
+    'profile_status': profileStatus,
+    'profile_color': profileColor,
+  };
+}
+
 class StatusPost {
   final String id;
   final String userId;
