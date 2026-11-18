@@ -6,6 +6,7 @@ import '../../services/linked_devices.dart';
 import '../../theme/app_colors.dart' as app_colors;
 import '../../ui/errors.dart';
 import '../../ui/states.dart';
+import '../../widgets/responsive_app_shell.dart';
 
 class LinkedDevicesScreen extends StatefulWidget {
   const LinkedDevicesScreen({super.key});
@@ -148,102 +149,107 @@ class _LinkedDevicesScreenState extends State<LinkedDevicesScreen> {
     final current = _devices.where((device) => device.isCurrent).firstOrNull;
     final others = _devices.where((device) => !device.isCurrent).toList();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Linked devices'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
-        ),
+    return ResponsiveAppShell(
+      title: 'Linked devices',
+      navIndex: 0,
+      showBottomNavigation: false,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back),
+        onPressed: () => context.pop(),
       ),
-      body: _loading
-          ? const FormSkeleton(label: 'Loading linked devices')
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(20),
-                children: [
-                  const Text(
-                    'See where your BRO account is registered. Last-seen times '
-                    'come from the app that last connected.',
-                    style: TextStyle(
-                      color: app_colors.P.muted,
-                      height: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  if (_error != null) SoftErrorBanner(message: _error!),
-                  if (_error != null) const SizedBox(height: 12),
-                  Text(
-                    'This device',
-                    style: TextStyle(
-                      color: app_colors.P.muted,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  if (current != null)
-                    _DeviceCard(device: current, current: true)
-                  else
-                    const _EmptyDeviceCard(
-                      message: 'This device has not been registered yet.',
-                    ),
-                  const SizedBox(height: 22),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: _loading
+              ? const FormSkeleton(label: 'Loading linked devices')
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(20),
                     children: [
+                      const Text(
+                        'See where your BRO account is registered. Last-seen times '
+                        'come from the app that last connected.',
+                        style: TextStyle(
+                          color: app_colors.P.muted,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      if (_error != null) SoftErrorBanner(message: _error!),
+                      if (_error != null) const SizedBox(height: 12),
                       Text(
-                        'Other authorized devices',
+                        'This device',
                         style: TextStyle(
                           color: app_colors.P.muted,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      if (others.isNotEmpty)
-                        Text(
-                          '${others.length}',
-                          style: const TextStyle(color: app_colors.P.muted),
+                      const SizedBox(height: 8),
+                      if (current != null)
+                        _DeviceCard(device: current, current: true)
+                      else
+                        const _EmptyDeviceCard(
+                          message: 'This device has not been registered yet.',
                         ),
+                      const SizedBox(height: 22),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Other authorized devices',
+                            style: TextStyle(
+                              color: app_colors.P.muted,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (others.isNotEmpty)
+                            Text(
+                              '${others.length}',
+                              style: const TextStyle(color: app_colors.P.muted),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (others.isEmpty)
+                        const _EmptyDeviceCard(
+                          message: 'No other active devices are linked.',
+                        )
+                      else
+                        ...others.map(
+                          (device) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _DeviceCard(
+                              device: device,
+                              onRevoke: _busy ? null : () => _revoke(device),
+                            ),
+                          ),
+                        ),
+                      if (others.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          onPressed: _busy ? null : _signOutOtherSessions,
+                          icon: const Icon(Icons.logout_outlined),
+                          label: const Text('Sign out all other sessions'),
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'This is the server-backed control. Removing one device '
+                          'only removes its registry entry because Supabase does not '
+                          'offer client-side revocation for one selected session.',
+                          style: TextStyle(
+                            color: app_colors.P.muted,
+                            fontSize: 12,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  if (others.isEmpty)
-                    const _EmptyDeviceCard(
-                      message: 'No other active devices are linked.',
-                    )
-                  else
-                    ...others.map(
-                      (device) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _DeviceCard(
-                          device: device,
-                          onRevoke: _busy ? null : () => _revoke(device),
-                        ),
-                      ),
-                    ),
-                  if (others.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: _busy ? null : _signOutOtherSessions,
-                      icon: const Icon(Icons.logout_outlined),
-                      label: const Text('Sign out all other sessions'),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text(
-                      'This is the server-backed control. Removing one device '
-                      'only removes its registry entry because Supabase does not '
-                      'offer client-side revocation for one selected session.',
-                      style: TextStyle(
-                        color: app_colors.P.muted,
-                        fontSize: 12,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+                ),
+        ),
+      ),
     );
   }
 }

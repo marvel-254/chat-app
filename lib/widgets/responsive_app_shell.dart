@@ -16,6 +16,8 @@ class ResponsiveAppShell extends StatelessWidget {
     this.subtitle,
     this.actions = const <Widget>[],
     this.floatingActionButton,
+    this.leading,
+    this.showBottomNavigation = true,
     this.backgroundColor = app_colors.bg,
   });
 
@@ -25,6 +27,8 @@ class ResponsiveAppShell extends StatelessWidget {
   final Widget body;
   final List<Widget> actions;
   final Widget? floatingActionButton;
+  final Widget? leading;
+  final bool showBottomNavigation;
   final Color backgroundColor;
 
   static const desktopBreakpoint = 840.0;
@@ -38,12 +42,14 @@ class ResponsiveAppShell extends StatelessWidget {
           return Scaffold(
             backgroundColor: backgroundColor,
             appBar: AppBar(
+              leading: leading,
               title: Text(title),
               actions: actions,
             ),
             body: body,
             floatingActionButton: floatingActionButton,
-            bottomNavigationBar: HomeNavBar(index: navIndex),
+            bottomNavigationBar:
+                showBottomNavigation ? HomeNavBar(index: navIndex) : null,
           );
         }
 

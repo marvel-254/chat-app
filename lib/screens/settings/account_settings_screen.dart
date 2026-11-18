@@ -18,6 +18,7 @@ import '../../followers_following_screen.dart';
 import '../../app_constants.dart';
 import '../../services/app_lock.dart';
 import '../chat/widgets/avatar.dart';
+import '../../widgets/responsive_app_shell.dart';
 
 const _chatBackgroundOptions = app_colors.chatBackgroundOptions;
 
@@ -365,12 +366,12 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(
-            title: const Text('Settings'),
-            leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => context.pop())),
+  Widget build(BuildContext context) => ResponsiveAppShell(
+        title: 'Settings',
+        navIndex: 0,
+        showBottomNavigation: false,
+        leading: IconButton(
+            icon: const Icon(Icons.arrow_back), onPressed: () => context.pop()),
         body: _loading
             ? const FormSkeleton(label: 'Loading settings')
             : Center(
