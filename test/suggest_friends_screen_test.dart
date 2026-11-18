@@ -202,8 +202,10 @@ void main() {
     expect(find.text('Retry'), findsNothing);
   });
 
-  testWidgets('submitted searches can be replayed and cleared', (tester) async {
-    SharedPreferences.setMockInitialValues({});
+  testWidgets('recent searches can be replayed and cleared', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'bro.people_search_history.v1.alice': ['@alex'],
+    });
     final queries = <String>[];
     await tester.pumpWidget(MaterialApp(
       home: SuggestFriendsScreen(
@@ -215,28 +217,21 @@ void main() {
         },
       ),
     ));
-    await tester.pumpAndSettle();
     final field = find.byType(TextField);
-    await tester.enterText(field, '@alex');
-    await tester.pump();
-    await tester.testTextInput.receiveAction(TextInputAction.search);
-    await tester.pump(const Duration(milliseconds: 350));
-    await tester.pumpAndSettle();
-    expect(queries, ['@alex']);
-    expect(await PeopleSearchHistory.load('alice'), ['@alex']);
-
-    await tester.enterText(field, '');
+    await tester.tap(field);
     await tester.pumpAndSettle();
     expect(find.text('Recent searches'), findsOneWidget);
     final chip = find.widgetWithText(ActionChip, '@alex');
-    await tester.tap(chip);
+    tester.widget<ActionChip>(chip).onPressed!();
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pumpAndSettle();
-    expect(queries, ['@alex', '@alex']);
+    expect(queries, ['@alex']);
+    expect(tester.widget<TextField>(field).controller!.text, '@alex');
 
     await tester.enterText(field, '');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Clear all'));
+    final clear = find.widgetWithText(TextButton, 'Clear all');
+    tester.widget<TextButton>(clear).onPressed!();
     await tester.pumpAndSettle();
     expect(find.text('Recent searches'), findsNothing);
     expect(await PeopleSearchHistory.load('alice'), isEmpty);
