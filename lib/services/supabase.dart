@@ -162,7 +162,12 @@ class Supa {
     );
   }
 
-  // Friend Suggestions
+  /// Ranked friend suggestions for the "People you may know" strip.
+  ///
+  /// The ranked RPC only returns people with mutual connections, followers,
+  /// or close friends. For a fresh account (or one whose contacts are all
+  /// existing DM peers) that set is empty, so fall back to the unranked
+  /// "all" category, which still excludes existing DM peers.
   static Future<List<FriendSuggestion>> getFriendSuggestions(
       {int limit = 20, int offset = 0}) async {
     try {
@@ -170,10 +175,20 @@ class Supa {
         'p_limit': limit,
         'p_offset': offset,
       });
-      debugPrint('getFriendSuggestions -> ${(res as List).length} results');
-      return (res as List)
+      var results = (res as List)
           .map((e) => FriendSuggestion.fromJson(e as Map<String, dynamic>))
           .toList();
+      debugPrint('getFriendSuggestions -> ${results.length} results');
+      if (results.isEmpty && offset == 0) {
+        final fallback = await client.rpc('get_friend_suggestions_by_category',
+            params: {'p_category': 'all', 'p_limit': limit});
+        results = (fallback as List)
+            .map((e) => FriendSuggestion.fromJson(e as Map<String, dynamic>))
+            .toList();
+        debugPrint(
+            'getFriendSuggestions fallback -> ${results.length} results');
+      }
+      return results;
     } catch (e) {
       debugPrint('getFriendSuggestions failed: $e');
       rethrow;
