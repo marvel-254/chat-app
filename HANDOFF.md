@@ -372,3 +372,7 @@ Non-blocking:
 ### Open-issue triage correction
 
 Several items previously listed as outstanding are already resolved in the current tree: the `conversations` UPDATE policy exists, `updateProfileDetails` now writes `default_message_expiry` conditionally, `delete_expired_messages` is scheduled via `cron.job`, voice notes are implemented in `lib/services/voice_note.dart`, and profile-picture reads now use `visible_profiles`. Still open: `Supa.setMessagePinned` accepts `conversationId` but does not pass it to the `pin_message` RPC, so the client-side five-pin guard is skipped; the pin menu is also offered on peer messages that the database trigger rejects.
+
+### Polished: pin-message guard (2026-11-19)
+
+The previously reported pin issues were already resolved server-side and in the UI: `_showMessageActions` only offers Pin on the author's messages, and `public.pin_message(msg_id, do_pin)` verifies authentication, conversation membership, author ownership, and the five-pin limit using the conversation derived from the message row. Removed the unused `conversationId` parameter from `Supa.setMessagePinned` and its call site so callers no longer assume a client-side guard exists. Analyzer clean of errors, 82 tests pass.

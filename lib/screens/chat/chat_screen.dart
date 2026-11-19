@@ -1211,8 +1211,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     try {
       if (action == 'pin') {
-        await Supa.setMessagePinned(message.id, message.pinnedAt == null,
-            conversationId: widget.conversationId);
+        await Supa.setMessagePinned(message.id, message.pinnedAt == null);
       }
       if (action == 'copy') {
         await Clipboard.setData(ClipboardData(text: message.content));

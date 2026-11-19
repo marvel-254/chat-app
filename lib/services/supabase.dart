@@ -1314,8 +1314,9 @@ class Supa {
     return List<Map<String, dynamic>>.from(result as List);
   }
 
-  static Future<void> setMessagePinned(String messageId, bool pinned,
-      {String? conversationId}) async {
+  // The RPC derives the conversation from the message and enforces the
+  // five-pin limit and author-only rule server-side.
+  static Future<void> setMessagePinned(String messageId, bool pinned) async {
     await client.rpc('pin_message', params: {
       'msg_id': messageId,
       'do_pin': pinned,
