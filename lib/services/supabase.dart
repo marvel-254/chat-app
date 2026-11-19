@@ -868,8 +868,9 @@ class Supa {
     if (currentUser?.id != uid)
       throw StateError('Your session changed. Try again.');
 
+    // profiles has no SELECT grant (privacy masking lives in visible_profiles).
     final profile = await client
-        .from('profiles')
+        .from('visible_profiles')
         .select('avatar_url')
         .eq('id', uid)
         .single();

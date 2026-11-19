@@ -14,8 +14,9 @@ class ReadReceipts {
   static Future<bool> isEnabled() async {
     final me = _currentUser;
     if (me == null) return true;
+    // profiles has no SELECT grant; visible_profiles exposes this flag to self.
     final res = await _client
-        .from('profiles')
+        .from('visible_profiles')
         .select('read_receipts_enabled')
         .eq('id', me.id)
         .maybeSingle();
