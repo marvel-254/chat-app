@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../theme/app_colors.dart' as app_colors;
+import '../../../models/avatar_config.dart';
+import '../../../widgets/digital_avatar.dart';
 
 class Avatar extends StatelessWidget {
   const Avatar(
@@ -7,11 +9,13 @@ class Avatar extends StatelessWidget {
       required this.name,
       this.size = 44,
       this.url,
-      this.showOnlineDot = false});
+      this.showOnlineDot = false,
+      this.digitalConfig});
   final String name;
   final double size;
   final String? url;
   final bool showOnlineDot;
+  final AvatarConfig? digitalConfig;
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +30,8 @@ class Avatar extends StatelessWidget {
               fontWeight: FontWeight.w600)),
     );
     final photo = url?.trim();
+    final useDigital =
+        digitalConfig?.enabled == true && (photo == null || photo.isEmpty);
     final avatar = Container(
       width: size,
       height: size,
@@ -39,17 +45,20 @@ class Avatar extends StatelessWidget {
         shape: BoxShape.circle,
         border: Border.all(color: Colors.white24),
       ),
-      child: photo == null || photo.isEmpty
-          ? fallback
-          : Image.network(
-              photo,
-              width: size,
-              height: size,
-              fit: BoxFit.cover,
-              frameBuilder: (_, child, frame, __) =>
-                  frame == null ? fallback : child,
-              errorBuilder: (_, __, ___) => fallback,
-            ),
+      child: useDigital
+          ? DigitalAvatar(
+              config: digitalConfig!, size: size, interactive: false)
+          : photo == null || photo.isEmpty
+              ? fallback
+              : Image.network(
+                  photo,
+                  width: size,
+                  height: size,
+                  fit: BoxFit.cover,
+                  frameBuilder: (_, child, frame, __) =>
+                      frame == null ? fallback : child,
+                  errorBuilder: (_, __, ___) => fallback,
+                ),
     );
 
     if (!showOnlineDot) return avatar;

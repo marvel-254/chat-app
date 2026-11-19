@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:async';
@@ -148,7 +149,10 @@ class Supa {
     final prefixTerm = term.replaceAll('_', r'\_');
     final results = await Future.wait([
       if (RegExp(r'^[a-zA-Z0-9_.-]+$').hasMatch(term))
-        request.ilike('username', '$prefixTerm%').order('username').limit(limit),
+        request
+            .ilike('username', '$prefixTerm%')
+            .order('username')
+            .limit(limit),
       contains,
     ]);
     return rankPeopleSearchResults(
@@ -177,13 +181,16 @@ class Supa {
   }
 
   static Future<List<FriendSuggestion>> getFriendSuggestionsByCategory(
-      String category, {int limit = 10}) async {
+      String category,
+      {int limit = 10}) async {
     try {
-      final res = await client.rpc('get_friend_suggestions_by_category', params: {
+      final res =
+          await client.rpc('get_friend_suggestions_by_category', params: {
         'p_category': category,
         'p_limit': limit,
       });
-      debugPrint('getFriendSuggestionsByCategory("$category") -> ${(res as List).length} results');
+      debugPrint(
+          'getFriendSuggestionsByCategory("$category") -> ${(res as List).length} results');
       return (res as List)
           .map((e) => FriendSuggestion.fromJson(e as Map<String, dynamic>))
           .toList();
@@ -843,10 +850,16 @@ class Supa {
     final uid = currentUser?.id;
     if (uid == null) throw StateError('Sign in to change your profile photo.');
     final format = await validateAvatarImage(bytes);
-    if (currentUser?.id != uid) throw StateError('Your session changed. Try again.');
+    if (currentUser?.id != uid)
+      throw StateError('Your session changed. Try again.');
 
-    final profile = await client.from('profiles').select('avatar_url').eq('id', uid).single();
-    if (currentUser?.id != uid) throw StateError('Your session changed. Try again.');
+    final profile = await client
+        .from('profiles')
+        .select('avatar_url')
+        .eq('id', uid)
+        .single();
+    if (currentUser?.id != uid)
+      throw StateError('Your session changed. Try again.');
     final bucket = client.storage.from('avatars');
     final previous = managedAvatarPath(
       profile['avatar_url'] as String?,
@@ -857,16 +870,23 @@ class Supa {
     await bucket.uploadBinary(
       objectPath,
       bytes,
-      fileOptions: FileOptions(cacheControl: '3600', contentType: format.contentType),
+      fileOptions:
+          FileOptions(cacheControl: '3600', contentType: format.contentType),
     );
     final url = bucket.getPublicUrl(objectPath);
     try {
-      if (currentUser?.id != uid) throw StateError('Your session changed. Try again.');
+      if (currentUser?.id != uid)
+        throw StateError('Your session changed. Try again.');
       // Returning the row confirms the update wasn't silently filtered by RLS.
-      await client.from('profiles').update({
-        'avatar_url': url,
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      }).eq('id', uid).select('id').single();
+      await client
+          .from('profiles')
+          .update({
+            'avatar_url': url,
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('id', uid)
+          .select('id')
+          .single();
     } on PostgrestException catch (error) {
       // A rejected write must not replace the existing photo. Don't delete on
       // ambiguous network errors, since the database may have committed it.
@@ -920,6 +940,20 @@ class Supa {
       'mime': mimeType,
       'size': bytes.length,
     };
+  }
+
+  /// Best-effort removal of a stored object. Callers delete the DB row first;
+  /// a failed storage cleanup must never roll back the successful DB delete.
+  static Future<void> deleteAttachment(String objectPath) async {
+    try {
+      if (_cloudStorageUrl.isNotEmpty) {
+        await _storagePost('/delete', query: {'key': objectPath});
+        return;
+      }
+      await client.storage.from('chat-files').remove([objectPath]);
+    } catch (e) {
+      debugPrint('deleteAttachment cleanup failed: $e');
+    }
   }
 
   static Future<String> attachmentUrl(String objectPath) async {

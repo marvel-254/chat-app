@@ -9,7 +9,7 @@ function cors(headers = {}) {
   return {
     ...headers,
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Authorization, Content-Type',
     'Access-Control-Max-Age': '86400',
   };
@@ -142,6 +142,19 @@ export default {
         const key = `${conversationId}/${user.id}/${crypto.randomUUID()}-${name}`;
         await env.CHAT_STORAGE.put(key, body, { httpMetadata: { contentType } });
         return json({ path: key });
+      }
+
+      if (request.method === 'POST' && url.pathname === '/delete') {
+        const key = url.searchParams.get('key') ?? '';
+        if (!isSafeKey(key)) return json({ error: 'Invalid key.' }, 400);
+        // Only the uploader may delete an object. Chat keys are
+        // conversationId/uploaderId/uuid-name.
+        const segments = key.split('/');
+        if (segments.length < 3 || segments[1] !== user.id) {
+          return json({ error: 'You cannot delete this file.' }, 403);
+        }
+        await env.CHAT_STORAGE.delete(key);
+        return json({ ok: true });
       }
 
       if (request.method === 'POST' && url.pathname === '/sign') {

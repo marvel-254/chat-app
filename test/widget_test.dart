@@ -70,6 +70,41 @@ void main() {
     expect(profile.theme.statusMessage, 'Heads down, building.');
   });
 
+  test('Profile parses avatar_config from the visible_profiles view', () {
+    final profile = Profile.fromJson({
+      'id': 'user-avatar',
+      'username': 'avataruser',
+      'created_at': '2026-11-18T10:00:00.000Z',
+      'updated_at': '2026-11-18T10:00:00.000Z',
+      'avatar_config': {
+        'enabled': true,
+        'preset': 'robot',
+        'body_hex': '#D4FF00',
+        'expression': 'happy',
+        'accessory': 'shades',
+        'aura_hex': '#22C55E',
+        'reaction': 'heart',
+        'animations_enabled': true,
+      },
+    });
+
+    expect(profile.avatarConfig, isNotNull);
+    expect(profile.avatarConfig!.enabled, isTrue);
+    expect(profile.avatarConfig!.preset, 'robot');
+    expect(profile.avatarConfig!.expression, 'happy');
+  });
+
+  test('Profile leaves avatarConfig null when hidden or absent', () {
+    final profile = Profile.fromJson({
+      'id': 'user-no-avatar',
+      'username': 'plainuser',
+      'created_at': '2026-11-18T10:00:00.000Z',
+      'updated_at': '2026-11-18T10:00:00.000Z',
+      'avatar_config': null,
+    });
+    expect(profile.avatarConfig, isNull);
+  });
+
   test('formatPresenceLabel treats a fresh ping as online', () {
     final now = DateTime.utc(2026, 11, 13, 12, 0);
     expect(

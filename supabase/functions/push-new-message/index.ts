@@ -93,12 +93,16 @@ Deno.serve(async (request) => {
   }
 
   try {
-    const webhook = await request.json() as DatabaseWebhook;
+    const webhook = await request.json() as DatabaseWebhook & {
+      record?: { reminder_title?: string };
+    };
+    const isReminder = webhook.type === 'FRIENDSHIP_REMINDER' ||
+      Boolean(webhook.record?.reminder_title);
     if (
-      webhook.type !== 'INSERT' || webhook.schema !== 'public' ||
+      webhook.schema !== 'public' ||
       webhook.table !== 'messages' || !webhook.record?.id ||
       !webhook.record.conversation_id ||
-      !webhook.record.sender_id
+      (!isReminder && !webhook.record.sender_id)
     ) {
       return Response.json({ ignored: true });
     }
@@ -120,11 +124,16 @@ Deno.serve(async (request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
       { auth: { persistSession: false, autoRefreshToken: false } },
     );
-    const { data: participants, error: participantError } = await supabase
+    // Messages go to everyone except the sender; a friendship reminder is
+    // shared by both friends, so it goes to all participants.
+    let participantsQuery = supabase
       .from('conversation_participants')
       .select('user_id')
-      .eq('conversation_id', webhook.record.conversation_id)
-      .neq('user_id', webhook.record.sender_id);
+      .eq('conversation_id', webhook.record.conversation_id);
+    if (!isReminder && webhook.record.sender_id) {
+      participantsQuery = participantsQuery.neq('user_id', webhook.record.sender_id);
+    }
+    const { data: participants, error: participantError } = await participantsQuery;
     if (participantError) throw participantError;
     const recipients = (participants ?? []).map((item) => item.user_id);
     if (recipients.length === 0) return Response.json({ sent: 0 });
@@ -151,11 +160,14 @@ Deno.serve(async (request) => {
               fid: device.firebase_installation_id,
               // A lock-screen notification should not contain plaintext,
               // ciphertext, or the sender's identity.
-              notification: { title: 'BRO', body: 'You have a new message.' },
+              notification: isReminder
+                ? { title: 'BRO', body: 'A friendship anniversary is today.' }
+                : { title: 'BRO', body: 'You have a new message.' },
               data: {
                 conversation_id: webhook.record.conversation_id,
                 message_id: webhook.record.id,
                 recipient_user_id: device.user_id,
+                ...(isReminder ? { kind: 'friendship_reminder' } : {}),
               },
               android: { priority: 'HIGH' },
             },

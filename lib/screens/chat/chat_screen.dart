@@ -194,7 +194,8 @@ class _ChatScreenState extends State<ChatScreen> {
     _scroll.addListener(_onScroll);
     ConnectionMonitor.isOnline.addListener(_outboxConnectivityListener);
     _outboxSenderId = Supa.currentUser?.id;
-    _outboxAuthSubscription = Supa.authStateChanges.listen(_onOutboxAuthChanged);
+    _outboxAuthSubscription =
+        Supa.authStateChanges.listen(_onOutboxAuthChanged);
     unawaited(_restorePendingMessages());
     Supa.chatBackgroundChanged.addListener(_chatBackgroundListener);
   }
@@ -1725,6 +1726,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   builder: (_, __, ___) => Avatar(
                     name: _peer?.peerInitial ?? '?',
                     url: _peer?.avatarUrl,
+                    digitalConfig: _peer?.avatarConfig,
                     size: 38,
                     showOnlineDot:
                         _peerTyping == null && Presence.isOnline(_peer?.id),

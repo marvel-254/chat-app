@@ -114,9 +114,12 @@ class FriendshipTimelineService {
     return FriendshipDate.fromJson(Map<String, dynamic>.from(row as Map));
   }
 
-  /// Remove a photo the caller added.
+  /// Remove a photo the caller added. The DB row is deleted first so a
+  /// storage failure can never leave an orphaned row; the stored object is
+  /// then removed on a best-effort basis.
   static Future<void> removePhoto(FriendshipPhoto photo) async {
     await Supa.client.from('friendship_photos').delete().eq('id', photo.id);
+    await Supa.deleteAttachment(photo.objectPath);
   }
 
   /// Remove an important date the caller added.

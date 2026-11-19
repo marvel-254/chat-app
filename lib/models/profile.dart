@@ -1,3 +1,4 @@
+import 'avatar_config.dart';
 import 'profile_theme.dart';
 
 class Profile {
@@ -26,6 +27,9 @@ class Profile {
   final String? gameStatus;
   final String gameVisibility;
 
+  // Digital avatar (null when hidden by privacy or not set)
+  final AvatarConfig? avatarConfig;
+
   Profile({
     required this.id,
     required this.username,
@@ -49,6 +53,7 @@ class Profile {
     this.gameUsername,
     this.gameStatus,
     this.gameVisibility = 'everyone',
+    this.avatarConfig,
   });
 
   factory Profile.fromJson(Map<String, dynamic> json) => Profile(
@@ -75,6 +80,9 @@ class Profile {
         gameUsername: json['game_username'] as String?,
         gameStatus: json['game_status'] as String?,
         gameVisibility: json['game_visibility'] as String? ?? 'everyone',
+        avatarConfig: json['avatar_config'] == null
+            ? null
+            : AvatarConfig.fromStorage(json['avatar_config']),
       );
 
   Map<String, dynamic> toJson() => {
@@ -359,8 +367,10 @@ class FriendSuggestion {
           : DateTime.parse(json['last_seen_at'] as String),
       isOnline: json['is_online'] as bool? ?? false,
       mutualCount: (json['mutual_count'] as num?)?.toInt() ?? 0,
-      suggestionReason: json['suggestion_reason'] as String? ?? 'Suggested for you',
-      suggestionType: json['suggestion_type'] as String? ?? 'People you may know',
+      suggestionReason:
+          json['suggestion_reason'] as String? ?? 'Suggested for you',
+      suggestionType:
+          json['suggestion_type'] as String? ?? 'People you may know',
       isFollowing: json['is_following'] as bool? ?? false,
       isCloseFriend: json['is_close_friend'] as bool? ?? false,
       profileStatus: json['profile_status'] as String?,
@@ -381,20 +391,20 @@ class FriendSuggestion {
   }
 
   Map<String, dynamic> toJson() => {
-    'user_id': userId,
-    'username': username,
-    'display_name': displayName,
-    'avatar_url': avatarUrl,
-    'last_seen_at': lastSeenAt?.toIso8601String(),
-    'is_online': isOnline,
-    'mutual_count': mutualCount,
-    'suggestion_reason': suggestionReason,
-    'suggestion_type': suggestionType,
-    'is_following': isFollowing,
-    'is_close_friend': isCloseFriend,
-    'profile_status': profileStatus,
-    'profile_color': profileColor,
-  };
+        'user_id': userId,
+        'username': username,
+        'display_name': displayName,
+        'avatar_url': avatarUrl,
+        'last_seen_at': lastSeenAt?.toIso8601String(),
+        'is_online': isOnline,
+        'mutual_count': mutualCount,
+        'suggestion_reason': suggestionReason,
+        'suggestion_type': suggestionType,
+        'is_following': isFollowing,
+        'is_close_friend': isCloseFriend,
+        'profile_status': profileStatus,
+        'profile_color': profileColor,
+      };
 }
 
 class StatusPost {

@@ -100,14 +100,12 @@ class AvatarConfig {
     return AvatarConfig(
       enabled: json['enabled'] as bool? ?? false,
       preset: _choice(json['preset'] as String? ?? 'orb', presets, 'orb'),
-      bodyHex:
-          _hex(json['body_hex'] as String? ?? '#D4FF00', '#D4FF00'),
+      bodyHex: _hex(json['body_hex'] as String? ?? '#D4FF00', '#D4FF00'),
       expression: _choice(
           json['expression'] as String? ?? 'happy', expressions, 'happy'),
-      accessory: _choice(
-          json['accessory'] as String? ?? 'none', accessories, 'none'),
-      auraHex:
-          _hex(json['aura_hex'] as String? ?? '#7C5CFF', '#7C5CFF'),
+      accessory:
+          _choice(json['accessory'] as String? ?? 'none', accessories, 'none'),
+      auraHex: _hex(json['aura_hex'] as String? ?? '#7C5CFF', '#7C5CFF'),
       reaction: _choice(json['reaction'] as String? ?? '🔥', reactions, '🔥'),
       animationsEnabled: json['animations_enabled'] as bool? ?? true,
     );
@@ -179,9 +177,8 @@ class AvatarConfig {
       other.animationsEnabled == animationsEnabled;
 
   @override
-  int get hashCode =>
-      Object.hash(enabled, preset, bodyHex, expression, accessory, auraHex,
-          reaction, animationsEnabled);
+  int get hashCode => Object.hash(enabled, preset, bodyHex, expression,
+      accessory, auraHex, reaction, animationsEnabled);
 
   @override
   String toString() =>

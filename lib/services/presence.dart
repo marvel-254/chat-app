@@ -19,6 +19,7 @@ class Presence {
 
   static Timer? _heartbeat;
   static Timer? _poll;
+  static RealtimeChannel? _realtime;
   static bool _foreground = true;
   static Set<String> _listPeers = {};
   static final Set<String> _focus = {};
@@ -38,6 +39,7 @@ class Presence {
     _poll?.cancel();
     _heartbeat = null;
     _poll = null;
+    _teardownRealtime();
     _listPeers = {};
     _focus.clear();
     // Preserve _lastSeen, _games and _hidden so presence survives auth rebind.
@@ -174,8 +176,7 @@ class Presence {
           continue;
         }
         final raw = row['last_seen_at'] as String?;
-        _lastSeen[id] =
-            raw == null ? null : DateTime.parse(raw).toLocal();
+        _lastSeen[id] = raw == null ? null : DateTime.parse(raw).toLocal();
       }
       // Clear stale entries for peers no longer in the result set.
       for (final id in ids) {
@@ -195,10 +196,52 @@ class Presence {
     if (_watched.isEmpty) {
       _poll?.cancel();
       _poll = null;
+      _teardownRealtime();
       return;
     }
     _poll ??= Timer.periodic(
         const Duration(seconds: 12), (_) => unawaited(refresh()));
+    _ensureRealtime();
+  }
+
+  /// Realtime game presence. The 12s poll stays as a fallback in case the
+  /// publication is missing on an older deployment or the socket drops.
+  static void _ensureRealtime() {
+    if (_realtime != null) return;
+    final client = Supabase.instance.client;
+    if (client.auth.currentUser == null) return;
+    try {
+      _realtime = client
+          .channel('bro-game-presence')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.update,
+            schema: 'public',
+            table: 'profiles',
+            callback: (_) => unawaited(_reloadWatchedGames()),
+          )
+          .subscribe();
+    } catch (e) {
+      debugPrint('Presence realtime setup failed: $e');
+      _realtime = null;
+    }
+  }
+
+  static void _teardownRealtime() {
+    final channel = _realtime;
+    if (channel == null) return;
+    _realtime = null;
+    try {
+      unawaited(Supabase.instance.client.removeChannel(channel));
+    } catch (_) {}
+  }
+
+  /// Only re-fetch game fields on a realtime event, without touching the
+  /// last-seen cache (that has its own cadence and privacy rules).
+  static Future<void> _reloadWatchedGames() async {
+    final ids = _watched.toList();
+    if (ids.isEmpty) return;
+    await _refreshGames(ids);
+    epoch.value++;
   }
 }
 
@@ -215,9 +258,8 @@ String formatPresenceLabel(
   final local = lastSeen.toLocal();
   final clock = now ?? DateTime.now();
   if (diff.inHours < 24 && local.day == clock.day) {
-    final h = local.hour == 0
-        ? 12
-        : (local.hour > 12 ? local.hour - 12 : local.hour);
+    final h =
+        local.hour == 0 ? 12 : (local.hour > 12 ? local.hour - 12 : local.hour);
     final m = local.minute.toString().padLeft(2, '0');
     final ap = local.hour >= 12 ? 'PM' : 'AM';
     return 'last seen today at $h:$m $ap';
