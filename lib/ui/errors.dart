@@ -125,6 +125,11 @@ String _softenKnown(String raw, String fallback) {
   if (message.contains('suspicious')) {
     return "That message looks like it might be unsafe, so we held it back.";
   }
+  if (message.contains('22p02') ||
+      message.contains('invalid input syntax') ||
+      message.contains('invalid uuid')) {
+    return fallback;
+  }
   if (message.contains('not a participant') ||
       message.contains('row-level security') ||
       message.contains('42501') ||
@@ -175,7 +180,8 @@ String _softenKnown(String raw, String fallback) {
     return fallback;
   }
 
-  final cleaned = raw.replaceFirst(RegExp(r'^(Exception|StateError|Error):\s*'), '');
+  final cleaned =
+      raw.replaceFirst(RegExp(r'^(Exception|StateError|Error):\s*'), '');
   if (cleaned.length > 180) return fallback;
   if (RegExp(r'[{}\[\]]').hasMatch(cleaned)) return fallback;
   return cleaned.trim().isEmpty ? fallback : cleaned.trim();

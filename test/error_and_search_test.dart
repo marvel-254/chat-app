@@ -107,6 +107,18 @@ void main() {
       );
     });
 
+    test('hides raw postgres syntax errors', () {
+      expect(
+        friendlyErrorMessage(
+            PostgrestException(
+              message: 'invalid input syntax for type uuid: "e2e_355cbb"',
+              code: '22P02',
+            ),
+            fallback: 'Give it another try.'),
+        'Give it another try.',
+      );
+    });
+
     test('falls back instead of dumping JSON', () {
       expect(
         friendlyErrorMessage('{error: true, stack: [...]}'),
