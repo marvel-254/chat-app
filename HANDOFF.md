@@ -356,3 +356,19 @@ Non-blocking:
 
 - Local SDK: `/home/marvel/flutter_sdk/bin/flutter`; run analyze/test from the repo root.
 - All work so far is uncommitted; review findings plus the remaining phases describe exactly where to resume.
+
+## Current work status (2026-11-19)
+
+### Fixed: custom chat background upload and all profile writes (commit 7897e72)
+
+**Symptom:** every custom chat background image upload appeared to fail with "We need a JPEG, PNG, WebP, or GIF under 10 MB". Verified in Chromium via agent-browser against a local `flutter build web` with the real Supabase config.
+
+**Root cause:** the image upload itself succeeded (R2 `/upload/background` 200, `/sign` 200), but the follow-up `PATCH /profiles` returned 42501 `permission denied for table profiles`. Migration `20261106000000_privacy_and_fixes.sql` revoked SELECT on `public.profiles`; PostgreSQL still needs SELECT on the `id` column read by `UPDATE ... WHERE id = ...` and by the RLS policy. Every profile write (avatar, display name, read receipts, background) was broken, not just backgrounds. Direct reads of `profiles.avatar_url` and `profiles.read_receipts_enabled` were rejected for the same reason.
+
+**Fix:** migration `20261119200000_restore_profile_write_privilege.sql` grants `SELECT (id)` only, keeping masked columns behind `visible_profiles`. Client reads in `lib/services/supabase.dart` and `lib/services/read_receipts.dart` now use `visible_profiles`. Migration pushed to the linked project; CI and Pages green on commit 7897e72.
+
+**Verified:** upload 200, sign 200, profile PATCH 204, preview download 200, tile shows "My image" and is selected; `flutter analyze --no-fatal-warnings --no-fatal-infos` has no errors; all 82 tests pass.
+
+### Open-issue triage correction
+
+Several items previously listed as outstanding are already resolved in the current tree: the `conversations` UPDATE policy exists, `updateProfileDetails` now writes `default_message_expiry` conditionally, `delete_expired_messages` is scheduled via `cron.job`, voice notes are implemented in `lib/services/voice_note.dart`, and profile-picture reads now use `visible_profiles`. Still open: `Supa.setMessagePinned` accepts `conversationId` but does not pass it to the `pin_message` RPC, so the client-side five-pin guard is skipped; the pin menu is also offered on peer messages that the database trigger rejects.
