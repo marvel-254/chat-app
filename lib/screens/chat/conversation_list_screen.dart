@@ -178,7 +178,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   }
 
   void _reloadSuggestions() {
-    if (mounted) setState(() => _suggestions = Supa.getFriendSuggestions(limit: 8));
+    if (mounted)
+      setState(() => _suggestions = Supa.getFriendSuggestions(limit: 8));
   }
 
   void _onSearchChanged(String value, {bool immediate = false}) {
@@ -256,13 +257,13 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   void _onSearchResultTap(Profile user) {
     _rememberSearch(_search.text);
     FocusScope.of(context).unfocus();
-    _startDM(user);
+    _startDM(user.id);
   }
 
-  Future<void> _startDM(dynamic other) async {
+  Future<void> _startDM(String peerId) async {
     try {
-      final conv = await Supa.getOrCreateDM(other.id);
-      if (mounted) context.go('/chat/${conv.id}', extra: other);
+      final conv = await Supa.getOrCreateDM(peerId);
+      if (mounted) context.go('/chat/${conv.id}');
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -553,7 +554,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                           const Spacer(),
                           TextButton.icon(
                             onPressed: () => context.push('/suggest-friends'),
-                            icon: Icon(Icons.chevron_right, size: 16, color: _P.primary),
+                            icon: Icon(Icons.chevron_right,
+                                size: 16, color: _P.primary),
                             label: Text('See all',
                                 style: TextStyle(
                                   color: _P.primary,
@@ -561,7 +563,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                                   fontWeight: FontWeight.w600,
                                 )),
                             style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
                               minimumSize: Size.zero,
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             ),
@@ -581,9 +584,9 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                               offset: const Offset(0.08, 0),
                               child: _SuggestionTile(
                                 user: people[idx],
-                                onTap: () => _startDM(people[idx]),
-                                onLongPress: () =>
-                                    context.push('/profile/${people[idx].userId}'),
+                                onTap: () => _startDM(people[idx].userId),
+                                onLongPress: () => context
+                                    .push('/profile/${people[idx].userId}'),
                               ),
                             ),
                         ],
@@ -793,8 +796,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                                     ValueListenableBuilder<int>(
                                       valueListenable: Presence.epoch,
                                       builder: (_, __, ___) {
-                                        final game =
-                                            Presence.game(conv.peerId);
+                                        final game = Presence.game(conv.peerId);
                                         final label = game?.playingLabel;
                                         if (label == null) {
                                           return const SizedBox.shrink();
