@@ -184,7 +184,7 @@ class Supa {
       });
       debugPrint(
           'getFriendSuggestionsByCategory("$category") -> ${(res as List).length} results');
-      return (res as List)
+      return res
           .map((e) => FriendSuggestion.fromJson(e as Map<String, dynamic>))
           .toList();
     } catch (e) {

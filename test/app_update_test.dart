@@ -30,7 +30,8 @@ void main() {
     });
 
     test('rejects HTML pages and digest mismatches', () {
-      final badDigest = 'sha256:' + List.filled(64, '0').join();
+      final zeros = List.filled(64, '0').join();
+      final badDigest = 'sha256:$zeros';
       expect(AppUpdate.verifyDigest(<int>[0x3c, 0x21, 0x44, 0x4f], digest),
           contains('not an Android package'));
       expect(AppUpdate.verifyDigest(apkHeader, badDigest),

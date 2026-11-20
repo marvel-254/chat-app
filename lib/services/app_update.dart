@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
-import 'package:pointycastle/export.dart';
+import 'package:pointycastle/digests/sha256.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -59,7 +59,8 @@ class AppUpdate {
   static String _sha256Hex(List<int> bytes) {
     final digest = SHA256Digest();
     final output = Uint8List(digest.digestSize);
-    digest.update(bytes, 0, bytes.length);
+    final input = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+    digest.update(input, 0, input.length);
     digest.doFinal(output, 0);
     return output.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
   }
