@@ -1593,7 +1593,7 @@ class Supa {
     signal.fetchBundle ??= (userId) async {
       final devices = await client
           .from('signal_devices')
-          .select('device_id,registration_id,identity_key,signed_prekey_id,'
+          .select('id,device_id,registration_id,identity_key,signed_prekey_id,'
                   'signed_prekey,signed_prekey_signature')
           .eq('user_id', userId)
           .isFilter('revoked_at', null)
@@ -1602,21 +1602,16 @@ class Supa {
       if ((devices as List).isEmpty) return null;
       final device = devices.first as Map<String, dynamic>;
       final deviceId = device['device_id'] as int;
+      final deviceRowId = device['id'] as String;
       final prekeys = await client
           .from('signal_one_time_prekeys')
           .select('prekey_id,public_key')
-          .eq('device_row_id', device['id'] as String? ?? '')
+          .eq('device_row_id', deviceRowId)
           .isFilter('used_at', null)
           .limit(1);
-      // The row id is needed for the atomic claim RPC; fetch it explicitly.
-      final deviceRow = await client
-          .from('signal_devices')
-          .select('id')
-          .eq('user_id', userId)
-          .eq('device_id', deviceId)
-          .single();
+      // Atomic claim; the RPC authorises own devices and conversation peers.
       final claimed = await client.rpc('signal_claim_prekey', params: {
-        'p_device_row_id': deviceRow['id'] as String,
+        'p_device_row_id': deviceRowId,
       });
       final claimRows = claimed as List?;
       final hasClaim = claimRows != null && claimRows.isNotEmpty;
@@ -1629,7 +1624,7 @@ class Supa {
       final kyber = await client
           .from('signal_kyber_prekeys')
           .select('prekey_id,public_key,signature')
-          .eq('device_row_id', deviceRow['id'] as String)
+          .eq('device_row_id', deviceRowId)
           .isFilter('used_at', null)
           .limit(1);
       if ((kyber as List).isEmpty) return null;
