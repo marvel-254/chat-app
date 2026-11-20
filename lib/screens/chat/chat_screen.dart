@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import '../../theme/app_colors.dart' as app_colors;
 import '../../services/supabase.dart';
+import '../../services/signal_e2ee.dart';
 import '../../services/presence.dart';
 import '../../services/connection_monitor.dart';
 import '../../services/message_outbox.dart';
@@ -1181,6 +1182,48 @@ class _ChatScreenState extends State<ChatScreen> {
     return '${dt.month}/${dt.day}/${dt.year} at $time';
   }
 
+  Future<void> _showSafetyNumber() async {
+    try {
+      final fingerprint =
+          await Supa.safetyNumberForConversation(widget.conversationId);
+      final verified = await Supa.isPeerVerifiedInConversation(
+        widget.conversationId,
+        fingerprint,
+      );
+      if (!mounted) return;
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Verify contact'),
+          content: SelectableText(
+            'Compare this safety number with your contact out of band.\n\n$fingerprint',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Close'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(verified ? 'Reverify' : 'Mark verified'),
+            ),
+          ],
+        ),
+      );
+      if (accepted == true) {
+        await Supa.verifyPeerInConversation(
+          widget.conversationId,
+          fingerprint,
+        );
+      }
+    } on E2eeException catch (error) {
+      if (!mounted) return;
+      _unsupported(error.reason.name == 'peerBundleUnavailable'
+          ? 'The other person has not set up encrypted messaging yet.'
+          : 'Could not load the safety number. Try again.');
+    }
+  }
+
   Future<void> _showMessageActions(Message message) async {
     final isMine = message.senderId == Supa.currentUser!.id;
     final now = DateTime.now();
@@ -1203,6 +1246,13 @@ class _ChatScreenState extends State<ChatScreen> {
               title: Text(
                   message.pinnedAt == null ? 'Pin message' : 'Unpin message'),
               onTap: () => Navigator.pop(sheetContext, 'pin')),
+        ListTile(
+            leading: const Icon(Icons.verified_user_outlined),
+            title: const Text('View safety number'),
+            onTap: () {
+              Navigator.pop(sheetContext);
+              unawaited(_showSafetyNumber());
+            }),
         if (canEdit)
           ListTile(
               leading: const Icon(Icons.edit_outlined),

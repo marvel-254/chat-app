@@ -1,0 +1,7 @@
+-- Reconciliation placeholder.
+--
+-- The linked BRO project has migration 20261120140000 recorded as applied, but
+-- that SQL file is not present in this checkout. Its contents could not be
+-- recovered from the repository. This empty file records the remote version so
+-- the Supabase CLI can apply the migrations that follow it. It must not be
+-- treated as a new schema change and has no DDL.
