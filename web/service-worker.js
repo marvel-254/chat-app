@@ -9,7 +9,7 @@
  *  - Supabase/API calls → never cached (network-only, pass-through).
  */
 
-const VERSION = 'bro-pwa-v3';
+const VERSION = 'bro-pwa-v4';
 const APP_SHELL = [
   'index.html',
   'main.dart.js',

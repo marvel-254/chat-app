@@ -642,6 +642,80 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Future<void> _showScheduledMessages() async {
+    final senderId = Supa.currentUser?.id;
+    if (senderId == null || !mounted) return;
+    List<scheduled.ScheduledMessage> items = [];
+    String? error;
+    try {
+      items = (await scheduled.ScheduledMessages.list())
+          .where((item) =>
+              item.senderId == senderId &&
+              item.conversationId == widget.conversationId)
+          .toList()
+        ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+    } catch (e) {
+      error = friendlyErrorMessage(e,
+          fallback: "Couldn't load scheduled messages.");
+    }
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Scheduled messages'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: error != null
+                ? Text(error)
+                : items.isEmpty
+                    ? const Text('Nothing is scheduled in this chat.')
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: items.length,
+                        itemBuilder: (_, index) {
+                          final item = items[index];
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(item.content,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis),
+                            subtitle: Text(
+                              'Sends ${DateFormat.yMMMd().add_jm().format(item.scheduledAt.toLocal())}',
+                            ),
+                            trailing: IconButton(
+                              tooltip: 'Cancel',
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () async {
+                                try {
+                                  await scheduled.ScheduledMessages.cancel(
+                                      item.id);
+                                  setDialogState(() => items.remove(item));
+                                } catch (e) {
+                                  if (mounted) {
+                                    _unsupported(friendlyErrorMessage(e,
+                                        fallback:
+                                            "Couldn't cancel the scheduled message."));
+                                  }
+                                }
+                              },
+                            ),
+                          );
+                        },
+                      ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildOutboxSheet(
     BuildContext sheetContext,
     List<PendingMessage> items,
@@ -724,6 +798,16 @@ class _ChatScreenState extends State<ChatScreen> {
                   _showOutbox();
                 },
               ),
+            _MenuTile(
+              icon: Icons.schedule_send_outlined,
+              label: 'Scheduled messages',
+              onTap: () {
+                Navigator.pop(context);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _showScheduledMessages();
+                });
+              },
+            ),
             _MenuTile(
               icon: Icons.timer_outlined,
               label:

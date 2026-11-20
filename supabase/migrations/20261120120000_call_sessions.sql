@@ -143,8 +143,8 @@ returns void language sql security definer set search_path = '' as $$
 $$;
 
 -- Keep media signaling private and stamp the actual sender/recipient in the DB.
-drop policy "Conversation members send call signals" on realtime.messages;
-drop policy "Conversation members receive call signals" on realtime.messages;
+-- The legacy `call:%` policies are intentionally retained so older clients
+-- keep working during rollout (see 20261120150000_calls_push_cutover_compat).
 create policy call_session_receives_signal on realtime.messages for select to authenticated
   using (exists (select 1 from public.call_sessions c
     where realtime.topic() = 'bro-call:' || c.id::text and (select auth.uid()) in (c.caller_id,c.callee_id)));
@@ -182,7 +182,7 @@ select cron.schedule('bro-call-expiry', '* * * * *', $job$
   delete from public.call_sessions where started_at < now() - interval '90 days';
 $job$);
 
-create table public.bro_turn_quota (
+create table if not exists public.bro_turn_quota (
   user_id uuid primary key references auth.users on delete cascade,
   window_start timestamptz not null,
   requests integer not null

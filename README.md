@@ -30,15 +30,24 @@ The default backend for new attachments and chat backgrounds is Supabase Storage
 
 ## Auto-update
 
-BRO checks for updates automatically. When a new release is published on GitHub Releases, the app shows an in-app update dialog. The update service downloads the APK from the release asset, verifies the embedded manifest (package name, version code, and version name), and offers to install it.
+BRO checks GitHub Releases every six hours and offers an in-app APK update. The
+build stamps its semantic version (`APP_VERSION`, injected from `pubspec.yaml`)
+and compares it with release tags such as `v1.4.5`; local builds without that
+define do not prompt.
 
-End users receive updates automatically. To publish a new release:
+The updater picks the arm64 APK for Android devices, checks that the download
+is a ZIP/APK, and verifies it against the `sha256:` digest GitHub publishes for
+the release asset before handing it to the Android installer. There is no
+separate embedded manifest file. If no APK asset is available, the release page
+is opened in the browser instead.
 
-1. Create a new GitHub Release with the APK attached (e.g., `build/app/outputs/flutter-apk/*-release.apk`).
-2. Tag the release as `v<version>` (e.g., `v1.0.0`).
-3. The app detects the new release and prompts the user to update.
+To publish a new release:
 
-The release must include a manifest file embedded in the APK for the app to verify the update. See `lib/services/update_logic.dart` for the manifest format.
+1. Create a GitHub Release with the three split APKs attached.
+2. Tag it `v<version>` and keep `pubspec.yaml`'s version in sync.
+3. The app detects the new tag on its next check and prompts the user.
+
+See `lib/services/app_update.dart` for the comparison and verification logic.
 
 ## License
 

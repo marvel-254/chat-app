@@ -184,7 +184,7 @@ class Supa {
       });
       debugPrint(
           'getFriendSuggestionsByCategory("$category") -> ${(res as List).length} results');
-      return (res as List)
+      return res
           .map((e) => FriendSuggestion.fromJson(e as Map<String, dynamic>))
           .toList();
     } catch (e) {
@@ -437,103 +437,57 @@ class Supa {
     }
   }
 
-  static Future<int> getFollowersCount(String userId) async {
+  static void _logUnexpected(String where, Object error) {
+    debugPrint('Supa.$where failed: $error');
+  }
+
+  static Future<int> _connectionCount(String userId, String direction) async {
     try {
-      final res = await client
-          .from('user_follows')
-          .select('follower_id')
-          .eq('followed_id', userId);
-      return (res as List).length;
-    } catch (_) {
+      final result = await client.rpc('count_user_connections', params: {
+        'p_user_id': userId,
+        'p_direction': direction,
+      });
+      return (result as num?)?.toInt() ?? 0;
+    } catch (e) {
+      _logUnexpected('_connectionCount', e);
       return 0;
     }
   }
 
-  static Future<int> getFollowingCount(String userId) async {
+  static Future<int> getFollowersCount(String userId) =>
+      _connectionCount(userId, 'followers');
+
+  static Future<int> getFollowingCount(String userId) =>
+      _connectionCount(userId, 'following');
+
+  static Future<List<Profile>> _connections(String userId, String direction,
+      {int? limit, int? offset, String? search}) async {
     try {
-      final res = await client
-          .from('user_follows')
-          .select('followed_id')
-          .eq('follower_id', userId);
-      return (res as List).length;
-    } catch (_) {
-      return 0;
+      final rows = await client.rpc('search_user_connections', params: {
+        'p_user_id': userId,
+        'p_direction': direction,
+        'p_search': sanitizeSearchTerm(search ?? ''),
+        'p_limit': (limit ?? 30).clamp(1, 100).toInt(),
+        'p_offset': (offset ?? 0).clamp(0, 100000).toInt(),
+      });
+      return (rows as List)
+          .map((row) => Profile.fromJson(row as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      _logUnexpected('_connections', e);
+      return [];
     }
   }
 
   static Future<List<Profile>> getFollowers(String userId,
-      {int? limit, int? offset, String? search}) async {
-    try {
-      var query = client
-          .from('user_follows')
-          .select('follower_id')
-          .eq('followed_id', userId) as dynamic;
-
-      if (offset != null && offset > 0) {
-        query = query.range(offset, offset + (limit ?? 30) - 1);
-      } else if (limit != null) {
-        query = query.limit(limit);
-      }
-
-      final res = await query;
-      final ids =
-          (res as List).map((row) => row['follower_id'] as String).toList();
-      if (ids.isEmpty) return [];
-
-      var profileQuery = client
-          .from('visible_profiles')
-          .select()
-          .filter('id', 'in', ids) as dynamic;
-      final term = sanitizeSearchTerm(search ?? '');
-      if (term.isNotEmpty) {
-        profileQuery = profileQuery
-            .or('username.ilike.%$term%,display_name.ilike.%$term%');
-      }
-      final profs = await profileQuery;
-      return (profs as List)
-          .map((p) => Profile.fromJson(p as Map<String, dynamic>))
-          .toList();
-    } catch (_) {
-      return [];
-    }
-  }
+          {int? limit, int? offset, String? search}) =>
+      _connections(userId, 'followers',
+          limit: limit, offset: offset, search: search);
 
   static Future<List<Profile>> getFollowing(String userId,
-      {int? limit, int? offset, String? search}) async {
-    try {
-      var query = client
-          .from('user_follows')
-          .select('followed_id')
-          .eq('follower_id', userId) as dynamic;
-
-      if (offset != null && offset > 0) {
-        query = query.range(offset, offset + (limit ?? 30) - 1);
-      } else if (limit != null) {
-        query = query.limit(limit);
-      }
-
-      final res = await query;
-      final ids =
-          (res as List).map((row) => row['followed_id'] as String).toList();
-      if (ids.isEmpty) return [];
-
-      var profileQuery = client
-          .from('visible_profiles')
-          .select()
-          .filter('id', 'in', ids) as dynamic;
-      final term = sanitizeSearchTerm(search ?? '');
-      if (term.isNotEmpty) {
-        profileQuery = profileQuery
-            .or('username.ilike.%$term%,display_name.ilike.%$term%');
-      }
-      final profs = await profileQuery;
-      return (profs as List)
-          .map((p) => Profile.fromJson(p as Map<String, dynamic>))
-          .toList();
-    } catch (_) {
-      return [];
-    }
-  }
+          {int? limit, int? offset, String? search}) =>
+      _connections(userId, 'following',
+          limit: limit, offset: offset, search: search);
 
   static Future<List<String>> getCloseFriendIds() async {
     final me = currentUser;
@@ -999,7 +953,9 @@ class Supa {
           await setMessageExpiry(convId, myProfile.defaultMessageExpiry);
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      _logUnexpected('getOrCreateDM default expiry', e);
+    }
 
     return Conversation(
         id: convId, createdAt: DateTime.now(), updatedAt: DateTime.now());
@@ -1200,7 +1156,9 @@ class Supa {
               for (final row in hides as List) {
                 hiddenIds.add(row['message_id'] as String);
               }
-            } catch (_) {}
+            } catch (e) {
+              _logUnexpected('watchMessages enrichment', e);
+            }
           }
 
           final owner = currentUser?.id;
@@ -1353,21 +1311,9 @@ class Supa {
         .select('message_expiry')
         .eq('id', conversationId)
         .single();
-    final raw = row['message_expiry'] as String? ?? '00:00:00';
-    final days = RegExp(r'(\d+(?:\.\d+)?)\s+days?').firstMatch(raw);
-    if (days != null) {
-      final duration =
-          Duration(seconds: ((double.parse(days.group(1)!) * 86400).round()));
-      return duration == Duration.zero ? null : duration;
-    }
-    final parts = raw.split(':');
-    if (parts.length != 3) return null;
-    final seconds = double.tryParse(parts[2]) ?? 0;
-    final duration = Duration(
-        hours: int.tryParse(parts[0]) ?? 0,
-        minutes: int.tryParse(parts[1]) ?? 0,
-        seconds: seconds.floor());
-    return duration == Duration.zero ? null : duration;
+    // Use the same parser as profile defaults: it handles `HH:MM:SS`,
+    // `N days`, `N hours` and `N seconds` interval representations.
+    return parseInterval(row['message_expiry']);
   }
 
   // ===== Drafts =====
