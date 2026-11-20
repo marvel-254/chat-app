@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'crypto/adapter.dart';
+import 'linked_devices.dart';
 
 class SecurityFailure implements Exception {
   const SecurityFailure(this.message);
@@ -49,6 +50,7 @@ class SecureChat {
     _checkOwner(owner);
     await _db.from('chat_device_keys').upsert({
       'user_id': owner,
+      'device_id': await LinkedDevices.currentDeviceId(),
       'fingerprint': fp,
       'public_key': pair['publicKey'],
     }, onConflict: 'fingerprint', ignoreDuplicates: true);
@@ -172,17 +174,19 @@ class SecureChat {
       throw const SecurityFailure(
           'Unverified or changed devices. Compare fingerprints using the shield before sending.');
     final own = await _identity(owner);
+    final recipients = keys.map((k) => k.fingerprint).join(',');
     final packet = await _run({
       'op': 'seal',
       'keys': keys.map((d) => d.key).toList(),
       'secret': own['privateKey'],
       'body': {
         ..._context(id, conversation, owner, reply, purpose),
-        'text': text
+        'text': text,
+        'recipients': recipients
       }
     });
     _checkOwner(owner);
-    return '$prefix${own['fp']}:$packet';
+    return '$prefix${own['fp']}:$recipients:$packet';
   }
 
   static Future<String> open(String content, String id, String conversation,
@@ -194,6 +198,9 @@ class SecureChat {
     final split = content.indexOf(':', prefix.length);
     if (split < 0) throw const SecurityFailure('Invalid envelope.');
     final fp = content.substring(prefix.length, split);
+    final end = content.indexOf(':', split + 1);
+    if (end < 0) throw const SecurityFailure('Invalid recipient list.');
+    final recipients = content.substring(split + 1, end);
     final trusted = await _store.read(key: _trustSlot(owner, conversation));
     if (trusted == null ||
         !(jsonDecode(trusted) as List)
@@ -214,10 +221,13 @@ class SecureChat {
     final own = await _identity(owner);
     final text = await _run({
       'op': 'open',
-      'packet': content.substring(split + 1),
+      'packet': content.substring(end + 1),
       'secret': own['privateKey'],
       'signer': row['public_key'],
-      'context': _context(id, conversation, sender, reply, purpose)
+      'context': {
+        ..._context(id, conversation, sender, reply, purpose),
+        'recipients': recipients
+      }
     });
     _checkOwner(owner);
     return text;

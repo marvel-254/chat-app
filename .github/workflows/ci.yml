@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -29,3 +33,13 @@ jobs:
       - run: npm ci --prefix checks --ignore-scripts && node --test checks/*.test.cjs checks/*.test.mjs
       - run: flutter build web --release
       - run: flutter build apk --debug
+
+  database-reset:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      # Fresh runner, no project link or production credentials.
+      - run: supabase db start

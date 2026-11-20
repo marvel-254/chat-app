@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+import 'browser_notice.dart';
+import 'app_lock.dart';
+import 'e2ee.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -40,6 +44,10 @@ class PushNotifications {
     if (!kIsWeb)
       FirebaseMessaging.onBackgroundMessage(firebaseBackgroundMessageHandler);
     final messaging = FirebaseMessaging.instance;
+    if (kIsWeb && !await messaging.isSupported()) {
+      _initialized = false;
+      return;
+    }
 
     FirebaseMessaging.onMessage.listen((message) {
       unawaited(_showForegroundNotice(message));
@@ -51,6 +59,18 @@ class PushNotifications {
     });
     if (kIsWeb) {
       _pendingTarget = PushMessageTarget.fromData(Uri.base.queryParameters);
+      listenForBrowserNotices((body) {
+        try {
+          final data = jsonDecode(body);
+          final msg = RemoteMessage(
+              data: Map<String, dynamic>.from(data['route'] as Map));
+          if (data['opened'] == true) {
+            _openMessage(msg);
+          } else {
+            unawaited(_showForegroundNotice(msg));
+          }
+        } catch (_) {}
+      });
     }
     _authSubscription = Supa.authStateChanges.listen((state) {
       if (state.event == AuthChangeEvent.signedOut) {
@@ -183,6 +203,53 @@ class PushNotifications {
     }
   }
 
+  static Future<String> previewStyle() async =>
+      (await SharedPreferences.getInstance())
+          .getString('notice.style.$_activeUserId') ??
+      'generic';
+  static Future<void> setPreviewStyle(String value) async {
+    final owner = _activeUserId;
+    if (owner != null &&
+        const {'generic', 'sender', 'text', 'both'}.contains(value))
+      await (await SharedPreferences.getInstance())
+          .setString('notice.style.$owner', value);
+  }
+
+  static Future<String> _localPreview(
+      PushMessageTarget target, RemoteMessage msg) async {
+    try {
+      final style = await previewStyle();
+      if (style == 'generic' ||
+          await AppLock.isEnabled() ||
+          await Supa.isConversationLocked(target.conversationId))
+        return _noticeBody;
+      final id = msg.data['message_id'];
+      if (id is! String) return _noticeBody;
+      final row = await Supa.client
+          .from('messages')
+          .select('content,sender_id,reply_to_id')
+          .eq('id', id)
+          .eq('conversation_id', target.conversationId)
+          .single();
+      final packet = row['content'] as String;
+      if (!packet.startsWith(SecureChat.prefix)) return _noticeBody;
+      final body = await SecureChat.open(packet, id, target.conversationId,
+          row['sender_id'], row['reply_to_id']);
+      final name = style == 'sender' || style == 'both'
+          ? (await Supa.getProfile(row['sender_id']))?.label
+          : null;
+      final preview = body.startsWith('attachment:')
+          ? 'Attachment'
+          : String.fromCharCodes(body.runes.take(90));
+      return [
+        if (name != null) name,
+        if (style == 'text' || style == 'both') preview else _noticeBody
+      ].join(': ');
+    } catch (_) {
+      return _noticeBody;
+    }
+  }
+
   static Future<void> _showForegroundNotice(RemoteMessage message) async {
     final userId = _activeUserId;
     final target = PushMessageTarget.fromData(message.data);
@@ -191,10 +258,14 @@ class PushNotifications {
         !await _canShow(target, userId) ||
         _activeUserId != userId) return;
 
+    final notice = await _localPreview(target, message);
+    if (_activeUserId != userId ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed)
+      return;
     final messenger = appScaffoldMessengerKey.currentState;
     messenger?.hideCurrentSnackBar();
     messenger?.showSnackBar(SnackBar(
-      content: const Text(_noticeBody),
+      content: Text(notice),
       behavior: SnackBarBehavior.floating,
       action: SnackBarAction(
         label: 'Open',

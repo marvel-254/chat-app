@@ -1,5 +1,5 @@
 import { deliver } from "./delivery.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.119.1";
 
 type DatabaseWebhook = {
   type: string;
@@ -198,7 +198,13 @@ Deno.serve(async (request) => {
           });
           if (error) throw error;
           if (!claimed) {
-            counts.duplicate++;
+            const { data: prior, error: lookup } = await supabase.from(
+              "push_deliveries",
+            ).select("done").eq("event_key", event).eq("device_id", device.id)
+              .maybeSingle();
+            if (lookup) throw lookup;
+            if (prior?.done) counts.duplicate++;
+            else counts.transient++;
             return;
           }
           const outcome = await deliver(() =>

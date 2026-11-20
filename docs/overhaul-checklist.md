@@ -1,6 +1,12 @@
 # Release checklist (2026-11-20)
 - [x] Inventory Flutter UI/services, Android activity/manifest, PWA, R2 worker, Supabase migrations/functions, CI and tests. Confirm project identity and report outage (#107).
-- [ ] Replace ID-derived writer, secure every content-bearing side channel and exercise real device verification.
+- [x] Replace the insecure writer; route message/attachment/voice/reaction/schedule writes through authenticated encryption and remove false UI claims.
+- [x] Add public-key ownership/revocation, local verification and legacy read-only history.
+- [x] Implement TURN issuance, scoped signaling, invitation leases, capture service and recovery bounds.
+- [x] Implement FCM token lifecycle, backend retry/claims and a real scoped background push worker.
+- [x] Exercise new migrations and authorization under isolated PostgreSQL roles; add protocol, worker, attachment and delivery checks.
+- [x] Document the threat model, operator setup, manual matrix and rollback.
+- [ ] Independent security review and real device verification.
 - [ ] Verify relay credentials, signaling timeouts, recovery and lifecycle on device pairs.
 - [ ] Test real Firebase registration, expiry, account changes and browser background delivery.
 - [ ] Reset a full staging stack, verify RLS and run Android/web release tests before rollout.

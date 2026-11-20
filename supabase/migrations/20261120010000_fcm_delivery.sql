@@ -27,46 +27,43 @@ grant execute on function public.claim_push(text,uuid) to service_role;
 do $$ begin if exists(select from pg_extension where extname='pg_cron') then
  perform cron.schedule('bro-push-retention','27 3 * * *',$job$delete from public.fcm_devices where updated_at<now()-interval '60 days'; delete from public.push_deliveries where claimed_at<now()-interval '14 days'$job$);
 end if; end; $$;
-create or replace function public.dispatch_message_push()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $$
-declare
-  endpoint text;
-  webhook_secret text;
+-- pg_net does not redeliver a failed webhook by itself. Persist only routing
+-- fields; bodies, titles, FCM tokens and decrypted secrets do not belong here.
+create table public.push_jobs (
+ id uuid primary key default gen_random_uuid(), event jsonb not null,
+ attempts integer not null default 0, next_at timestamptz not null default now(), request_id bigint,
+ created_at timestamptz not null default now()
+);
+alter table public.push_jobs enable row level security;
+revoke all on public.push_jobs from public,anon,authenticated;
+create index due_push_jobs on public.push_jobs(next_at) where attempts<6;
+create function public.send_push_job(job uuid) returns void language plpgsql security definer set search_path='' as $$
+declare j public.push_jobs; endpoint text; secret text; req bigint;
 begin
-  select decrypted_secret into endpoint
-  from vault.decrypted_secrets where name = 'push_webhook_url' limit 1;
-
-  select decrypted_secret into webhook_secret
-  from vault.decrypted_secrets where name = 'push_webhook_secret' limit 1;
-
-  if endpoint is null or webhook_secret is null then
-    return new;
-  end if;
-
-  perform net.http_post(
-    url := endpoint,
-    headers := jsonb_build_object(
-      'Content-Type', 'application/json',
-      'x-bro-webhook-secret', webhook_secret
-    ),
-    body := jsonb_build_object(
-      'type', tg_op,
-      'table', tg_table_name,
-      'schema', tg_table_schema,
-      'record', jsonb_build_object('id',new.id,'conversation_id',new.conversation_id,'sender_id',new.sender_id),
-      'old_record', null
-    ),
-    timeout_milliseconds := 5000
-  );
-
-  return new;
-end;
-$$;
-
+ select * into j from public.push_jobs where id=job for update;
+ if not found then return;end if;
+ if j.request_id is not null and exists(select from net._http_response where id=j.request_id and status_code between 200 and 299) then delete from public.push_jobs where id=job;return;end if;
+ if j.attempts>=6 then return;end if;
+ select decrypted_secret into endpoint from vault.decrypted_secrets where name='push_webhook_url' limit 1;
+ select decrypted_secret into secret from vault.decrypted_secrets where name='push_webhook_secret' limit 1;
+ if endpoint is not null and secret is not null then
+   req:=net.http_post(url:=endpoint,headers:=jsonb_build_object('Content-Type','application/json','x-bro-webhook-secret',secret),body:=j.event,timeout_milliseconds:=55000);
+ end if;
+ update public.push_jobs set request_id=req,attempts=attempts+1,next_at=now()+make_interval(secs=>60*(1<<attempts)) where id=job;
+end;$$;
+create function public.enqueue_push(event jsonb) returns void language plpgsql security definer set search_path='' as $$
+declare job uuid;
+begin insert into public.push_jobs(event) values(event) returning id into job;perform public.send_push_job(job);end;$$;
+create function public.drain_push_jobs() returns void language plpgsql security definer set search_path='' as $$
+declare j uuid;
+begin
+ for j in select id from public.push_jobs where next_at<=now() and attempts<6 order by next_at limit 50 for update skip locked loop perform public.send_push_job(j);end loop;
+ delete from public.push_jobs where created_at<now()-interval '7 days';
+end;$$;
+revoke all on function public.send_push_job(uuid),public.enqueue_push(jsonb),public.drain_push_jobs() from public,anon,authenticated;
+do $$ begin if exists(select from pg_extension where extname='pg_cron') then perform cron.schedule('bro-push-retry','* * * * *',$job$select public.drain_push_jobs()$job$);end if;end;$$;
+create or replace function public.dispatch_message_push() returns trigger language plpgsql security definer set search_path='' as $$
+begin perform public.enqueue_push(jsonb_build_object('type',tg_op,'table',tg_table_name,'schema',tg_table_schema,'record',jsonb_build_object('id',new.id,'conversation_id',new.conversation_id,'sender_id',new.sender_id))); return new;end; $$;
 create or replace function public.dispatch_friendship_reminders()
 returns void
 language plpgsql
@@ -74,19 +71,8 @@ security definer
 set search_path = ''
 as $$
 declare
-  endpoint text;
-  webhook_secret text;
   due record;
 begin
-  select decrypted_secret into endpoint
-    from vault.decrypted_secrets where name = 'push_webhook_url' limit 1;
-  select decrypted_secret into webhook_secret
-    from vault.decrypted_secrets where name = 'push_webhook_secret' limit 1;
-
-  if endpoint is null or webhook_secret is null then
-    return;
-  end if;
-
   for due in
     select d.id, d.conversation_id, d.title, d.owner_id
       from public.friendship_dates d
@@ -98,13 +84,7 @@ begin
           where l.date_id = d.id and l.sent_for = current_date
        )
   loop
-    perform net.http_post(
-      url := endpoint,
-      headers := jsonb_build_object(
-        'Content-Type', 'application/json',
-        'x-bro-webhook-secret', webhook_secret
-      ),
-      body := jsonb_build_object(
+    perform public.enqueue_push(jsonb_build_object(
         'type', 'FRIENDSHIP_REMINDER',
         'schema', 'public',
         'table', 'messages',
@@ -123,3 +103,15 @@ begin
 end;
 $$;
 
+
+-- An installation ID is metadata, not proof of device possession. Removing
+-- the installation invalidates its existing crypto/push entries; a genuinely
+-- new installation still requires out-of-band fingerprint approval.
+create function public.retire_installation() returns trigger language plpgsql security definer set search_path='' as $$
+begin
+ update public.chat_device_keys set revoked_at=now() where user_id=new.user_id and device_id::text=new.device_id and revoked_at is null;
+ delete from public.fcm_devices where user_id=new.user_id and device_id::text=new.device_id;
+ return new;
+end;$$;
+create trigger retire_installation after update of revoked_at on public.linked_devices for each row when(old.revoked_at is null and new.revoked_at is not null) execute function public.retire_installation();
+create policy not_retired_push on public.fcm_devices as restrictive for all to authenticated using(true) with check(not exists(select from public.linked_devices d where d.user_id=auth.uid() and d.device_id=fcm_devices.device_id::text and d.revoked_at is not null));

@@ -73,6 +73,7 @@ void main() async {
       if (uri == null ||
           !uri.hasAuthority ||
           uri.host.isEmpty ||
+          uri.host == 'dbfgyehzgrmsajpwydps.supabase.co' ||
           uri.host ==
               'your-project.supabase.co' || // stale placeholder build (#48)
           !const {'https', 'http'}.contains(uri.scheme) ||
@@ -376,6 +377,7 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
       unawaited(PushNotifications.refresh());
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
+      appScaffoldMessengerKey.currentState?.clearSnackBars();
       _pausedAt = DateTime.now();
       Presence.pause();
     }

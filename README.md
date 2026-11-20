@@ -2,6 +2,8 @@
 
 A beautifully dark messaging app with automatic updates, voice notes, and a modern dark-mode UI.
 
+**Security rollout: not production-verified.** See the [security, calls and push runbook](docs/security-calls-push.md) for the threat model, configuration, migration order, rollback and device test matrix. BRO production is blocked by [#107](https://github.com/marvel-254/chat-app/issues/107).
+
 ## Getting Started
 
 Before running the app, configure its Supabase project. Create a local `.env.local` file (it is gitignored) with `SUPABASE_URL` and `SUPABASE_ANON_KEY`, using the Project URL and publishable/anon key from your Supabase project settings. Build with `./scripts/build.sh` (or `./scripts/build.sh web`). The app shows a setup message instead of starting with a fake backend endpoint when either value is missing.
@@ -14,7 +16,7 @@ See [HANDOFF.md](HANDOFF.md) for the architecture, storage flow, migrations, loc
 
 Apply the migrations in `supabase/migrations` to the configured Supabase project before using chat uploads or calls. The media migrations create the public avatar bucket, private conversation-file and chat-background buckets, storage access rules, and private Realtime policies for call signaling. Chat backgrounds include built-in themes and private uploaded images.
 
-Voice and video calls use peer-to-peer WebRTC with a public STUN server for connection setup. Calls work when the two networks can establish a direct WebRTC path; production deployments should configure a TURN relay for networks that block direct peer connections. Incoming calls are shown while the recipient has that conversation open.
+Calls use authenticated, DM-scoped signaling, expiring invitations and short-lived TURN credentials. A configured relay and the matching backend migrations are required. Background incoming notifications additionally require Firebase setup.
 
 - [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
 - [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
@@ -26,9 +28,7 @@ The existing `bro-landing` Vercel project is linked to this repository's `main` 
 
 ## Cloudflare file storage
 
-Chat attachments and custom chat backgrounds are stored in the private Cloudflare R2 bucket `chat-app-storage` through the authenticated Worker at `https://bro-chat-storage.twistedoliver211fs.workers.dev`. Avatar images remain in Supabase Storage. The Worker checks the signed-in Supabase user and conversation membership before issuing uploads or download links.
-
-The Worker is configured in `cloudflare/storage`. To redeploy it, run `wrangler deploy` from that directory. Its `SUPABASE_ANON_KEY` and `URL_SIGNING_SECRET` are Cloudflare Worker secrets; do not add them to this repository. Local builds use the deployed Worker URL by default and can override it with `--dart-define=CLOUD_STORAGE_URL=...`.
+Private Supabase Storage is the default. To use existing R2 files, first deploy the BRO-configured Worker in `cloudflare/storage`, bind the correct bucket, set its `SUPABASE_ANON_KEY` and `URL_SIGNING_SECRET` as Worker secrets, and set the public `CLOUD_STORAGE_URL` on the client build. Verify old and new objects with authorized and unauthorized accounts. Historical paths still require their original backend. New chat attachments upload opaque ciphertext, unlike public/profile or timeline assets.
 
 ## Auto-update
 

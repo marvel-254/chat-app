@@ -35,6 +35,12 @@ jobs:
           # Browser client settings are public Supabase values (never a service-role key).
           SUPABASE_URL: https://zchsmnelvcuexchpwfgr.supabase.co
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
+          FIREBASE_WEB_APP_ID: ${{ vars.FIREBASE_WEB_APP_ID }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          FIREBASE_SENDER_ID: ${{ vars.FIREBASE_SENDER_ID }}
+          FIREBASE_WEB_VAPID_KEY: ${{ vars.FIREBASE_WEB_VAPID_KEY }}
+          CLOUD_STORAGE_URL: ${{ vars.CLOUD_STORAGE_URL }}
           BASE_HREF: /chat-app/app/
         run: |
           ./scripts/build.sh web

@@ -702,6 +702,34 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                           'Compare, replace or revoke device fingerprints'),
                       onTap: _deviceKeys),
                   ListTile(
+                      leading: const Icon(Icons.visibility_outlined),
+                      title: const Text('Notification privacy'),
+                      subtitle: const Text(
+                          'Only unlocked, in-app alerts can show a preview.'),
+                      onTap: () async {
+                        final current = await PushNotifications.previewStyle();
+                        if (!context.mounted) return;
+                        final next = await showDialog<String>(
+                            context: context,
+                            builder: (ctx) => SimpleDialog(
+                                    title: const Text('In-app previews'),
+                                    children: [
+                                      for (final e in const {
+                                        'generic': 'Generic only',
+                                        'sender': 'Sender only',
+                                        'text': 'Message only',
+                                        'both': 'Sender and message'
+                                      }.entries)
+                                        SimpleDialogOption(
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, e.key),
+                                            child: Text(
+                                                '${e.key == current ? '✓ ' : ''}${e.value}'))
+                                    ]));
+                        if (next != null)
+                          await PushNotifications.setPreviewStyle(next);
+                      }),
+                  ListTile(
                       leading: const Icon(Icons.notifications_outlined),
                       title: const Text('Enable message notifications'),
                       subtitle: const Text(
