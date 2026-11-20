@@ -2,6 +2,15 @@ import 'package:flutter/material.dart';
 
 /// Reusable micro-interactions and motion primitives for a polished feel.
 
+/// Whether the user has asked the OS to reduce interface animation.
+///
+/// Works everywhere a [BuildContext] with an ancestor [MediaQuery] exists
+/// (i.e. inside [build]/[State.didChangeDependencies]). This reflects the
+/// OS "reduce motion" setting on Android/iOS and is also what widget tests
+/// can control via `MediaQuery(disableAnimations: …)`.
+bool reduceMotionOf(BuildContext context) =>
+    MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+
 /// Subtle press feedback widget that scales down slightly on press and springs back.
 class PressScale extends StatefulWidget {
   const PressScale({

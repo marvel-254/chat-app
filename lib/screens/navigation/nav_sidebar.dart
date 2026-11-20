@@ -73,6 +73,8 @@ class NavSidebar extends StatelessWidget {
               selected: location.startsWith('/circles'),
               onTap: () => context.go('/circles'),
             ),
+            NavItem(icon: Icons.call_outlined, selectedIcon: Icons.call, label: 'Calls',
+              selected: location.startsWith('/recent-calls'), onTap: () => context.go('/recent-calls')),
             NavItem(
               icon: Icons.slow_motion_video_outlined,
               selectedIcon: Icons.slow_motion_video_rounded,

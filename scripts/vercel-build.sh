@@ -9,8 +9,18 @@
 # This clone can fail (network, timeout, branch gone) — the script handles
 # that gracefully by falling back to the static landing page.
 
+set -euo pipefail
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+
+if [[ "${VERCEL_ENV:-}" == production ]]; then
+  test "${SUPABASE_URL:-}" = 'https://dbfgyehzgrmsajpwydps.supabase.co' || {
+    echo 'BRO production must point to the nyx Supabase project.' >&2
+    exit 1
+  }
+  test -n "${SUPABASE_ANON_KEY:-}"
+fi
 
 # ── Always ensure the landing page and assets are in the output ──────────
 mkdir -p build/web/assets build/web/css build/web/icons build/web/legal

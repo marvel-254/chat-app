@@ -8,6 +8,7 @@ import '../../services/linked_devices.dart';
 import '../../ui/errors.dart';
 import '../../ui/states.dart';
 import 'login_screen.dart';
+import 'widgets/bro_wordmark.dart';
 
 /// Callback type for restarting the app (set by main.dart to avoid circular imports).
 RestartAppCallback? restartAppCallback;
@@ -23,19 +24,17 @@ class AuthGate extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-              body: Center(
-                  child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('BRO',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 2,
-                      fontSize: 22)),
-              SizedBox(height: 18),
-              BroSpinner(size: 22),
-            ],
-          )));
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  BroWordmark(fontSize: 22),
+                  SizedBox(height: 18),
+                  BroSpinner(size: 22),
+                ],
+              ),
+            ),
+          );
         }
         if (snapshot.hasError) {
           return _AuthErrorState(error: friendlyErrorMessage(snapshot.error));

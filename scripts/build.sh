@@ -25,13 +25,16 @@ if [[ -f .env.local ]]; then
     # Trim surrounding whitespace and quotes.
     key="$(echo "$key" | xargs)"
     value="$(echo "$value" | sed 's/^"\(.*\)"$/\1/; s/^'\''\(.*\)'\''$/\1/')"
-    DEFINES+=(--dart-define="${key}=${value}")
+    case "$key" in
+      SUPABASE_URL|SUPABASE_ANON_KEY|CLOUD_STORAGE_URL|CALL_RELAY_ONLY|FIREBASE_WEB_API_KEY|FIREBASE_WEB_APP_ID|FIREBASE_WEB_SENDER_ID|FIREBASE_WEB_PROJECT_ID|FIREBASE_WEB_VAPID_KEY)
+        if [[ -z "${!key:-}" ]]; then export "$key=$value"; fi ;;
+    esac
   done < .env.local
 fi
 
 # CI and shell environments can provide the public Supabase client config too.
 # These values are safe for client apps; never pass a service-role key here.
-for key in SUPABASE_URL SUPABASE_ANON_KEY; do
+for key in SUPABASE_URL SUPABASE_ANON_KEY CLOUD_STORAGE_URL CALL_RELAY_ONLY FIREBASE_WEB_API_KEY FIREBASE_WEB_APP_ID FIREBASE_WEB_SENDER_ID FIREBASE_WEB_PROJECT_ID FIREBASE_WEB_VAPID_KEY; do
   value="${!key:-}"
   if [[ -n "$value" ]]; then
     DEFINES+=(--dart-define="${key}=${value}")
@@ -45,6 +48,14 @@ if [[ -z "${APP_RELEASE:-}" ]]; then
   APP_RELEASE="bro@${APP_VERSION:-dev}"
 fi
 DEFINES+=(--dart-define="APP_RELEASE=${APP_RELEASE}")
+
+# Semantic version from pubspec.yaml, used by the auto-updater to compare
+# GitHub release tags. Keep this in sync with the version published on Releases.
+APP_VERSION_VALUE="$(awk '/^version:/{print $2; exit}' pubspec.yaml)"
+APP_VERSION_VALUE="${APP_VERSION_VALUE%%+*}"
+if [[ -n "${APP_VERSION_VALUE}" ]]; then
+  DEFINES+=(--dart-define="APP_VERSION=${APP_VERSION_VALUE}")
+fi
 
 TARGET="${1:-apk}"
 # Base href for the PWA. Local dev defaults to /app/; CI (GitHub Pages
@@ -67,13 +78,23 @@ case "$TARGET" in
     # Copy landing page and assets to build/web/ root
     mkdir -p build/web/css build/web/icons build/web/assets build/web/legal
     cp web/index-landing.html build/web/index.html
-    cp web/index.html build/web/app.html
+    # Keep public metadata at both scopes: the landing page uses the site
+    # root, while the Flutter app's relative links resolve under /app/.
     cp web/manifest.json web/robots.txt web/sitemap.xml web/llms.txt web/favicon.png build/web/ 2>/dev/null || true
-    cp web/service-worker.js build/web/app/service-worker.js 2>/dev/null || true
+    cp web/manifest.json web/favicon.png build/web/app/ 2>/dev/null || true
+    cp web/service-worker.js build/web/app/service-worker.js
+    node scripts/web-push-config.mjs build/web/app/push-config.js
     cp -r web/css/. build/web/css/
     cp -r web/icons/. build/web/icons/
+    mkdir -p build/web/app/icons
+    cp -r web/icons/. build/web/app/icons/
     cp -r web/assets/. build/web/assets/
     cp -r web/legal/. build/web/legal/
+    # Fail the build if the PWA scope is missing metadata the service worker
+    # precaches and the Flutter web template links to relatively.
+    test -s build/web/app/index.html
+    test -s build/web/app/manifest.json
+    test -s build/web/app/icons/Icon-192.png
     # Landing page links to the PWA under /app/ and contains no private-only design docs.
     ;;
   --help|-h)

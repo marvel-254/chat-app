@@ -70,13 +70,22 @@ android {
 
     buildTypes {
         release {
-            val releaseStore = signingConfigs.getByName("release").storeFile
-            signingConfig = if (releaseStore != null && releaseStore.exists()) {
-                signingConfigs.getByName("release")
+            val releaseSigning = signingConfigs.getByName("release")
+            val releaseStore = releaseSigning.storeFile
+            val releaseReady = releaseStore != null && releaseStore.exists()
+            signingConfig = if (releaseReady) {
+                releaseSigning
             } else {
                 // Fallback so `flutter build apk --release` still works before
                 // key.properties is present (e.g. first-time local builds).
                 signingConfigs.getByName("debug")
+            }
+            // CI must never publish a debug-signed "release" APK: users could
+            // not upgrade it later because the signing identity would change.
+            if (System.getenv("REQUIRE_RELEASE_SIGNING") == "true" && !releaseReady) {
+                throw org.gradle.api.GradleException(
+                    "Release signing is required but key.properties/release.keystore is missing or incomplete."
+                )
             }
         }
     }

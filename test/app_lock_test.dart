@@ -3,10 +3,22 @@ import 'package:bro_chat/ui/errors.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('PIN hash is stable and not plaintext', () {
-    expect(AppLock.hashPin('1234'), AppLock.hashPin('1234'));
-    expect(AppLock.hashPin('1234'), isNot(AppLock.hashPin('1235')));
-    expect(AppLock.hashPin('1234'), isNot('1234'));
+  const salt = '00112233445566778899aabbccddeeff';
+
+  test('PIN hash is salted, stable and not plaintext', () {
+    expect(AppLock.hashPin('1234', salt: salt),
+        AppLock.hashPin('1234', salt: salt));
+    expect(AppLock.hashPin('1234', salt: salt),
+        isNot(AppLock.hashPin('1234', salt: 'ffeeddccbbaa99887766554433221100')));
+    expect(AppLock.hashPin('1234', salt: salt),
+        isNot(AppLock.hashPin('1235', salt: salt)));
+    expect(AppLock.hashPin('1234', salt: salt), isNot('1234'));
+  });
+
+  test('legacy hashes remain readable for migration', () {
+    expect(AppLock.legacyHashPin('1234'), isNot('1234'));
+    expect(AppLock.legacyHashPin('1234'),
+        isNot(AppLock.legacyHashPin('1235')));
   });
 
   test('schema-cache last_message_at errors are softened', () {

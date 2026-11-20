@@ -5,6 +5,23 @@ const conversation = 'aabbccdd-1234-1234-1234-001122334455';
 const recipient = '11223344-1234-1234-1234-556677889900';
 
 void main() {
+  test('missed calls require a valid call, recipient and unexpired route', () {
+    final data = {
+      'kind': 'missed_call',
+      'call_id': conversation,
+      'recipient_user_id': recipient,
+      'conversation_id': conversation,
+      'expires_at':
+          DateTime.now().add(const Duration(minutes: 5)).toIso8601String()
+    };
+    expect(PushMessageTarget.fromData(data)?.missed, isTrue);
+    expect(PushMessageTarget.fromData({...data, 'call_id': 'bad'}), isNull);
+    expect(PushMessageTarget.fromData({...data, 'recipient_user_id': null}),
+        isNull);
+    expect(PushMessageTarget.fromData({...data, 'expires_at': '2020-01-01'}),
+        isNull);
+  });
+
   test('extracts the conversation and the intended account', () {
     final target = PushMessageTarget.fromData({
       'conversation_id': conversation.toUpperCase(),

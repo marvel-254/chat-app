@@ -18,12 +18,13 @@ import 'message_safety.dart' as message_safety;
 import 'read_receipts.dart' as read_receipts;
 import 'block_report.dart' as block_report;
 import 'signal_e2ee.dart';
+import 'legacy_message_codec.dart';
+import 'legacy_messaging.dart';
 
 class Supa {
   static SupabaseClient get client => Supabase.instance.client;
   static const _cloudStorageUrl = String.fromEnvironment(
     'CLOUD_STORAGE_URL',
-    defaultValue: 'https://bro-chat-storage.twistedoliver211fs.workers.dev',
   );
 
   static Map<String, String> get _storageHeaders => {
@@ -72,70 +73,23 @@ class Supa {
   static Future<AuthResponse> signIn(String email, String password) =>
       client.auth.signInWithPassword(email: email, password: password);
 
-  static Future<void> signOut() => client.auth.signOut();
+  static Future<void> signOut() {
+    LegacyMessaging.reset();
+    return client.auth.signOut();
+  }
   static User? get currentUser => client.auth.currentUser;
   static Stream<AuthState> get authStateChanges =>
       client.auth.onAuthStateChange;
 
-  /// Registers an actual FCM registration token, scoped to this app install.
-  /// Firebase Installation IDs are not delivery tokens and are never used here.
-  static Future<void> savePushToken(String fcmToken, String platform) async {
-    final user = currentUser;
-    if (user == null || fcmToken.isEmpty) return;
-    final storage = const FlutterSecureStorage();
-    var deviceId = await storage.read(key: 'bro.push.device_id');
-    if (deviceId == null || deviceId.isEmpty) {
-      deviceId = const Uuid().v4();
-      await storage.write(key: 'bro.push.device_id', value: deviceId);
-    }
-    await client.from('push_tokens').upsert(
-      {
-        'user_id': user.id,
-        'device_id': deviceId,
-        'token': fcmToken,
-        'platform': platform,
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      },
-      onConflict: 'user_id,device_id',
-    );
-  }
-
-  /// Removes only the current install's registration.
-  static Future<void> removePushToken(String fcmToken) async {
-    final user = currentUser;
-    if (user == null) return;
-    await client
-        .from('push_tokens')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('token', fcmToken);
-  }
-
-  /// Missed-call push preference. Absent row means enabled by default.
-  static Future<bool> missedCallPushEnabled() async {
-    final user = currentUser;
-    if (user == null) return true;
-    final row = await client
-        .from('notification_settings')
-        .select('missed_call_push')
-        .eq('user_id', user.id)
-        .maybeSingle();
-    return row?['missed_call_push'] as bool? ?? true;
-  }
-
-  static Future<void> setMissedCallPush(bool enabled) async {
-    final user = currentUser;
-    if (user == null) return;
-    await client.from('notification_settings').upsert({
-      'user_id': user.id,
-      'missed_call_push': enabled,
-      'updated_at': DateTime.now().toUtc().toIso8601String(),
-    });
-  }
-
   // Re-send the email confirmation link for an unconfirmed account.
   static Future<void> resendConfirmation(String email) =>
       client.auth.resend(type: OtpType.signup, email: email);
+
+  // Send a password-reset email. The recovery link lands on the configured
+  // site URL / deep link with a recovery session; the user can then set a
+  // new password in Settings → Account (which uses updateUser).
+  static Future<void> resetPasswordForEmail(String email) =>
+      client.auth.resetPasswordForEmail(email.trim());
 
   // Profiles
   static Future<Profile?> getProfile(String uid) async {
@@ -238,7 +192,7 @@ class Supa {
       });
       debugPrint(
           'getFriendSuggestionsByCategory("$category") -> ${(res as List).length} results');
-      return (res as List)
+      return res
           .map((e) => FriendSuggestion.fromJson(e as Map<String, dynamic>))
           .toList();
     } catch (e) {
@@ -491,103 +445,57 @@ class Supa {
     }
   }
 
-  static Future<int> getFollowersCount(String userId) async {
+  static void _logUnexpected(String where, Object error) {
+    debugPrint('Supa.$where failed: $error');
+  }
+
+  static Future<int> _connectionCount(String userId, String direction) async {
     try {
-      final res = await client
-          .from('user_follows')
-          .select('follower_id')
-          .eq('followed_id', userId);
-      return (res as List).length;
-    } catch (_) {
+      final result = await client.rpc('count_user_connections', params: {
+        'p_user_id': userId,
+        'p_direction': direction,
+      });
+      return (result as num?)?.toInt() ?? 0;
+    } catch (e) {
+      _logUnexpected('_connectionCount', e);
       return 0;
     }
   }
 
-  static Future<int> getFollowingCount(String userId) async {
+  static Future<int> getFollowersCount(String userId) =>
+      _connectionCount(userId, 'followers');
+
+  static Future<int> getFollowingCount(String userId) =>
+      _connectionCount(userId, 'following');
+
+  static Future<List<Profile>> _connections(String userId, String direction,
+      {int? limit, int? offset, String? search}) async {
     try {
-      final res = await client
-          .from('user_follows')
-          .select('followed_id')
-          .eq('follower_id', userId);
-      return (res as List).length;
-    } catch (_) {
-      return 0;
+      final rows = await client.rpc('search_user_connections', params: {
+        'p_user_id': userId,
+        'p_direction': direction,
+        'p_search': sanitizeSearchTerm(search ?? ''),
+        'p_limit': (limit ?? 30).clamp(1, 100).toInt(),
+        'p_offset': (offset ?? 0).clamp(0, 100000).toInt(),
+      });
+      return (rows as List)
+          .map((row) => Profile.fromJson(row as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      _logUnexpected('_connections', e);
+      return [];
     }
   }
 
   static Future<List<Profile>> getFollowers(String userId,
-      {int? limit, int? offset, String? search}) async {
-    try {
-      var query = client
-          .from('user_follows')
-          .select('follower_id')
-          .eq('followed_id', userId) as dynamic;
-
-      if (offset != null && offset > 0) {
-        query = query.range(offset, offset + (limit ?? 30) - 1);
-      } else if (limit != null) {
-        query = query.limit(limit);
-      }
-
-      final res = await query;
-      final ids =
-          (res as List).map((row) => row['follower_id'] as String).toList();
-      if (ids.isEmpty) return [];
-
-      var profileQuery = client
-          .from('visible_profiles')
-          .select()
-          .filter('id', 'in', ids) as dynamic;
-      final term = sanitizeSearchTerm(search ?? '');
-      if (term.isNotEmpty) {
-        profileQuery = profileQuery
-            .or('username.ilike.%$term%,display_name.ilike.%$term%');
-      }
-      final profs = await profileQuery;
-      return (profs as List)
-          .map((p) => Profile.fromJson(p as Map<String, dynamic>))
-          .toList();
-    } catch (_) {
-      return [];
-    }
-  }
+          {int? limit, int? offset, String? search}) =>
+      _connections(userId, 'followers',
+          limit: limit, offset: offset, search: search);
 
   static Future<List<Profile>> getFollowing(String userId,
-      {int? limit, int? offset, String? search}) async {
-    try {
-      var query = client
-          .from('user_follows')
-          .select('followed_id')
-          .eq('follower_id', userId) as dynamic;
-
-      if (offset != null && offset > 0) {
-        query = query.range(offset, offset + (limit ?? 30) - 1);
-      } else if (limit != null) {
-        query = query.limit(limit);
-      }
-
-      final res = await query;
-      final ids =
-          (res as List).map((row) => row['followed_id'] as String).toList();
-      if (ids.isEmpty) return [];
-
-      var profileQuery = client
-          .from('visible_profiles')
-          .select()
-          .filter('id', 'in', ids) as dynamic;
-      final term = sanitizeSearchTerm(search ?? '');
-      if (term.isNotEmpty) {
-        profileQuery = profileQuery
-            .or('username.ilike.%$term%,display_name.ilike.%$term%');
-      }
-      final profs = await profileQuery;
-      return (profs as List)
-          .map((p) => Profile.fromJson(p as Map<String, dynamic>))
-          .toList();
-    } catch (_) {
-      return [];
-    }
-  }
+          {int? limit, int? offset, String? search}) =>
+      _connections(userId, 'following',
+          limit: limit, offset: offset, search: search);
 
   static Future<List<String>> getCloseFriendIds() async {
     final me = currentUser;
@@ -962,6 +870,7 @@ class Supa {
   static Future<Map<String, dynamic>> uploadAttachment(String conversationId,
       Uint8List bytes, String filename, String mimeType) async {
     final uid = currentUser!.id;
+    LegacyMessaging.requireAllowed(uid);
     final id = const Uuid().v4();
     final safeName =
         path.basename(filename).replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
@@ -1015,7 +924,10 @@ class Supa {
   /// Download a GIF from a URL and upload it to storage as an attachment.
   static Future<Map<String, dynamic>> uploadAttachmentFromUrl(
       String conversationId, String url, String extension) async {
+    final owner = currentUser?.id;
+    LegacyMessaging.requireAllowed(owner);
     final response = await http.get(Uri.parse(url));
+    if (currentUser?.id != owner) throw StateError('Account changed');
     if (response.statusCode != 200) {
       throw Exception('Failed to download attachment: ${response.statusCode}');
     }
@@ -1049,7 +961,9 @@ class Supa {
           await setMessageExpiry(convId, myProfile.defaultMessageExpiry);
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      _logUnexpected('getOrCreateDM default expiry', e);
+    }
 
     return Conversation(
         id: convId, createdAt: DateTime.now(), updatedAt: DateTime.now());
@@ -1250,7 +1164,9 @@ class Supa {
               for (final row in hides as List) {
                 hiddenIds.add(row['message_id'] as String);
               }
-            } catch (_) {}
+            } catch (e) {
+              _logUnexpected('watchMessages enrichment', e);
+            }
           }
 
           final now = DateTime.now();
@@ -1325,27 +1241,19 @@ class Supa {
   }
 
   static Future<void> updateMessage(String messageId, String content) async {
-    // Fetch current row to get conversation_id for re-encryption
-    final current = await client
-        .from('messages')
-        .select('content,conversation_id')
-        .eq('id', messageId)
-        .single();
-    final previousContent = current['content'] as String;
-    final conversationId = current['conversation_id'] as String;
-    // Re-encrypt the new content
-    final encryptedContent =
-        await encryptForConversation(conversationId, content);
-    // Record edit history (store the encrypted content for consistency)
+    final owner = currentUser?.id;
+    LegacyMessaging.requireAllowed(owner);
+    final current = await client.from('messages').select('content')
+        .eq('id', messageId).eq('sender_id', owner!).single();
+    if (currentUser?.id != owner) throw StateError('Account changed');
+    if (content == current['content']) return;
+    await client.from('messages').update({
+      'content': content, 'content_format': LegacyMessageCodec.plaintext,
+    }).eq('id', messageId).eq('sender_id', owner).select('id').single();
+    if (currentUser?.id != owner) return;
     await client.from('message_edit_history').insert({
-      'message_id': messageId,
-      'previous_content': previousContent,
-      'new_content': encryptedContent,
+      'message_id': messageId, 'previous_content': current['content'], 'new_content': content,
     });
-    // Update the message (trigger sets edited_at)
-    await client
-        .from('messages')
-        .update({'content': encryptedContent}).eq('id', messageId);
   }
 
   /// Fetch the edit history for a message.
@@ -1426,21 +1334,9 @@ class Supa {
         .select('message_expiry')
         .eq('id', conversationId)
         .single();
-    final raw = row['message_expiry'] as String? ?? '00:00:00';
-    final days = RegExp(r'(\d+(?:\.\d+)?)\s+days?').firstMatch(raw);
-    if (days != null) {
-      final duration =
-          Duration(seconds: ((double.parse(days.group(1)!) * 86400).round()));
-      return duration == Duration.zero ? null : duration;
-    }
-    final parts = raw.split(':');
-    if (parts.length != 3) return null;
-    final seconds = double.tryParse(parts[2]) ?? 0;
-    final duration = Duration(
-        hours: int.tryParse(parts[0]) ?? 0,
-        minutes: int.tryParse(parts[1]) ?? 0,
-        seconds: seconds.floor());
-    return duration == Duration.zero ? null : duration;
+    // Use the same parser as profile defaults: it handles `HH:MM:SS`,
+    // `N days`, `N hours` and `N seconds` interval representations.
+    return parseInterval(row['message_expiry']);
   }
 
   // ===== Drafts =====
@@ -1448,7 +1344,7 @@ class Supa {
   /// Save a draft for the current user in a conversation.
   static Future<void> saveDraft(String conversationId, String text) async {
     final me = currentUser;
-    if (me == null) return;
+    if (me == null || (text.isNotEmpty && !LegacyMessaging.allowed(me.id))) return;
     await client.from('conversation_participants').upsert({
       'conversation_id': conversationId,
       'user_id': me.id,
@@ -1589,7 +1485,7 @@ class Supa {
         details: details,
       );
 
-  // ===== E2EE Helpers =====
+  // ===== Conversation Peer Lookup =====
 
   /// Look up the peer user ID for a 1:1 conversation.
   static Future<String?> getPeerUserId(String conversationId) async {

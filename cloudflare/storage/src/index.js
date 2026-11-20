@@ -192,3 +192,6 @@ export default {
     }
   },
 };
+
+// Exported for unit tests; the worker entry point remains the default export.
+export { isSafeKey, safeContentType, authorizedKey, sign, constantTimeEqual };

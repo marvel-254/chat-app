@@ -1,3 +1,4 @@
+import 'legacy_messaging.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// A message that will be delivered at a future time.
@@ -56,6 +57,7 @@ class ScheduledMessages {
   }) async {
     final user = _client.auth.currentUser;
     if (user == null) throw Exception('Not authenticated');
+    LegacyMessaging.requireAllowed(user.id);
 
     final res = await _client
         .from('scheduled_messages')

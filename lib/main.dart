@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'
     hide Presence; // app's services/presence.dart takes precedence
@@ -9,7 +8,11 @@ import 'package:go_router/go_router.dart';
 import 'services/app_lock.dart';
 import 'services/app_update.dart';
 import 'screens/call_screen.dart';
-import 'screens/calls/recent_calls_screen.dart';
+import 'screens/recent_calls_screen.dart';
+import 'services/calls.dart';
+import 'services/legacy_messaging.dart';
+import 'models/call_record.dart';
+import 'services/push_message_target.dart';
 import 'screens/circles_screen.dart';
 import 'screens/lock_gate.dart';
 import 'screens/status_composer.dart';
@@ -32,6 +35,7 @@ import 'screens/chat/conversation_list_screen.dart';
 import 'screens/chat/suggest_friends_screen.dart';
 import 'screens/chat/chat_screen.dart';
 import 'screens/settings/account_settings_screen.dart';
+import 'screens/settings/notification_settings_screen.dart';
 import 'screens/settings/close_friends_screen.dart';
 import 'screens/settings/digital_avatar_screen.dart';
 import 'screens/settings/friendship_timeline_screen.dart';
@@ -82,20 +86,16 @@ void main() async {
       await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
       await onboarding.loadOnboardingStatus();
       _setupAuthGateCallback();
+      final launchUri = Uri.base;
       runApp(const BroApp());
-      if (!kIsWeb &&
-          (defaultTargetPlatform == TargetPlatform.android ||
-              defaultTargetPlatform == TargetPlatform.iOS)) {
-        unawaited(_initializeMobilePush());
-      }
+      unawaited(_initializePush(launchUri));
     },
   );
 }
 
-Future<void> _initializeMobilePush() async {
+Future<void> _initializePush(Uri launchUri) async {
   try {
-    await Firebase.initializeApp();
-    await PushNotifications.initialize();
+    await PushNotifications.initialize(launchUri: launchUri);
   } catch (_) {
     debugPrint('Notifications could not start. Chat is still available.');
   }
@@ -130,8 +130,11 @@ class BackendConfigurationApp extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.settings_ethernet,
-                      color: _P.primary, size: 48),
+                  const Icon(
+                    Icons.settings_ethernet,
+                    color: _P.primary,
+                    size: 48,
+                  ),
                   const SizedBox(height: 20),
                   const Text(
                     'BRO needs backend configuration',
@@ -180,26 +183,25 @@ final _router = GoRouter(
     GoRoute(path: '/circles', builder: (_, __) => const CirclesScreen()),
     GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
     GoRoute(
-        path: '/confirm',
-        builder: (_, state) =>
-            ConfirmationScreen(email: state.extra as String? ?? '')),
+      path: '/confirm',
+      builder: (_, state) =>
+          ConfirmationScreen(email: state.extra as String? ?? ''),
+    ),
     GoRoute(
-        path: '/conversations',
-        builder: (_, __) => const ConversationListScreen()),
+      path: '/conversations',
+      builder: (_, __) => const ConversationListScreen(),
+    ),
     GoRoute(
-        path: '/calls',
-        builder: (_, state) => RecentCallsScreen(
-              callIdToOpen: state.uri.queryParameters['call_id'],
-            )),
-    GoRoute(
-        path: '/suggest-friends',
-        builder: (_, __) => const SuggestFriendsScreen()),
+      path: '/suggest-friends',
+      builder: (_, __) => const SuggestFriendsScreen(),
+    ),
     GoRoute(path: '/status', builder: (_, __) => const StatusScreen()),
     GoRoute(
-        path: '/status/new',
-        builder: (_, state) => StatusComposerScreen(
-              initialSource: state.uri.queryParameters['source'],
-            )),
+      path: '/status/new',
+      builder: (_, state) => StatusComposerScreen(
+        initialSource: state.uri.queryParameters['source'],
+      ),
+    ),
     GoRoute(
       path: '/status/view/:userId',
       builder: (_, state) => StatusViewerScreen(
@@ -211,25 +213,44 @@ final _router = GoRouter(
       ),
     ),
     GoRoute(
-        path: '/settings', builder: (_, __) => const AccountSettingsScreen()),
+      path: '/settings/notifications',
+      builder: (_, __) => const NotificationSettingsScreen(),
+    ),
     GoRoute(
-        path: '/settings/close-friends',
-        builder: (_, __) => const CloseFriendsScreen()),
+      path: '/settings',
+      builder: (_, __) => const AccountSettingsScreen(),
+    ),
     GoRoute(
-        path: '/settings/linked-devices',
-        builder: (_, __) => const LinkedDevicesScreen()),
+      path: '/settings/close-friends',
+      builder: (_, __) => const CloseFriendsScreen(),
+    ),
     GoRoute(
-        path: '/settings/digital-avatar',
-        builder: (_, __) => const DigitalAvatarScreen()),
+      path: '/settings/linked-devices',
+      builder: (_, __) => const LinkedDevicesScreen(),
+    ),
     GoRoute(
-        path: '/call/:conversationId',
-        builder: (_, state) => CallScreen(
-              conversationId: state.pathParameters['conversationId']!,
-              peer: state.extra as Profile,
-              callId: state.uri.queryParameters['id']!,
-              video: state.uri.queryParameters['video'] == 'true',
-              outgoing: state.uri.queryParameters['outgoing'] == 'true',
-            )),
+      path: '/settings/digital-avatar',
+      builder: (_, __) => const DigitalAvatarScreen(),
+    ),
+    GoRoute(
+      path: '/recent-calls',
+      builder: (_, state) => RecentCallsScreen(
+        key: ValueKey(state.uri),
+        highlight: PushMessageTarget.isId(state.uri.queryParameters['id'])
+            ? state.uri.queryParameters['id']
+            : null,
+      ),
+    ),
+    GoRoute(
+      path: '/call/:conversationId',
+      builder: (_, state) => CallScreen(
+        conversationId: state.pathParameters['conversationId']!,
+        peer: state.extra as Profile,
+        callId: state.uri.queryParameters['id']!,
+        video: state.uri.queryParameters['video'] == 'true',
+        outgoing: state.uri.queryParameters['outgoing'] == 'true',
+      ),
+    ),
     GoRoute(
       path: '/chat/:conversationId',
       builder: (_, state) => ChatScreen(
@@ -239,9 +260,8 @@ final _router = GoRouter(
     ),
     GoRoute(
       path: '/profile/:userId',
-      builder: (_, state) => UserProfileScreen(
-        userId: state.pathParameters['userId']!,
-      ),
+      builder: (_, state) =>
+          UserProfileScreen(userId: state.pathParameters['userId']!),
     ),
     GoRoute(
       path: '/friendship-timeline/:userId',
@@ -264,7 +284,12 @@ final _router = GoRouter(
       if (!loggingIn) return '/login';
       return null;
     }
-    if (isOnboarding || loggingIn) return '/conversations';
+    if (isOnboarding ||
+        loggingIn ||
+        (location.startsWith('/call/') &&
+            (state.extra is! Profile ||
+                !PushMessageTarget.isId(state.uri.queryParameters['id']))))
+      return '/conversations';
     return null;
   },
 );
@@ -280,6 +305,122 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
   bool _appLocked = false;
   DateTime? _pausedAt;
   StreamSubscription<AuthState>? _authSub;
+  Timer? _incomingTimer;
+  DialogRoute<bool>? _incomingDialog;
+  CallRecord? _promptedCall;
+  bool _checkingIncoming = false;
+  bool _foreground = true;
+  String get _activeLocation {
+    final matches = _router.routerDelegate.currentConfiguration;
+    return matches.isEmpty ? '/' : matches.last.matchedLocation;
+  }
+
+  void _closeIncoming() {
+    final route = _incomingDialog;
+    if (route?.isActive == true) route!.navigator?.removeRoute(route);
+  }
+
+  Future<void> _pollIncoming() async {
+    if (!mounted || !_foreground || _appLocked || _checkingIncoming) return;
+    final owner = Supa.currentUser?.id;
+    final navigator = _rootNav.currentState;
+    final location = _activeLocation;
+    if (owner == null ||
+        navigator == null ||
+        location.startsWith('/call/') ||
+        !ConnectionMonitor.isOnline.value) return;
+    _checkingIncoming = true;
+    try {
+      final current = _promptedCall;
+      if (current != null) {
+        if (!current.expiresAt.isAfter(DateTime.now())) {
+          _closeIncoming();
+        } else {
+          final fresh = await Calls.get(current.id);
+          if (_promptedCall?.id == current.id &&
+              fresh?.status != CallStatus.ringing) _closeIncoming();
+        }
+        return;
+      }
+      final record = await Calls.incoming(owner);
+      if (record == null) return;
+      final peer = await Supa.getProfile(
+        record.callerId,
+      ).timeout(Calls.timeout);
+      if (!mounted ||
+          !navigator.mounted ||
+          peer == null ||
+          Supa.currentUser?.id != owner ||
+          !_foreground ||
+          _appLocked ||
+          !record.expiresAt.isAfter(DateTime.now()) ||
+          _activeLocation.startsWith('/call/')) return;
+      final dialog = DialogRoute<bool>(
+        context: navigator.context,
+        barrierDismissible: false,
+        builder: (context) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            title: Text(
+              record.video ? 'Incoming video call' : 'Incoming voice call',
+            ),
+            content: Text('${peer.label} is calling.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Decline'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Answer'),
+              ),
+            ],
+          ),
+        ),
+      );
+      _promptedCall = record;
+      _incomingDialog = dialog;
+      // Let the timer reconcile remote cancellation while the prompt is open.
+      unawaited(
+        navigator.push(dialog).then((answer) async {
+          if (_incomingDialog != dialog) return;
+          _incomingDialog = null;
+          _promptedCall = null;
+          if (!mounted ||
+              Supa.currentUser?.id != owner ||
+              !_foreground ||
+              _appLocked ||
+              answer == null ||
+              !record.expiresAt.isAfter(DateTime.now())) return;
+          if (answer) {
+            if (!_activeLocation.startsWith(
+              '/call/',
+            )) {
+              unawaited(
+                _router.push(
+                  Calls.route(
+                    record.conversationId,
+                    record.id,
+                    record.video,
+                    false,
+                  ),
+                  extra: peer,
+                ),
+              );
+            }
+          } else {
+            try {
+              await Calls.advance(record.id, 'reject');
+            } catch (_) {}
+          }
+        }),
+      );
+    } catch (_) {
+      // The next poll reconciles; the server expires calls independently.
+    } finally {
+      _checkingIncoming = false;
+    }
+  }
 
   @override
   void initState() {
@@ -287,19 +428,33 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     ConnectionMonitor.start();
     Presence.bind();
+    _incomingTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => unawaited(_pollIncoming()),
+    );
     _authSub = Supa.authStateChanges.listen((state) {
       if (state.session != null) {
         Presence.resume();
       } else {
         Presence.unbind();
+        LegacyMessaging.reset();
+        _closeIncoming();
       }
     });
-    PushNotifications.setOpenHandler((conversationId, callId) {
-      if (callId != null) {
-        _router.go('/calls?call_id=$callId');
-        return;
+    PushNotifications.setOpenHandler((target) {
+      if (!mounted) return;
+      final uri = _router.routeInformationProvider.value.uri;
+      if (_activeLocation.startsWith('/call/')) return;
+      if (target.incoming) {
+        unawaited(_pollIncoming());
+      } else if (target.missed) {
+        if (uri.path != '/recent-calls' ||
+            uri.queryParameters['id'] != target.callId) {
+          _router.go('/recent-calls?id=${target.callId}');
+        }
+      } else if (uri.path != '/chat/${target.conversationId}') {
+        _router.go('/chat/${target.conversationId}');
       }
-      _router.go('/chat/$conversationId');
     });
     AppLock.enabled.addListener(_onLockPref);
     unawaited(AppLock.bootstrap());
@@ -310,6 +465,7 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
   void _onLockPref() {
     if (!mounted) return;
     if (AppLock.enabled.value) {
+      _closeIncoming();
       setState(() => _appLocked = true);
     } else {
       setState(() => _appLocked = false);
@@ -320,7 +476,7 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
     await Future<void>.delayed(const Duration(seconds: 2));
     final ctx = _rootNav.currentContext;
     if (ctx == null || !ctx.mounted) return;
-    await AppUpdate.promptIfNeeded(context: ctx, buildNumber: buildNumber);
+    await AppUpdate.promptIfNeeded(context: ctx, currentVersion: appVersion);
   }
 
   /// Start periodic background update checks (every 6 hours).
@@ -334,7 +490,7 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
       await Future<void>.delayed(AppUpdate.checkInterval);
       if (!mounted) break;
       try {
-        await AppUpdate.backgroundCheck(buildNumber);
+        await AppUpdate.backgroundCheck(appVersion);
       } catch (_) {
         // Silently ignore background check failures
       }
@@ -343,6 +499,7 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _incomingTimer?.cancel();
     _authSub?.cancel();
     Presence.unbind();
     AppLock.enabled.removeListener(_onLockPref);
@@ -353,11 +510,14 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    _foreground = state == AppLifecycleState.resumed;
+    if (_foreground) {
       Presence.resume();
+      PushNotifications.refresh();
       unawaited(_lockIfTimedOut());
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
+      _closeIncoming();
       _pausedAt = DateTime.now();
       Presence.pause();
     }
@@ -402,6 +562,7 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
           theme: ThemeData(
             useMaterial3: true,
             brightness: Brightness.dark,
+            fontFamily: 'Space Grotesk',
             scaffoldBackgroundColor: _P.bg,
             colorScheme: ColorScheme.dark(
               primary: _P.primary,
@@ -416,7 +577,10 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
               surfaceTintColor: Colors.transparent,
               elevation: 0,
               titleTextStyle: TextStyle(
-                  color: _P.text, fontSize: 18, fontWeight: FontWeight.w600),
+                color: _P.text,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             cardTheme: CardThemeData(
               color: _P.surface,
@@ -450,7 +614,8 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
               backgroundColor: _P.surfaceHigh,
               contentTextStyle: const TextStyle(color: _P.text),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
               behavior: SnackBarBehavior.floating,
             ),
             dividerTheme: DividerThemeData(
@@ -462,12 +627,11 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
               backgroundColor: _P.primary,
               foregroundColor: _P.darkOnAccent,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
+                borderRadius: BorderRadius.circular(16),
+              ),
               elevation: 4,
             ),
-            textTheme: const TextTheme(
-              bodyMedium: TextStyle(color: _P.text),
-            ),
+            textTheme: const TextTheme(bodyMedium: TextStyle(color: _P.text)),
           ),
         ),
         if (_appLocked)
