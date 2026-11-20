@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_colors.dart' as app_colors;
+import '../../../theme/app_colors.dart' as app_colors;
 
 /// The BRO wordmark: a tilted volt tile + heavy BRO letterforms.
 ///

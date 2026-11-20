@@ -10,7 +10,7 @@ bool reduceMotionOf(BuildContext context) =>
 
 /// Platform-level reduce-motion flag for State classes that need it in
 /// [State.initState] (before a [BuildContext] media query is unavailable).
-bool reduceMotionPlatform() => Widgets
+bool reduceMotionPlatform() => WidgetsBinding
     .instance.platformDispatcher.accessibilityFeatures.disableAnimations;
 
 /// Subtle press feedback widget that scales down slightly on press and springs back.
