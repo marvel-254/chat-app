@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../theme/app_colors.dart' as app_colors;
+import '../../ui/motion.dart';
+import 'widgets/bro_wordmark.dart';
 
 const _onboardingSeenKey = 'bro_onboarding_seen';
 bool onboardingCompleted = false;
@@ -42,7 +44,10 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     _ambientController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 8),
-    )..repeat();
+    );
+    if (!reduceMotionPlatform()) {
+      _ambientController.repeat();
+    }
     _pageController.addListener(() {
       if (_pageController.page != null) {
         final page = _pageController.page!.round();
@@ -73,6 +78,10 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   void _nextPage() {
     if (_currentPage < 2) {
+      if (reduceMotionOf(context)) {
+        _pageController.jumpToPage(_currentPage + 1);
+        return;
+      }
       _pageController.nextPage(
         duration: const Duration(milliseconds: 350),
         curve: Curves.easeOutCubic,
@@ -84,7 +93,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   @override
   Widget build(BuildContext context) {
-    final compact = MediaQuery.sizeOf(context).height < 760;
+    final reduce = reduceMotionOf(context);
     return Scaffold(
       backgroundColor: app_colors.P.bg,
       body: SafeArea(
@@ -115,21 +124,24 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                     subtitle:
                         'A calmer corner of your phone for your favorite conversations.',
                     artwork: const _ConversationArtwork(),
-                    compact: compact,
                   ),
                   _OnboardingPage(
                     title: 'Your circle.\nYour rules.',
                     subtitle:
                         'Share moments with the people who matter most — no noise, no strangers.',
-                    artwork: const _CircleArtwork(),
-                    compact: compact,
+                    artwork: _CircleArtwork(
+                      active: _currentPage == 1,
+                      animate: !reduce,
+                    ),
                   ),
                   _OnboardingPage(
-                    title: 'Private.\nInstant. Yours.',
+                    title: 'Fast. Personal.\nYours.',
                     subtitle:
-                        'Messages that arrive fast, stay secure, and feel like you.',
-                    artwork: const _PrivacyArtwork(),
-                    compact: compact,
+                        'Messages for your circle — quick to deliver, quiet by default.',
+                    artwork: _PrivacyArtwork(
+                      active: _currentPage == 2,
+                      animate: !reduce,
+                    ),
                   ),
                 ],
               ),
@@ -146,21 +158,56 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Page indicators
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(
-                          3,
-                          (i) => Container(
-                            width: _currentPage == i ? 20 : 8,
-                            height: 8,
-                            margin: const EdgeInsets.symmetric(horizontal: 3),
-                            decoration: BoxDecoration(
-                              color: _currentPage == i
-                                  ? app_colors.P.primary
-                                  : app_colors.P.primary
-                                      .withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(4),
+                      // Page indicators (accessible buttons, 44px targets)
+                      Semantics(
+                        container: true,
+                        label:
+                            'Page ${_currentPage + 1} of 3',
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(
+                            3,
+                            (i) => Semantics(
+                              button: true,
+                              selected: _currentPage == i,
+                              label: 'Go to page ${i + 1} of 3',
+                              child: InkWell(
+                                onTap: () {
+                                  if (reduce) {
+                                    _pageController.jumpToPage(i);
+                                  } else {
+                                    _pageController.animateToPage(
+                                      i,
+                                      duration:
+                                          const Duration(milliseconds: 350),
+                                      curve: Curves.easeOutCubic,
+                                    );
+                                  }
+                                },
+                                borderRadius: BorderRadius.circular(20),
+                                hoverColor: app_colors.P.primary
+                                    .withValues(alpha: 0.08),
+                                focusColor: app_colors.P.primary
+                                    .withValues(alpha: 0.15),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 18, horizontal: 8),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    width: _currentPage == i ? 20 : 8,
+                                    height: 8,
+                                    margin: const EdgeInsets.symmetric(
+                                        horizontal: 3),
+                                    decoration: BoxDecoration(
+                                      color: _currentPage == i
+                                          ? app_colors.P.primary
+                                          : app_colors.P.primary
+                                              .withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -215,15 +262,15 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                                 ),
                         ),
                       ),
-                      const SizedBox(height: 13),
+                      const SizedBox(height: 10),
                       const Center(
                         child: Text(
-                          'FREE TO USE     ·     NO ADS',
+                          'Create an account or sign in · free, no ads',
                           style: TextStyle(
                             color: app_colors.P.muted,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.25,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.2,
                           ),
                         ),
                       ),
@@ -243,18 +290,23 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const _Wordmark(),
-                      TextButton(
-                        onPressed: _continue,
-                        child: const Text(
-                          'Skip',
-                          style: TextStyle(
-                            color: app_colors.P.muted,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                  const BroWordmark(),
+                  TextButton(
+                    onPressed: _continue,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 18, vertical: 12),
+                      foregroundColor: app_colors.P.muted,
+                    ),
+                    child: const Text(
+                      'Skip',
+                      style: TextStyle(
+                        color: app_colors.P.muted,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
                       ),
+                    ),
+                  ),
                     ],
                   ),
                 ),
@@ -316,13 +368,11 @@ class _OnboardingPage extends StatefulWidget {
     required this.title,
     required this.subtitle,
     required this.artwork,
-    required this.compact,
   });
 
   final String title;
   final String subtitle;
   final Widget artwork;
-  final bool compact;
 
   @override
   State<_OnboardingPage> createState() => _OnboardingPageState();
@@ -368,7 +418,11 @@ class _OnboardingPageState extends State<_OnboardingPage>
       CurvedAnimation(parent: _controller, curve: const Interval(0.3, 0.65)),
     );
 
-    _controller.forward();
+    if (reduceMotionPlatform()) {
+      _controller.value = 1;
+    } else {
+      _controller.forward();
+    }
   }
 
   @override
@@ -379,113 +433,86 @@ class _OnboardingPageState extends State<_OnboardingPage>
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(24, 120, 24, 180),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 440),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Title with fade + slide
-            AnimatedBuilder(
-              animation: _controller,
-              builder: (context, child) {
-                return Opacity(
-                  opacity: _fadeTitle.value,
-                  child: Transform.translate(
-                    offset: Offset(0, _slideTitle.value),
-                    child: Text(
-                      widget.title,
-                      style: const TextStyle(
-                        color: app_colors.P.text,
-                        fontSize: 42,
-                        height: 0.99,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -1.8,
-                      ),
-                    ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxHeight < 680;
+        return SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(20, 96, 20, 148),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 440,
+                minHeight:
+                    math.max(0, constraints.maxHeight - 96 - 148),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Title with fade + slide
+                  AnimatedBuilder(
+                    animation: _controller,
+                    builder: (context, child) {
+                      return Opacity(
+                        opacity: _fadeTitle.value,
+                        child: Transform.translate(
+                          offset: Offset(0, _slideTitle.value),
+                          child: Text(
+                            widget.title,
+                            style: TextStyle(
+                              color: app_colors.P.text,
+                              fontSize: compact ? 33 : 42,
+                              height: 1.0,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: compact ? -1.1 : -1.8,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
-            const SizedBox(height: 13),
-            // Subtitle with fade + slide
-            AnimatedBuilder(
-              animation: _controller,
-              builder: (context, child) {
-                return Opacity(
-                  opacity: _fadeSubtitle.value,
-                  child: Transform.translate(
-                    offset: Offset(0, _slideSubtitle.value),
-                    child: Text(
-                      widget.subtitle,
-                      style: const TextStyle(
-                        color: app_colors.P.muted,
-                        fontSize: 14,
-                        height: 1.55,
-                      ),
-                    ),
+                  const SizedBox(height: 13),
+                  // Subtitle with fade + slide
+                  AnimatedBuilder(
+                    animation: _controller,
+                    builder: (context, child) {
+                      return Opacity(
+                        opacity: _fadeSubtitle.value,
+                        child: Transform.translate(
+                          offset: Offset(0, _slideSubtitle.value),
+                          child: Text(
+                            widget.subtitle,
+                            style: const TextStyle(
+                              color: app_colors.P.muted,
+                              fontSize: 14,
+                              height: 1.55,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
-            SizedBox(height: widget.compact ? 16 : 28),
-            // Artwork with fade + slide
-            AnimatedBuilder(
-              animation: _controller,
-              builder: (context, child) {
-                return Opacity(
-                  opacity: _fadeArtwork.value,
-                  child: Transform.translate(
-                    offset: Offset(0, _slideArtwork.value),
-                    child: widget.artwork,
+                  SizedBox(height: compact ? 16 : 28),
+                  // Artwork with fade + slide
+                  AnimatedBuilder(
+                    animation: _controller,
+                    builder: (context, child) {
+                      return Opacity(
+                        opacity: _fadeArtwork.value,
+                        child: Transform.translate(
+                          offset: Offset(0, _slideArtwork.value),
+                          child: widget.artwork,
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Wordmark extends StatelessWidget {
-  const _Wordmark();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Transform.rotate(
-          angle: -0.15,
-          child: Container(
-            width: 13,
-            height: 13,
-            decoration: BoxDecoration(
-              color: app_colors.P.primary,
-              borderRadius: BorderRadius.circular(4),
-              boxShadow: [
-                BoxShadow(
-                  color: app_colors.P.primary.withValues(alpha: 0.22),
-                  blurRadius: 12,
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(width: 10),
-        const Text(
-          'BRO',
-          style: TextStyle(
-            color: app_colors.P.text,
-            fontSize: 15,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 3,
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 }
@@ -702,7 +729,14 @@ class _MessageTile extends StatelessWidget {
 /// Artwork for the "Your circle. Your rules." onboarding page.
 /// Shows a group of avatars orbiting a central connection point.
 class _CircleArtwork extends StatefulWidget {
-  const _CircleArtwork();
+  const _CircleArtwork({this.active = true, this.animate = true});
+
+  /// Whether this artwork's page is currently visible; orbiting pauses
+  /// off-screen to save frames and battery.
+  final bool active;
+
+  /// Whether looping motion is allowed at all (OS reduce-motion disables it).
+  final bool animate;
 
   @override
   State<_CircleArtwork> createState() => _CircleArtworkState();
@@ -718,7 +752,25 @@ class _CircleArtworkState extends State<_CircleArtwork>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 12),
-    )..repeat();
+    );
+    if (widget.active && widget.animate) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _CircleArtwork oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.active == widget.active &&
+        oldWidget.animate == widget.animate) {
+      return;
+    }
+    if (widget.active && widget.animate) {
+      if (!_controller.isAnimating) _controller.repeat();
+    } else {
+      _controller.stop();
+      _controller.value = 0;
+    }
   }
 
   @override
@@ -1005,10 +1057,17 @@ class _CircleLinesPainter extends CustomPainter {
       phase != oldDelegate.phase;
 }
 
-/// Artwork for the "Private. Instant. Yours." onboarding page.
+/// Artwork for the privacy onboarding page.
 /// Shows a shield with checkmark and floating security elements.
 class _PrivacyArtwork extends StatefulWidget {
-  const _PrivacyArtwork();
+  const _PrivacyArtwork({this.active = true, this.animate = true});
+
+  /// Whether this artwork's page is currently visible; motion pauses
+  /// off-screen to save frames and battery.
+  final bool active;
+
+  /// Whether looping motion is allowed at all (OS reduce-motion disables it).
+  final bool animate;
 
   @override
   State<_PrivacyArtwork> createState() => _PrivacyArtworkState();
@@ -1024,7 +1083,25 @@ class _PrivacyArtworkState extends State<_PrivacyArtwork>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 6),
-    )..repeat();
+    );
+    if (widget.active && widget.animate) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _PrivacyArtwork oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.active == widget.active &&
+        oldWidget.animate == widget.animate) {
+      return;
+    }
+    if (widget.active && widget.animate) {
+      if (!_controller.isAnimating) _controller.repeat();
+    } else {
+      _controller.stop();
+      _controller.value = 0;
+    }
   }
 
   @override

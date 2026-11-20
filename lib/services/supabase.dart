@@ -83,6 +83,12 @@ class Supa {
   static Future<void> resendConfirmation(String email) =>
       client.auth.resend(type: OtpType.signup, email: email);
 
+  // Send a password-reset email. The recovery link lands on the configured
+  // site URL / deep link with a recovery session; the user can then set a
+  // new password in Settings → Account (which uses updateUser).
+  static Future<void> resetPasswordForEmail(String email) =>
+      client.auth.resetPasswordForEmail(email.trim());
+
   // Profiles
   static Future<Profile?> getProfile(String uid) async {
     final res = await client
