@@ -81,6 +81,11 @@ class PushNotifications {
     return id == _suspendedUserId ? null : id;
   }
 
+  static Future<void> refresh() async {
+    final owner = _activeUserId;
+    if (_initialized && owner != null) await _sync(owner, prompt: false);
+  }
+
   static Future<bool> enable() async {
     final owner = _activeUserId;
     if (!_initialized || owner == null) return false;

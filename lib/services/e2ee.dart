@@ -118,6 +118,30 @@ class SecureChat {
         key: _trustSlot(owner, conversation), value: _snapshot(shown));
   }
 
+  static Future<String> localFingerprint() async =>
+      (await _identity(_owner))['fp'] as String;
+  static Future<List<String>> ownKeys() async {
+    final rows = await _db
+        .from('chat_device_keys')
+        .select('fingerprint')
+        .eq('user_id', _owner)
+        .isFilter('revoked_at', null)
+        .order('fingerprint');
+    return rows.map((r) => r['fingerprint'] as String).toList();
+  }
+
+  static Future<void> replaceLocalKey(String expected) async {
+    final owner = _owner;
+    if (await localFingerprint() != expected)
+      throw const SecurityFailure('Device identity changed.');
+    final next = await _run({'op': 'generate'});
+    _checkOwner(owner);
+    await revoke(expected);
+    _checkOwner(owner);
+    await _store.write(key: 'bro.pgp.v2.$owner', value: next);
+    await _identity(owner);
+  }
+
   static Future<void> revoke(String fingerprint) =>
       _db.rpc('revoke_chat_key', params: {'p_key': fingerprint});
 

@@ -26,6 +26,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node --test checks/*.test.cjs
+      - run: npm ci --prefix checks --ignore-scripts && node --test checks/*.test.cjs checks/*.test.mjs
       - run: flutter build web --release
       - run: flutter build apk --debug

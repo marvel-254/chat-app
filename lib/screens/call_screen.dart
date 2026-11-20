@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
@@ -43,6 +44,9 @@ class _CallScreenState extends State<CallScreen> {
   int _retries = 0;
   Timer? _deadline, _heartbeat;
   StreamSubscription<List<ConnectivityResult>>? _net;
+  Future<void> _signalTail = Future.value();
+  late final String? _owner = Supa.currentUser?.id;
+  StreamSubscription<AuthState>? _auth;
   final _elapsed = Stopwatch()..start();
   static const _capture = MethodChannel('bro/capture');
   bool get _android =>
@@ -70,6 +74,10 @@ class _CallScreenState extends State<CallScreen> {
         .listen((_) {
       if (_connected) _recover();
     });
+    final owner = _owner;
+    _auth = Supa.authStateChanges.listen((_) {
+      if (owner != Supa.currentUser?.id) _endCall(notifyPeer: false);
+    });
     _start();
   }
 
@@ -83,7 +91,11 @@ class _CallScreenState extends State<CallScreen> {
           opts: const RealtimeChannelConfig(private: true));
       _channel = channel;
       channel.onBroadcast(
-          event: 'signal', callback: (payload) => _onSignal(payload));
+          event: 'signal',
+          callback: (payload) {
+            _signalTail =
+                _signalTail.then((_) => _onSignal(payload)).catchError((_) {});
+          });
       channel.subscribe((status, error) async {
         if (status == RealtimeSubscribeStatus.subscribed &&
             mounted &&
@@ -166,6 +178,7 @@ class _CallScreenState extends State<CallScreen> {
     pc.onConnectionState = (state) {
       if (!mounted || _finished) return;
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+        unawaited(_reportRoute(pc));
         _connected = true;
         _deadline?.cancel();
         _restarting = false;
@@ -176,6 +189,7 @@ class _CallScreenState extends State<CallScreen> {
         _recover();
       }
     };
+    if (_finished) return;
     _ready = true;
     if (widget.outgoing) {
       try {
@@ -188,6 +202,7 @@ class _CallScreenState extends State<CallScreen> {
       if (mounted) setState(() => _status = 'Calling ${widget.peer.label}…');
     } else {
       await _send('accept', {'video': widget.video});
+      if (_finished) return;
       _accepted = true;
       _lease();
       if (mounted) setState(() => _status = 'Joining call…');
@@ -200,6 +215,46 @@ class _CallScreenState extends State<CallScreen> {
         if (!_finished) _recover();
       });
     });
+  }
+
+  Future<void> _reportRoute(RTCPeerConnection pc) async {
+    try {
+      final reports = await pc.getStats();
+      for (final pair in reports.where((r) =>
+          r.type == 'candidate-pair' &&
+          r.values['state'] == 'succeeded' &&
+          r.values['nominated'] == true)) {
+        final relay = reports.any((r) =>
+            (r.id == pair.values['localCandidateId'] ||
+                r.id == pair.values['remoteCandidateId']) &&
+            r.values['candidateType'] == 'relay');
+        debugPrint('Call route: ${relay ? 'relay' : 'direct'}');
+        break;
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _selectOutput() async {
+    try {
+      await Permission.bluetoothConnect.request();
+      final devices = await Helper.audiooutputs;
+      if (!mounted) return;
+      final id = await showDialog<String>(
+          context: context,
+          builder: (ctx) =>
+              SimpleDialog(title: const Text('Call audio output'), children: [
+                for (final d in devices)
+                  SimpleDialogOption(
+                      onPressed: () => Navigator.pop(ctx, d.deviceId),
+                      child: Text(d.label))
+              ]));
+      if (id != null && !_finished) await Helper.selectAudioOutput(id);
+    } catch (_) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content:
+                Text('Audio output unavailable. Use system audio controls.')));
+    }
   }
 
   Future<void> _recover() async {
@@ -303,6 +358,7 @@ class _CallScreenState extends State<CallScreen> {
     _deadline?.cancel();
     _heartbeat?.cancel();
     unawaited(_net?.cancel());
+    unawaited(_auth?.cancel());
     if (notifyPeer) unawaited(_quiet(() => _send('hangup', {})));
     final stream = _localStream;
     if (stream != null) {
@@ -452,6 +508,11 @@ class _CallScreenState extends State<CallScreen> {
                               track.enabled = !_muted;
                             }
                           }),
+                      if (_android && _ready)
+                        _CallControl(
+                            label: 'Audio output',
+                            icon: Icons.speaker,
+                            onTap: _selectOutput),
                       if (widget.video) ...[
                         const SizedBox(width: 14),
                         _CallControl(

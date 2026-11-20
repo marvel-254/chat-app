@@ -79,3 +79,31 @@ create policy schedule_membership on public.scheduled_messages as restrictive fo
 alter table public.message_reactions add column sealed_content text;
 create policy secure_reaction_writes on public.message_reactions as restrictive for insert to authenticated with check
  (emoji=id::text and sealed_content is not null and octet_length(sealed_content)<=262144 and sealed_content ~ '^bro2:[0-9a-f]{64}:-----BEGIN PGP MESSAGE-----');
+
+-- Preserve the signed event ID on dispatch. This invoker operation is also
+-- subject to normal message insertion RLS, current blocks and send limits.
+create function public.deliver_my_due_messages() returns integer language plpgsql security invoker set search_path='' as $$
+declare item public.scheduled_messages; n integer:=0;
+begin
+ for item in select * from public.scheduled_messages where sender_id=auth.uid() and scheduled_at<=now() and content like 'bro2:%' order by scheduled_at limit 10 for update skip locked loop
+   insert into public.messages(id,sender_id,conversation_id,content,reply_to_id) values(item.id,item.sender_id,item.conversation_id,item.content,item.reply_to_id);
+   delete from public.scheduled_messages where id=item.id;
+   n:=n+1;
+ end loop;
+ return n;
+end; $$;
+revoke all on function public.deliver_my_due_messages() from public,anon;
+grant execute on function public.deliver_my_due_messages() to authenticated;
+-- Write edit and history in one transaction. Old apps cannot copy cleartext
+-- into the history table before an incompatible edit is rejected.
+revoke insert,update on public.message_edit_history from authenticated,anon;
+create function public.record_secure_edit() returns trigger language plpgsql security definer set search_path='' as $$
+begin
+ insert into public.message_edit_history(message_id,previous_content,new_content) values(new.id,case when old.content like 'bro2:%' then old.content else '[Legacy version]' end,new.content);
+ return new;
+end; $$;
+create trigger record_secure_edit after update of content on public.messages for each row when(new.content is distinct from old.content) execute function public.record_secure_edit();
+create function public.prevent_plaintext_draft() returns trigger language plpgsql set search_path='' as $$ begin
+ if new.draft is not null and new.draft<>'' then raise exception 'Drafts are local to your device';end if;return new;
+end; $$;
+create trigger local_drafts before insert or update of draft on public.conversation_participants for each row execute function public.prevent_plaintext_draft();

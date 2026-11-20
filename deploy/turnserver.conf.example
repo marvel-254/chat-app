@@ -1,0 +1,28 @@
+# coturn: replace example realm, relay address and certificate paths.
+realm=turn.example.org
+fingerprint
+use-auth-secret
+# Set static-auth-secret from the same secret store as TURN_SHARED_SECRET.
+listening-port=3478
+tls-listening-port=443
+min-port=49160
+max-port=49260
+cert=/etc/turn/tls/fullchain.pem
+pkey=/etc/turn/tls/privkey.pem
+no-multicast-peers
+no-cli
+user-quota=8
+total-quota=200
+stale-nonce=600
+no-tlsv1
+no-tlsv1_1
+# Also enforce network egress ACLs denying metadata, local and internal IPs.
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=100.64.0.0-100.127.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=::1
+denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff

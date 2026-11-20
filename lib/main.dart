@@ -51,8 +51,8 @@ void main() async {
 
   await SentryFlutter.init(
     (options) {
-      options.dsn =
-          'https://fd8f1fbe2d70d8f8dcd5d5434a361ab5@o4510827799707648.ingest.de.sentry.io/4512197248745552';
+      // Do not export raw client exceptions during the security rollout.
+      options.dsn = '';
       options.environment = kReleaseMode ? 'production' : 'development';
       options.release = const String.fromEnvironment(
         'APP_RELEASE',
@@ -60,7 +60,10 @@ void main() async {
       );
       options.dist = buildNumber.isEmpty ? null : buildNumber;
       options.sendDefaultPii = false;
-      options.tracesSampleRate = kReleaseMode ? 0.1 : 1.0;
+      options.tracesSampleRate = 0;
+      options.beforeBreadcrumb = (_, __) => null;
+      options.attachScreenshot = false;
+      options.attachViewHierarchy = false;
       options.debug = false;
     },
     appRunner: () async {
@@ -279,6 +282,14 @@ class BroApp extends StatefulWidget {
 
 class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
   bool _appLocked = false;
+  Timer? _scheduleTimer;
+  Future<void> _deliverDue() async {
+    if (Supa.currentUser == null) return;
+    try {
+      await Supa.client.rpc('deliver_my_due_messages');
+    } catch (_) {/* Keep queued rows; retry after resume. */}
+  }
+
   DateTime? _pausedAt;
   StreamSubscription<AuthState>? _authSub;
 
@@ -287,6 +298,9 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     ConnectionMonitor.start();
+    _scheduleTimer =
+        Timer.periodic(const Duration(minutes: 1), (_) => _deliverDue());
+    unawaited(_deliverDue());
     Presence.bind();
     _authSub = Supa.authStateChanges.listen((state) {
       if (state.session != null) {
@@ -344,6 +358,7 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _scheduleTimer?.cancel();
     _authSub?.cancel();
     Presence.unbind();
     AppLock.enabled.removeListener(_onLockPref);
@@ -357,6 +372,8 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       Presence.resume();
       unawaited(_lockIfTimedOut());
+      unawaited(_deliverDue());
+      unawaited(PushNotifications.refresh());
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       _pausedAt = DateTime.now();

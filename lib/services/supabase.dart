@@ -26,7 +26,7 @@ class Supa {
   static SupabaseClient get client => Supabase.instance.client;
   static const _cloudStorageUrl = String.fromEnvironment(
     'CLOUD_STORAGE_URL',
-    defaultValue: 'https://bro-chat-storage.twistedoliver211fs.workers.dev',
+    defaultValue: '',
   );
 
   static Map<String, String> get _storageHeaders => {
@@ -928,6 +928,8 @@ class Supa {
 
   static Future<Map<String, dynamic>> uploadAttachment(String conversationId,
       Uint8List bytes, String filename, String mimeType) async {
+    if (bytes.length > 20 * 1024 * 1024 - 28)
+      throw StateError('File is too large.');
     final blob = AttachmentCipher.seal(bytes);
     final stored = await uploadTimelineFile(
         conversationId, blob.bytes, 'blob', 'application/octet-stream');
@@ -1124,7 +1126,11 @@ class Supa {
               peerUsername: r['peer_username'] as String?,
               peerDisplayName: r['peer_display_name'] as String?,
               peerAvatarUrl: r['peer_avatar_url'] as String?,
-              lastMessage: r['last_message'] as String?,
+              lastMessage: (r['last_message'] as String?)
+                          ?.startsWith(SecureChat.prefix) ==
+                      true
+                  ? 'Private message'
+                  : r['last_message'] as String?,
               lastMessageAt: r['last_message_at'] == null
                   ? null
                   : DateTime.parse(r['last_message_at'] as String),
@@ -1178,7 +1184,11 @@ class Supa {
                 peerUsername: r['peer_username'] as String?,
                 peerDisplayName: r['peer_display_name'] as String?,
                 peerAvatarUrl: r['peer_avatar_url'] as String?,
-                lastMessage: r['last_message'] as String?,
+                lastMessage: (r['last_message'] as String?)
+                            ?.startsWith(SecureChat.prefix) ==
+                        true
+                    ? 'Private message'
+                    : r['last_message'] as String?,
                 lastMessageAt: r['last_message_at'] == null
                     ? null
                     : DateTime.parse(r['last_message_at'] as String),
@@ -1299,13 +1309,17 @@ class Supa {
   }
 
   static Future<Message> sendMessage(String conversationId, String content,
-      {Duration? expiry, String? replyToId, String? expectedSenderId}) async {
+      {Duration? expiry,
+      String? replyToId,
+      String? expectedSenderId,
+      String? eventId}) async {
     return sendMessageWithReply(
       conversationId: conversationId,
       content: content,
       replyToId: replyToId,
       expiry: expiry,
       expectedSenderId: expectedSenderId,
+      eventId: eventId,
     );
   }
 
@@ -1325,20 +1339,9 @@ class Supa {
         .select('content,conversation_id,reply_to_id')
         .eq('id', messageId)
         .single();
-    final previousContent = current['content'] as String;
-    final conversationId = current['conversation_id'] as String;
-    // Re-encrypt the new content
     final encryptedContent = await SecureChat.seal(
-        messageId, conversationId, content,
+        messageId, current['conversation_id'] as String, content,
         reply: current['reply_to_id'] as String?);
-    // Record edit history (store the encrypted content for consistency)
-    await client.from('message_edit_history').insert({
-      'message_id': messageId,
-      'previous_content': previousContent.startsWith(SecureChat.prefix)
-          ? previousContent
-          : '[Legacy version]',
-      'new_content': encryptedContent,
-    });
     // Update the message (trigger sets edited_at)
     await client
         .from('messages')
@@ -1353,6 +1356,26 @@ class Supa {
         .select('previous_content, new_content, edited_at')
         .eq('message_id', messageId)
         .order('edited_at', ascending: true);
+    final m = await client
+        .from('messages')
+        .select('sender_id,conversation_id,reply_to_id')
+        .eq('id', messageId)
+        .single();
+    for (final r in result) {
+      for (final key in ['previous_content', 'new_content']) {
+        final raw = r[key] as String;
+        if (raw.startsWith(SecureChat.prefix)) {
+          try {
+            r[key] = await SecureChat.open(raw, messageId, m['conversation_id'],
+                m['sender_id'], m['reply_to_id']);
+          } catch (_) {
+            r[key] = 'Could not verify this version';
+          }
+        } else {
+          r[key] = 'Legacy: $raw';
+        }
+      }
+    }
     return List<Map<String, dynamic>>.from(result as List);
   }
 
@@ -1377,35 +1400,13 @@ class Supa {
   static Future<void> deleteMessageForEveryone(String messageId) async {
     final me = currentUser;
     if (me == null) return;
-    // Check if within time window (e.g., 1 hour)
-    final message = await client
+    // A tombstone containing plaintext is not a secure edit. Use the existing
+    // sender-only delete policy, never copy sensitive content into history.
+    await client
         .from('messages')
-        .select('created_at, sender_id')
+        .delete()
         .eq('id', messageId)
-        .single();
-    final senderId = message['sender_id'] as String;
-    final createdAt = DateTime.parse(message['created_at'] as String);
-    final now = DateTime.now().toUtc();
-    final diff = now.difference(createdAt);
-
-    if (diff > const Duration(hours: 1)) {
-      // Soft delete - replace content with "This message was deleted"
-      await client
-          .from('messages')
-          .update({
-            'content': 'This message was deleted',
-            'edited_at': now.toIso8601String(),
-          })
-          .eq('id', messageId)
-          .eq('sender_id', senderId);
-    } else {
-      // Hard delete within 1 hour
-      await client
-          .from('messages')
-          .delete()
-          .eq('id', messageId)
-          .eq('sender_id', senderId);
-    }
+        .eq('sender_id', me.id);
   }
 
   static Future<void> setMessageExpiry(
@@ -1541,6 +1542,7 @@ class Supa {
     String? replyToId,
     Duration? expiry,
     String? expectedSenderId,
+    String? eventId,
   }) =>
       message_safety.MessageSafety.send(
         conversationId: conversationId,
@@ -1548,6 +1550,7 @@ class Supa {
         replyToId: replyToId,
         expiry: expiry,
         expectedSenderId: expectedSenderId,
+        eventId: eventId,
       );
 
   static Future<Message?> getReplyPreview(String messageId) =>

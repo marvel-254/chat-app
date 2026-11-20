@@ -1,0 +1,1 @@
+{"name":"bro-infrastructure-checks","private":true,"devDependencies":{"@electric-sql/pglite":"0.5.17"},"scripts":{"test":"node --test *.test.cjs *.test.mjs"}}

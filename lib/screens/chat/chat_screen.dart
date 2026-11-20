@@ -142,6 +142,7 @@ class _ChatScreenState extends State<ChatScreen> {
           expiry: item.expiresAt?.difference(DateTime.now()),
           replyToId: item.replyToId,
           expectedSenderId: item.senderId,
+          eventId: item.localId,
         );
         if (mounted &&
             isSenderActive() &&
@@ -215,6 +216,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (owner == null) return;
     try {
       final keys = await SecureChat.devices(widget.conversationId);
+      final local = await SecureChat.localFingerprint();
       final trusted = await SecureChat.verified(widget.conversationId, keys);
       if (!mounted) return;
       final answer = await showDialog<bool>(
@@ -225,7 +227,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       : 'Verify device fingerprints'),
                   content: SingleChildScrollView(
                       child: SelectableText(
-                          'Compare every fingerprint with its owner in person or via a separate trusted channel. Unexpected change? Cancel. Both people must open this screen on each device.\n\n${keys.map((k) => "${k.owner == owner ? 'Your account' : k.owner}\n${k.fingerprint}").join("\n\n")}')),
+                          'This device (computed locally):\n$local\n\nCompare EACH key below to the locally computed fingerprint on that device, in person or via a separate trusted channel. Do not approve an unknown device.\n\n${keys.map((k) => "${k.owner == owner ? 'Your account' : k.owner}\n${k.fingerprint}").join("\n\n")}')),
                   actions: [
                     TextButton(
                         onPressed: () => Navigator.pop(ctx),
@@ -614,6 +616,7 @@ class _ChatScreenState extends State<ChatScreen> {
         expiry: _messageExpiry,
         replyToId: replyToId,
         expectedSenderId: senderId,
+        eventId: localId,
       );
       _removePending(localId);
       if (Supa.currentUser?.id != senderId) return;
@@ -1116,22 +1119,28 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     ).then((emoji) {
       if (emoji != null && emoji is String) {
-        Supa.addReaction(message.id, emoji);
+        Supa.addReaction(message.id, emoji).catchError((e) {
+          if (mounted) _unsupported(friendlyErrorMessage(e));
+        });
       }
     });
   }
 
   /// Toggle a reaction on a message (add if not present, remove if present).
   Future<void> _toggleReaction(String messageId, String emoji) async {
-    final reactions = await Supa.getReactions(messageId);
-    final me = Supa.currentUser;
-    if (me == null) return;
-    final hasReacted =
-        reactions.any((r) => r['emoji'] == emoji && r['user_id'] == me.id);
-    if (hasReacted) {
-      await Supa.removeReaction(messageId, emoji);
-    } else {
-      await Supa.addReaction(messageId, emoji);
+    try {
+      final reactions = await Supa.getReactions(messageId);
+      final me = Supa.currentUser;
+      if (me == null) return;
+      final hasReacted =
+          reactions.any((r) => r['emoji'] == emoji && r['user_id'] == me.id);
+      if (hasReacted) {
+        await Supa.removeReaction(messageId, emoji);
+      } else {
+        await Supa.addReaction(messageId, emoji);
+      }
+    } catch (e) {
+      if (mounted) _unsupported(friendlyErrorMessage(e));
     }
   }
 
@@ -1612,7 +1621,8 @@ class _ChatScreenState extends State<ChatScreen> {
       if (mounted) {
         _ctrl.clear();
         setState(() => _replyTo = null);
-        _unsupported('Message scheduled! ⏰');
+        _unsupported(
+            'Scheduled for delivery when a signed-in device is online.');
       }
     } catch (e) {
       if (mounted) {
@@ -1707,6 +1717,7 @@ class _ChatScreenState extends State<ChatScreen> {
           widget.conversationId,
           pending.content,
           expectedSenderId: senderId,
+          eventId: localId,
         );
         _removePending(localId);
         if (Supa.currentUser?.id == senderId) _rollToBottom();
@@ -2854,8 +2865,18 @@ class _VoiceNoteDialogState extends State<_VoiceNoteDialog> {
         _error = null;
         _sending = true;
       });
-      final messageId =
-          await VoiceNoteService.stopAndUpload(widget.conversationId);
+      String messageId;
+      try {
+        messageId = await VoiceNoteService.stopAndUpload(widget.conversationId);
+      } catch (e) {
+        if (mounted)
+          setState(() {
+            _sending = false;
+            _error =
+                friendlyErrorMessage(e, fallback: 'Voice note was not sent.');
+          });
+        return;
+      }
       if (!mounted) return;
       setState(() => _sending = false);
       if (messageId.isNotEmpty) {
@@ -2867,14 +2888,17 @@ class _VoiceNoteDialogState extends State<_VoiceNoteDialog> {
         Navigator.of(context).pop(messageId);
       } else {
         setState(() {
-          _recording = true;
+          _recording = false;
           _error =
               'Could not send that voice note. Check your connection and try again.';
         });
       }
     } else {
       final ok = await VoiceNoteService.start();
-      if (!mounted) return;
+      if (!mounted) {
+        if (ok) await VoiceNoteService.cancel();
+        return;
+      }
       if (ok) {
         setState(() => _recording = true);
       } else {
@@ -2883,6 +2907,12 @@ class _VoiceNoteDialogState extends State<_VoiceNoteDialog> {
         });
       }
     }
+  }
+
+  @override
+  void dispose() {
+    if (_recording) unawaited(VoiceNoteService.cancel());
+    super.dispose();
   }
 
   @override

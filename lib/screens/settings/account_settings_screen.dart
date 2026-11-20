@@ -1,4 +1,5 @@
 import '../../services/push_notifications.dart';
+import '../../services/e2ee.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -403,6 +404,56 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     });
   }
 
+  Future<void> _deviceKeys() async {
+    final owner = Supa.currentUser?.id;
+    try {
+      final local = await SecureChat.localFingerprint();
+      final all = await SecureChat.ownKeys();
+      if (!mounted || owner != Supa.currentUser?.id) return;
+      final target = await showDialog<String>(
+          context: context,
+          builder: (ctx) => SimpleDialog(
+                  title: const Text('Private message keys'),
+                  children: [
+                    Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: SelectableText('This device: $local')),
+                    for (final fp in all.where((k) => k != local))
+                      SimpleDialogOption(
+                          onPressed: () => Navigator.pop(ctx, fp),
+                          child: Text('Revoke device: $fp')),
+                    SimpleDialogOption(
+                        onPressed: () => Navigator.pop(ctx, local),
+                        child: const Text('Replace this device key'))
+                  ]));
+      if (target == null || !mounted) return;
+      final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+                  title: const Text('Invalidate device key?'),
+                  content: const Text(
+                      'Contacts must verify again. Old messages may become unreadable. Revocation cannot recall files already delivered.'),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Cancel')),
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Invalidate'))
+                  ]));
+      if (ok != true || owner != Supa.currentUser?.id) return;
+      if (target == local) {
+        await SecureChat.replaceLocalKey(local);
+      } else {
+        await SecureChat.revoke(target);
+      }
+    } catch (_) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Could not update private message keys.')));
+    }
+  }
+
   Color _profileColorValue() {
     final value = _profileColor.text.trim();
     if (!RegExp(r'^#[0-9A-Fa-f]{6}$').hasMatch(value)) return _P.primary;
@@ -644,6 +695,12 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     ),
                   ),
                   const SizedBox(height: 10),
+                  ListTile(
+                      leading: const Icon(Icons.key),
+                      title: const Text('Private message keys'),
+                      subtitle: const Text(
+                          'Compare, replace or revoke device fingerprints'),
+                      onTap: _deviceKeys),
                   ListTile(
                       leading: const Icon(Icons.notifications_outlined),
                       title: const Text('Enable message notifications'),

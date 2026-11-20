@@ -75,3 +75,4 @@ skills-lock.json
 
 # Local tooling build output
 graphify-out/
+node_modules/

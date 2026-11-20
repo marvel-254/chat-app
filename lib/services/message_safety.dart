@@ -85,6 +85,7 @@ class MessageSafety {
     String? replyToId,
     Duration? expiry,
     String? expectedSenderId,
+    String? eventId,
   }) async {
     final me = _currentUser;
     if (me == null || (expectedSenderId != null && me.id != expectedSenderId)) {
@@ -97,7 +98,7 @@ class MessageSafety {
     final now = DateTime.now().toUtc();
 
     // Encrypt the content before storing
-    final id = const Uuid().v4();
+    final id = eventId ?? const Uuid().v4();
     final encryptedContent =
         await SecureChat.seal(id, conversationId, content, reply: replyToId);
 
@@ -116,7 +117,22 @@ class MessageSafety {
         'expires_at': now.add(expiry).toIso8601String(),
     };
 
-    final res = await _client.from('messages').insert(insert).select().single();
+    final res = await _client
+        .from('messages')
+        .upsert(insert, onConflict: 'id', ignoreDuplicates: true)
+        .select()
+        .maybeSingle();
+    if (res == null) {
+      // A prior attempt committed before its acknowledgement reached the device.
+      final existing = await _client
+          .from('messages')
+          .select()
+          .eq('id', id)
+          .eq('sender_id', me.id)
+          .eq('conversation_id', conversationId)
+          .single();
+      return Message.fromJson(existing);
+    }
 
     // conversations.last_message_at is not on older schemas; a DB trigger
     // now maintains it. Never fail the send if the bump 400s.
