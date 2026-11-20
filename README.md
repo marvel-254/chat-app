@@ -12,6 +12,9 @@ Set `SUPABASE_URL` and `SUPABASE_ANON_KEY` in the GitHub Pages environment to BR
 
 See [HANDOFF.md](HANDOFF.md) for the architecture, storage flow, migrations, local setup, and release operations.
 
+The auth surfaces follow a documented design pass — Space Grotesk type tokens,
+original hero artwork and the expressive-but-reduced-motion hero choreography. See [docs/auth-look-pass.md](docs/auth-look-pass.md) before changing the login or onboarding look.
+
 Apply the migrations in `supabase/migrations` to the configured Supabase project before using chat uploads or calls. The media migrations create the public avatar bucket, private conversation-file and chat-background buckets, storage access rules, and private Realtime policies for call signaling. Chat backgrounds include built-in themes and private uploaded images.
 
 Voice and video calls use WebRTC with private signaling; configure TURN for networks that block direct connections. Incoming calls can appear anywhere in the signed-in app. Use **Calls** to review, filter, and return recent calls.
