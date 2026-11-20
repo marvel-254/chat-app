@@ -1,9 +1,42 @@
-# Welcome-screen image sources
+# Hero artwork sources
 
-The following third-party transparent renders are used in the BRO welcome scene:
+All four welcome-screen hero props are **original BRO artwork**, generated in-house
+on 2026-11-20 for the auth look pass. They replace the earlier third-party
+transparent renders, whose commercial-use terms had never been verified.
 
-- `welcome_3d_ball.webp` — PNGTree, “blue and white soccer ball 3d render”: https://pngtree.com/freepng/glowing-blue-soccer-ball-with-electric-effect-isolated-on-transparent-background_20682524.html
-- `welcome_3d_gamepad.png` — Vecteezy, “Game Controller 3D Illustration”: https://www.vecteezy.com/free-png/game-controller-3d
-- `welcome_lamborghini.png` — FreePNGImg, “Lamborghini Yellow PNG File HD”: https://freepngimg.com/png/162567-lamborghini-yellow-png-file-hd
+| Asset | Role in the scene | Intrinsic size | Size on disk |
+| --- | --- | --- | --- |
+| `hero_mascot.webp` | Full-body mascot ("Bro"), waving | 560 × 1003 | ~70 KB |
+| `hero_ball.webp` | Charcoal/volt football orb | 300 × 210 | ~20 KB |
+| `hero_gamepad.webp` | Charcoal/volt game controller | 480 × 283 | ~21 KB |
+| `hero_supercar.webp` | Original graphite/volt supercar (no real model, no badges) | 512 × 229 | ~26 KB |
 
-Downloaded 2026-11-17. The source pages' current license and attribution requirements have not been independently verified; review them before commercial distribution.
+## Art direction
+
+- **Palette:** near-black charcoal surfaces (`#121318`–`#292A2F`) with volt lime
+  (`#D4FF00`) emissive accents — the same "Electric Street" palette the UI uses.
+- **Material:** soft-touch matte fabric/composite with chrome specular edge light.
+- **Lighting:** studio key light with a lime rim light, no baked floor or shadow —
+  the app draws its own contact shadow so the props composite cleanly over the
+  auth backdrop in both light and dark surfaces.
+- **Typography:** none baked into the art. All lettering in the hero is live text
+  set in Space Grotesk (`AppText`), so copy changes never require a re-render.
+
+## Regenerating
+
+The props are produced from flat magenta (`#FF00FF`) chroma backgrounds and keyed
+to alpha. If you need to redo them, generate a single isolated prop per image on
+a uniform magenta field, then:
+
+1. Key the background to alpha with a soft ramp (background distance ≈ 40–115)
+   and un-mix the magenta from partial-coverage edge pixels.
+2. Despill any residual magenta so hair, glass and wheels keep neutral edges.
+3. Drop the baked shadow / keep the largest connected silhouette.
+4. Resize to the sizes above and export WebP (`quality 92`, method 6).
+
+Keep the output files at the paths in `pubspec.yaml`; `HeroArt` in
+`lib/screens/auth/widgets/welcome_hero.dart` is the single place that references
+them from Dart.
+
+These files are original generated artwork for this project; there are no
+third-party attribution requirements to carry forward.

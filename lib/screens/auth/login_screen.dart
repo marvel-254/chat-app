@@ -691,7 +691,7 @@ class _WelcomeHeroState extends State<WelcomeHero>
                                     ..rotateY(tilt)
                                     ..rotateX(math.cos(phase) * 0.018),
                                   child: Image.asset(
-                                    'assets/images/welcome_avatar_fullbody.png',
+                                    'assets/images/hero_mascot.webp',
                                     fit: BoxFit.contain,
                                     alignment: Alignment.bottomCenter,
                                     gaplessPlayback: true,
@@ -776,7 +776,7 @@ class _OrbitBall extends StatelessWidget {
         ..rotateY(-0.18 + math.sin(phase) * 0.34)
         ..rotateZ(-0.12 + math.cos(phase) * 0.22),
       child: Image.asset(
-        'assets/images/welcome_3d_ball.webp',
+        'assets/images/hero_ball.webp',
         width: 54,
         height: 54,
         fit: BoxFit.contain,
@@ -800,7 +800,7 @@ class _OrbitGamepad extends StatelessWidget {
         ..rotateY(0.12 + math.sin(phase + 1.4) * 0.12)
         ..rotateZ(-0.15 + math.cos(phase + 1.4) * 0.06),
       child: Image.asset(
-        'assets/images/welcome_3d_gamepad.png',
+        'assets/images/hero_gamepad.webp',
         width: 84,
         height: 58,
         fit: BoxFit.contain,
@@ -824,7 +824,7 @@ class _OrbitSupercar extends StatelessWidget {
         ..rotateY(-0.1 + math.sin(phase + 1.8) * 0.12)
         ..rotateZ(-0.055),
       child: Image.asset(
-        'assets/images/welcome_lamborghini.png',
+        'assets/images/hero_supercar.webp',
         width: 128,
         height: 69,
         fit: BoxFit.contain,

@@ -85,10 +85,10 @@ flutter:
 
   assets:
     - assets/images/bro_logo.png
-    - assets/images/welcome_avatar_fullbody.png
-    - assets/images/welcome_3d_ball.webp
-    - assets/images/welcome_3d_gamepad.png
-    - assets/images/welcome_lamborghini.png
+    - assets/images/hero_mascot.webp
+    - assets/images/hero_ball.webp
+    - assets/images/hero_gamepad.webp
+    - assets/images/hero_supercar.webp
     - assets/images/noise_tile.png
     - assets/branding/bro/logo.svg
 
