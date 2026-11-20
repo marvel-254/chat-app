@@ -43,7 +43,7 @@ jobs:
           "${task[@]}" 2>&1 | tee "$RUNNER_TEMP/flutter-$CHECK.txt"
           result=${PIPESTATUS[0]}
           if [[ "$result" != 0 ]]; then
-            awk '/^[[:space:]]*error[[:space:]]|Error:|\[E\]/ && count++ < 20 { print "::error::" $0 }' "$RUNNER_TEMP/flutter-$CHECK.txt"
+            awk '/^[[:space:]]*error[[:space:]]|Error:|\[E\]|warning •/ && count++ < 50 { print "::error::" $0 }' "$RUNNER_TEMP/flutter-$CHECK.txt"
             tail -n 8 "$RUNNER_TEMP/flutter-$CHECK.txt" | sed 's/^/::notice::/'
           fi
           exit "$result"
