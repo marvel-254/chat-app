@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'crypto/adapter.dart';
+import 'crypto/revision_guard.dart';
 import 'linked_devices.dart';
 
 class SecurityFailure implements Exception {
@@ -159,7 +160,7 @@ class SecureChat {
       };
 
   static Future<String> seal(String id, String conversation, String text,
-      {String? reply, String purpose = 'message'}) async {
+      {String? reply, String purpose = 'message', int revision = 0}) async {
     final owner = _owner;
     final keys = await devices(conversation);
     final members = await _db
@@ -182,6 +183,7 @@ class SecureChat {
       'body': {
         ..._context(id, conversation, owner, reply, purpose),
         'text': text,
+        'revision': revision,
         'recipients': recipients
       }
     });
@@ -191,7 +193,9 @@ class SecureChat {
 
   static Future<String> open(String content, String id, String conversation,
       String sender, String? reply,
-      {String purpose = 'message'}) async {
+      {String purpose = 'message',
+      int revision = 0,
+      bool history = false}) async {
     final owner = _owner;
     if (content.length > 256 * 1024 || !content.startsWith(prefix))
       throw const SecurityFailure('Unsupported envelope.');
@@ -226,9 +230,18 @@ class SecureChat {
       'signer': row['public_key'],
       'context': {
         ..._context(id, conversation, sender, reply, purpose),
+        'revision': revision,
         'recipients': recipients
       }
     });
+    if (purpose == 'message' && !history) {
+      final slot = 'bro.revision.$owner.$conversation.$id';
+      await RevisionGuard.observe(
+          slot,
+          revision,
+          () async => int.parse(await _store.read(key: slot) ?? '0'),
+          (v) => _store.write(key: slot, value: '$v'));
+    }
     _checkOwner(owner);
     return text;
   }

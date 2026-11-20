@@ -930,7 +930,7 @@ class Supa {
       Uint8List bytes, String filename, String mimeType) async {
     if (bytes.length > 20 * 1024 * 1024 - 28)
       throw StateError('File is too large.');
-    final blob = AttachmentCipher.seal(bytes);
+    final blob = await compute(AttachmentCipher.seal, bytes);
     final stored = await uploadTimelineFile(
         conversationId, blob.bytes, 'blob', 'application/octet-stream');
     return {
@@ -944,8 +944,11 @@ class Supa {
   }
 
   static Future<Uint8List> readAttachment(Map<String, dynamic> meta) async {
+    final owner = currentUser?.id;
     final response =
         await http.get(Uri.parse(await attachmentUrl(meta['path'] as String)));
+    if (owner == null || owner != currentUser?.id)
+      throw StateError('Account changed.');
     if (response.statusCode != 200) throw StateError('File unavailable.');
     return AttachmentCipher.open(response.bodyBytes, meta['key'] as String);
   }
@@ -991,7 +994,7 @@ class Supa {
       }
       await client.storage.from('chat-files').remove([objectPath]);
     } catch (e) {
-      debugPrint('deleteAttachment cleanup failed: $e');
+      debugPrint('Attachment cleanup failed.');
     }
   }
 
@@ -1274,8 +1277,9 @@ class Supa {
             String content = msg.content;
             if (content.startsWith(SecureChat.prefix)) {
               try {
-                content = await SecureChat.open(
-                    content, id, conversationId, msg.senderId, msg.replyToId);
+                content = await SecureChat.open(content, id, conversationId,
+                    msg.senderId, r['signed_reply'] as String?,
+                    revision: r['secure_revision'] as int? ?? 0);
               } on SecurityFailure catch (e) {
                 content = '🔒 ${e.message}';
               } catch (_) {
@@ -1301,7 +1305,9 @@ class Supa {
               editedAt: msg.editedAt,
               originalContent: msg.originalContent,
               readByPeer: readByPeerSet.contains(id) || msg.readAt != null,
-              replyToId: msg.replyToId,
+              replyToId: msg.content.startsWith(SecureChat.prefix)
+                  ? r['signed_reply'] as String?
+                  : msg.replyToId,
               reactions: reactionsMap[id] ?? [],
             );
           }));
@@ -1336,16 +1342,22 @@ class Supa {
     // Fetch current row to get conversation_id for re-encryption
     final current = await client
         .from('messages')
-        .select('content,conversation_id,reply_to_id')
+        .select(
+            'content,conversation_id,reply_to_id,signed_reply,secure_revision')
         .eq('id', messageId)
         .single();
     final encryptedContent = await SecureChat.seal(
         messageId, current['conversation_id'] as String, content,
-        reply: current['reply_to_id'] as String?);
+        reply: (current['signed_reply'] ?? current['reply_to_id']) as String?,
+        revision: (current['secure_revision'] as int) + 1);
     // Update the message (trigger sets edited_at)
     await client
         .from('messages')
-        .update({'content': encryptedContent}).eq('id', messageId);
+        .update({'content': encryptedContent})
+        .eq('id', messageId)
+        .eq('secure_revision', current['secure_revision'])
+        .select('id')
+        .single();
   }
 
   /// Fetch the edit history for a message.
@@ -1353,12 +1365,12 @@ class Supa {
       String messageId) async {
     final result = await client
         .from('message_edit_history')
-        .select('previous_content, new_content, edited_at')
+        .select('previous_content, new_content, edited_at, revision')
         .eq('message_id', messageId)
         .order('edited_at', ascending: true);
     final m = await client
         .from('messages')
-        .select('sender_id,conversation_id,reply_to_id')
+        .select('sender_id,conversation_id,signed_reply')
         .eq('id', messageId)
         .single();
     for (final r in result) {
@@ -1367,7 +1379,10 @@ class Supa {
         if (raw.startsWith(SecureChat.prefix)) {
           try {
             r[key] = await SecureChat.open(raw, messageId, m['conversation_id'],
-                m['sender_id'], m['reply_to_id']);
+                m['sender_id'], m['signed_reply'],
+                revision: (r['revision'] as int) -
+                    (key == 'previous_content' ? 1 : 0),
+                history: true);
           } catch (_) {
             r[key] = 'Could not verify this version';
           }

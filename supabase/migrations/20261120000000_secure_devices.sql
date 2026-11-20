@@ -25,6 +25,16 @@ create function public.valid_device_roster(conv uuid,author uuid,envelope text) 
 $$;
 revoke all on function public.valid_device_roster(uuid,uuid,text) from public,anon;
 grant execute on function public.valid_device_roster(uuid,uuid,text) to authenticated;
+alter table public.messages add column secure_revision integer not null default 0 check(secure_revision>=0),add column signed_reply uuid;
+alter table public.message_edit_history add column revision integer;
+-- signed_reply survives ON DELETE SET NULL on the navigation FK.
+create function public.bind_message_context() returns trigger language plpgsql set search_path='' as $$ begin
+ if tg_op='INSERT' then new.secure_revision:=0; new.signed_reply:=new.reply_to_id;
+ else new.secure_revision:=old.secure_revision + case when new.content is distinct from old.content then 1 else 0 end;
+ new.signed_reply:=case when old.content not like 'bro2:%' and new.content is distinct from old.content then old.reply_to_id else old.signed_reply end;
+ end if;return new;
+end;$$;
+create trigger bind_message_context before insert or update on public.messages for each row execute function public.bind_message_context();
 create or replace function public.guard_message_insert()
 returns trigger
 language plpgsql
@@ -106,7 +116,7 @@ grant execute on function public.deliver_my_due_messages() to authenticated;
 revoke insert,update on public.message_edit_history from authenticated,anon;
 create function public.record_secure_edit() returns trigger language plpgsql security definer set search_path='' as $$
 begin
- insert into public.message_edit_history(message_id,previous_content,new_content) values(new.id,case when old.content like 'bro2:%' then old.content else '[Legacy version]' end,new.content);
+ insert into public.message_edit_history(message_id,revision,previous_content,new_content) values(new.id,new.secure_revision,case when old.content like 'bro2:%' then old.content else '[Legacy version]' end,new.content);
  return new;
 end; $$;
 create trigger record_secure_edit after update of content on public.messages for each row when(new.content is distinct from old.content) execute function public.record_secure_edit();

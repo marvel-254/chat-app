@@ -31,8 +31,9 @@ create function public.signal_call(p_id uuid,p_conversation uuid,p_peer uuid,p_k
 declare me uuid:=auth.uid(); c public.call_sessions; payload jsonb; topic text:='call:'||p_conversation::text;
 begin
  if me is null or me=p_peer or not public.is_conversation_member(p_conversation) or not exists(select from public.conversation_participants where user_id=p_peer and conversation_id=p_conversation) or (select count(*) from public.conversation_participants where conversation_id=p_conversation)<>2 then raise exception 'not a DM participant'; end if;
- if p_kind not in ('invite','accept','reject','hangup','offer','answer','ice','heartbeat') or octet_length(p_data::text)>65536 then raise exception 'invalid signal'; end if;
+ if p_kind not in ('invite','accept','reject','hangup','offer','answer','ice','heartbeat','request_restart') or octet_length(p_data::text)>65536 then raise exception 'invalid signal'; end if;
  if p_kind='invite' then
+  if exists(select from public.blocked_users where (blocker_id=me and blocked_id=p_peer) or (blocker_id=p_peer and blocked_id=me)) then raise exception 'call unavailable'; end if;
   perform pg_advisory_xact_lock(hashtextextended(least(me,p_peer)::text,0));
   perform pg_advisory_xact_lock(hashtextextended(greatest(me,p_peer)::text,0));
   if exists(select from public.call_sessions where (sender_id in(me,p_peer) or recipient_id in(me,p_peer)) and state in('ringing','accepted') and expires_at>now()) then raise exception 'busy'; end if;

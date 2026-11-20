@@ -227,14 +227,15 @@ class PushNotifications {
       if (id is! String) return _noticeBody;
       final row = await Supa.client
           .from('messages')
-          .select('content,sender_id,reply_to_id')
+          .select('content,sender_id,signed_reply,secure_revision')
           .eq('id', id)
           .eq('conversation_id', target.conversationId)
           .single();
       final packet = row['content'] as String;
       if (!packet.startsWith(SecureChat.prefix)) return _noticeBody;
       final body = await SecureChat.open(packet, id, target.conversationId,
-          row['sender_id'], row['reply_to_id']);
+          row['sender_id'], row['signed_reply'],
+          revision: row['secure_revision']);
       final name = style == 'sender' || style == 'both'
           ? (await Supa.getProfile(row['sender_id']))?.label
           : null;

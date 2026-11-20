@@ -55,6 +55,7 @@ const broCrypto = async (input) => {
           "reply",
           "purpose",
           "recipients",
+          "revision",
         ]
       ) {
         if (body[k] !== a.context[k]) throw Error("Wrong message context");

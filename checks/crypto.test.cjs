@@ -21,6 +21,7 @@ test("v2: registered offline devices, authenticated contexts and no downgrade", 
     sender: "alice",
     purpose: "message",
     recipients: "device list",
+    revision: 0,
   };
   const seal = (keys) =>
     run({
@@ -55,6 +56,7 @@ test("v2: registered offline devices, authenticated contexts and no downgrade", 
       "purpose",
       "sender",
       "recipients",
+      "revision",
     ]
   ) await assert.rejects(open(bob, { context: { ...ctx, [k]: "replay" } }));
   await assert.rejects(open(bob, { packet: "broken" }));

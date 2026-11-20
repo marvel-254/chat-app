@@ -84,8 +84,15 @@ class _CallScreenState extends State<CallScreen> {
   Future<void> _start() async {
     try {
       await _localRenderer.initialize();
+      if (_finished) {
+        await _quiet(_localRenderer.dispose);
+        return;
+      }
       await _remoteRenderer.initialize();
-      if (_finished) return;
+      if (_finished) {
+        await _quiet(_remoteRenderer.dispose);
+        return;
+      }
       final channel = Supa.client.channel(
           'call:${widget.conversationId}:${widget.callId}',
           opts: const RealtimeChannelConfig(private: true));
@@ -267,6 +274,12 @@ class _CallScreenState extends State<CallScreen> {
     }
     _timeout(18, 'Could not restore the connection.');
     setState(() => _status = 'Reconnecting…');
+    if (!widget.outgoing) {
+      try {
+        await _send('request_restart', {});
+      } catch (_) {}
+      return;
+    }
     if (widget.outgoing) {
       try {
         final pc = _peerConnection!;
@@ -297,6 +310,8 @@ class _CallScreenState extends State<CallScreen> {
         await pc.setLocalDescription(offer);
         await _send('offer', {'sdp': offer.sdp, 'type': offer.type});
         if (mounted) setState(() => _status = 'Connecting…');
+      } else if (kind == 'request_restart' && widget.outgoing) {
+        await _recover();
       } else if (kind == 'offer' && !widget.outgoing) {
         await pc.setRemoteDescription(RTCSessionDescription(
             data['sdp'] as String?, data['type'] as String?));

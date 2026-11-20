@@ -15,10 +15,11 @@ class AttachmentCipher {
     final key = _random(32), nonce = _random(12);
     final cipher = GCMBlockCipher(AESEngine())
       ..init(true, AEADParameters(KeyParameter(key), 128, nonce, Uint8List(0)));
-    return (
-      bytes: Uint8List.fromList([...nonce, ...cipher.process(plain)]),
-      key: base64Encode(key)
-    );
+    final payload = cipher.process(plain);
+    final packed = Uint8List(nonce.length + payload.length)
+      ..setAll(0, nonce)
+      ..setAll(nonce.length, payload);
+    return (bytes: packed, key: base64Encode(key));
   }
 
   static Uint8List open(Uint8List bytes, String secret) {
