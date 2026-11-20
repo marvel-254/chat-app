@@ -53,7 +53,7 @@ class PushNotifications {
       : defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS;
 
-  static Future<void> initialize() async {
+  static Future<void> initialize({Uri? launchUri}) async {
     if (_initialized || !configured) return;
     if (kIsWeb) {
       await Firebase.initializeApp(
@@ -99,7 +99,7 @@ class PushNotifications {
       }
     });
     if (kIsWeb) {
-      final query = Uri.base.queryParameters;
+      final query = (launchUri ?? Uri.base).queryParameters;
       if (query['bro_push'] == '1') _receive(query);
     } else {
       final initial = await messaging.getInitialMessage();
@@ -176,7 +176,8 @@ class PushNotifications {
           serviceWorkerScriptPath: worker,
         )
         .timeout(_timeout);
-    if (_activeUserId != owner || token == null || token.isEmpty) return;
+    if (_activeUserId != owner) return;
+    if (token == null || token.isEmpty) throw StateError('No push token');
     // Persist before the RPC: a process kill after registration still rotates on account switch.
     await _storage.write(key: _ownerKey, value: owner);
     _lastOwner = owner;

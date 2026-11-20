@@ -86,15 +86,16 @@ void main() async {
       await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
       await onboarding.loadOnboardingStatus();
       _setupAuthGateCallback();
+      final launchUri = Uri.base;
       runApp(const BroApp());
-      unawaited(_initializePush());
+      unawaited(_initializePush(launchUri));
     },
   );
 }
 
-Future<void> _initializePush() async {
+Future<void> _initializePush(Uri launchUri) async {
   try {
-    await PushNotifications.initialize();
+    await PushNotifications.initialize(launchUri: launchUri);
   } catch (_) {
     debugPrint('Notifications could not start. Chat is still available.');
   }

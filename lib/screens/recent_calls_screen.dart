@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthState;
 
 import '../models/call_record.dart';
 import '../models/profile.dart';
@@ -25,12 +26,20 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
   CallFilter _filter = CallFilter.all;
   bool _loading = true, _syncing = false, _unavailable = false, _opened = false;
   Timer? _refresh;
+  StreamSubscription<AuthState>? _auth;
   bool get _current => mounted && Supa.currentUser?.id == _owner;
 
   @override
   void initState() {
     super.initState();
     _owner = Supa.currentUser!.id;
+    _auth = Supa.authStateChanges.listen((_) {
+      if (mounted && !_current)
+        setState(() {
+          _records = [];
+          _peers.clear();
+        });
+    });
     unawaited(_initialize());
     ConnectionMonitor.isOnline.addListener(_networkChanged);
     _refresh = Timer.periodic(const Duration(seconds: 12), (_) {
@@ -56,9 +65,17 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
     _syncing = true;
     try {
       final records = await Calls.recent(_owner);
+      final cachedNames = {
+        for (final record in _records)
+          record.peerId(_owner): record.cachedContact
+      };
+      var profilesFresh = false;
       if (!_current) return;
       setState(() {
-        _records = records;
+        _records = records
+            .map((record) =>
+                record.withCachedContact(cachedNames[record.peerId(_owner)]))
+            .toList();
         _unavailable = false;
       });
       final ids = records.map((r) => r.peerId(_owner)).toSet();
@@ -76,6 +93,7 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
               .select()
               .inFilter('id', ids.toList())
               .timeout(Calls.timeout);
+          profilesFresh = true;
           if (_current)
             setState(() {
               _peers.clear();
@@ -88,6 +106,14 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
           // History remains useful if profile lookup is unavailable.
         }
       }
+      if (!_current) return;
+      final enriched = records.map((record) {
+        final peerId = record.peerId(_owner);
+        return record.withCachedContact(_peers[peerId]?.label ??
+            (profilesFresh ? null : cachedNames[peerId]));
+      }).toList();
+      setState(() => _records = enriched);
+      await Calls.cache(_owner, enriched);
       if (_current && !_opened && highlight != null) {
         _opened = true;
         if (target != null && target.status.terminal)
@@ -143,7 +169,7 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
 
   Future<void> _details(CallRecord record) async {
     final peer = _peers[record.peerId(_owner)];
-    final label = peer?.label ?? 'Contact';
+    final label = peer?.label ?? record.cachedContact ?? 'Contact';
     final direction = record.outgoing(_owner) ? 'Outgoing' : 'Incoming';
     final choice = await showModalBottomSheet<String>(
         context: context,
@@ -211,6 +237,7 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
   @override
   void dispose() {
     _refresh?.cancel();
+    unawaited(_auth?.cancel());
     ConnectionMonitor.isOnline.removeListener(_networkChanged);
     super.dispose();
   }
@@ -290,8 +317,13 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
                                   foregroundImage: avatarUrl == null
                                       ? null
                                       : NetworkImage(avatarUrl),
-                                  child: Text(peer?.peerInitial ?? '?')),
-                              title: Text(peer?.label ?? 'Contact'),
+                                  child: Text(peer?.peerInitial ??
+                                      r.cachedContact
+                                          ?.substring(0, 1)
+                                          .toUpperCase() ??
+                                      '?')),
+                              title: Text(
+                                  peer?.label ?? r.cachedContact ?? 'Contact'),
                               subtitle: Text(
                                   '${r.outgoing(_owner) ? 'Outgoing' : 'Incoming'} ${r.video ? 'video' : 'voice'} · ${r.outcome(_owner)}\n'
                                   '${_when(r.startedAt)}${duration == null ? '' : ' · ${CallRecord.formatDuration(duration)}'}'),

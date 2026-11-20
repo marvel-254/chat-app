@@ -30,6 +30,12 @@ class CallRecord {
         connectedAt = DateTime.tryParse(json['connected_at'] as String? ?? ''),
         endedAt = DateTime.tryParse(json['ended_at'] as String? ?? '');
 
+  // Only a display name is persisted with the offline history, not a signed
+  // avatar URL or a copy of the contact's profile.
+  String? get cachedContact => json['cached_contact'] as String?;
+  CallRecord withCachedContact(String? label) =>
+      CallRecord({...json, 'cached_contact': label});
+
   final Map<String, dynamic> json;
   final String id, conversationId, callerId, calleeId;
   final bool video;

@@ -18,18 +18,26 @@ jobs:
         with:
           flutter-version: '3.47.7'
           channel: stable
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
       - run: flutter pub get
       - name: Analyze
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+        run: |
+          set +e
+          flutter analyze --no-fatal-infos --no-fatal-warnings 2>&1 | tee "$RUNNER_TEMP/flutter-analyze.txt"
+          result=${PIPESTATUS[0]}
+          awk '/^[[:space:]]*error[[:space:]]/ && count++ < 20 { print "::error::" $0 }' "$RUNNER_TEMP/flutter-analyze.txt"
+          exit "$result"
       - name: Test
+        if: success() || failure()
         run: flutter test
       - name: Build Web
+        if: success() || failure()
         run: ./scripts/build.sh web
       - name: Build Android (debug)
+        if: success() || failure()
         run: flutter build apk --debug
   calls-push:
     runs-on: ubuntu-latest

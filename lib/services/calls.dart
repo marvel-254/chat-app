@@ -95,9 +95,7 @@ class Calls {
         .limit(100)
         .timeout(timeout);
     _requireOwner(owner);
-    final records = rows.map(_record).toList();
-    await _cache(owner, records);
-    return records;
+    return rows.map(_record).toList();
   }
 
   static Future<void> hide(String owner, String? id) async {
@@ -107,6 +105,11 @@ class Calls {
     _requireOwner(owner);
     final records = id == null ? <CallRecord>[] : await cached(owner);
     await _cache(owner, records.where((record) => record.id != id).toList());
+  }
+
+  static Future<void> cache(String owner, List<CallRecord> records) async {
+    _requireOwner(owner);
+    await _cache(owner, records);
   }
 
   static Future<void> _cache(String owner, List<CallRecord> records) async {

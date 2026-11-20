@@ -334,7 +334,10 @@ class _CallScreenState extends State<CallScreen> {
     _offerPending = true;
     _remoteDescriptionPending = true;
     if (restart) _pendingCandidates.clear();
-    final offer = await pc.createOffer(restart ? {'iceRestart': true} : {});
+    if (restart) await pc.restartIce();
+    final offer = restart
+        ? await pc.createOffer({'iceRestart': true})
+        : await pc.createOffer();
     if (_finished) return;
     await pc.setLocalDescription(offer);
     await _send('offer', {'sdp': offer.sdp, 'type': offer.type});
@@ -451,7 +454,15 @@ class _CallScreenState extends State<CallScreen> {
   Future<void> _advanceQuietly(String action) async {
     if (Supa.currentUser?.id != _myId) return;
     try {
-      await Calls.advance(widget.callId, action);
+      if (action == 'end' && _everConnected && !_connectedReported) {
+        // A fast hangup can race the first connected report. Preserve the
+        // completed outcome before finalizing, even for a sub-second call.
+        try {
+          await Calls.advance(widget.callId, 'connected');
+        } catch (_) {}
+      }
+      if (Supa.currentUser?.id == _myId)
+        await Calls.advance(widget.callId, action);
     } catch (_) {}
   }
 
