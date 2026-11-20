@@ -7,6 +7,8 @@ import '../../theme/app_colors.dart' as app_colors;
 import '../../services/supabase.dart';
 import '../../ui/errors.dart';
 import '../../ui/motion.dart';
+import '../../ui/auth_backdrop.dart';
+import '../../theme/app_text.dart';
 import '../../app_constants.dart';
 import 'auth_validation.dart';
 import 'widgets/auth_controls.dart';
@@ -197,19 +199,13 @@ class _LoginScreenState extends State<LoginScreen> {
           _heading,
           textAlign: TextAlign.center,
           maxLines: 2,
-          style: const TextStyle(
-            color: app_colors.P.text,
-            fontSize: 26,
-            height: 1.05,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.6,
-          ),
+          style: AppText.heroTitleCompact,
         ),
         const SizedBox(height: 6),
         Text(
           _subheading,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 12, color: app_colors.P.muted),
+          style: AppText.subtitle,
         ),
         const SizedBox(height: 24),
       ],
@@ -351,11 +347,11 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           const SizedBox(height: 4),
           const Text('By stepping in, you rep the Bro Code.',
-              style: TextStyle(fontSize: 11, color: app_colors.P.muted)),
+              style: AppText.caption),
           if (buildNumber.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text('BRO · build $buildNumber',
-                style: const TextStyle(fontSize: 11, color: app_colors.P.muted)),
+                style: AppText.caption),
           ],
         ],
       ),
@@ -414,8 +410,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(color: app_colors.bg),
+      body: AuthBackdrop(
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -604,14 +599,9 @@ class _WelcomeHeroState extends State<WelcomeHero>
                                   Icon(Icons.circle,
                                       size: 7, color: app_colors.P.primary),
                                   SizedBox(width: 7),
-                                  Text(
+                                  const Text(
                                     'BRO  ·  YOUR PEOPLE, CLOSER',
-                                    style: TextStyle(
-                                      color: app_colors.P.muted,
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: 1.05,
-                                    ),
+                                    style: AppText.eyebrow,
                                   ),
                                 ],
                               ),
@@ -622,13 +612,8 @@ class _WelcomeHeroState extends State<WelcomeHero>
                             heading,
                             textAlign: TextAlign.center,
                             maxLines: 2,
-                            style: TextStyle(
-                              color: app_colors.P.text,
-                              fontSize: compact ? 25 : 28,
-                              height: 1.02,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -0.8,
-                            ),
+                            style: AppText.heroTitle
+                                .copyWith(fontSize: compact ? 25 : 28),
                           ),
                           const SizedBox(height: 6),
                           Text(
@@ -636,10 +621,7 @@ class _WelcomeHeroState extends State<WelcomeHero>
                                 ? 'Make room for the conversations that matter.'
                                 : 'All your conversations, right here.',
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: app_colors.P.muted,
-                              fontSize: 12,
-                            ),
+                            style: AppText.subtitle,
                           ),
                         ],
                       ),

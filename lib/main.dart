@@ -562,6 +562,7 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
           theme: ThemeData(
             useMaterial3: true,
             brightness: Brightness.dark,
+            fontFamily: 'Space Grotesk',
             scaffoldBackgroundColor: _P.bg,
             colorScheme: ColorScheme.dark(
               primary: _P.primary,
