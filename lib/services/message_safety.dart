@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/profile.dart';
-import 'supabase.dart' as supa;
+import 'package:uuid/uuid.dart';
+import 'e2ee.dart';
 
 /// Message validation, rate limiting, and send operations.
 ///
@@ -84,6 +85,7 @@ class MessageSafety {
     String? replyToId,
     Duration? expiry,
     String? expectedSenderId,
+    String? eventId,
   }) async {
     final me = _currentUser;
     if (me == null || (expectedSenderId != null && me.id != expectedSenderId)) {
@@ -96,14 +98,16 @@ class MessageSafety {
     final now = DateTime.now().toUtc();
 
     // Encrypt the content before storing
+    final id = eventId ?? const Uuid().v4();
     final encryptedContent =
-        await supa.Supa.encryptForConversation(conversationId, content);
+        await SecureChat.seal(id, conversationId, content, reply: replyToId);
 
     if (_currentUser?.id != me.id) {
       throw StateError('The sender is no longer signed in.');
     }
 
     final insert = {
+      'id': id,
       'conversation_id': conversationId,
       'sender_id': me.id,
       'content': encryptedContent,
@@ -113,14 +117,28 @@ class MessageSafety {
         'expires_at': now.add(expiry).toIso8601String(),
     };
 
-    final res = await _client.from('messages').insert(insert).select().single();
+    final res = await _client
+        .from('messages')
+        .upsert(insert, onConflict: 'id', ignoreDuplicates: true)
+        .select()
+        .maybeSingle();
+    if (res == null) {
+      // A prior attempt committed before its acknowledgement reached the device.
+      final existing = await _client
+          .from('messages')
+          .select()
+          .eq('id', id)
+          .eq('sender_id', me.id)
+          .eq('conversation_id', conversationId)
+          .single();
+      return Message.fromJson(existing);
+    }
 
     // conversations.last_message_at is not on older schemas; a DB trigger
     // now maintains it. Never fail the send if the bump 400s.
     try {
-      await _client
-          .from('conversations')
-          .update({'updated_at': now.toIso8601String()}).eq('id', conversationId);
+      await _client.from('conversations').update(
+          {'updated_at': now.toIso8601String()}).eq('id', conversationId);
     } catch (_) {}
 
     return Message.fromJson(res);

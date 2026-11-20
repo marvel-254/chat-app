@@ -1,3 +1,4 @@
+import '../services/e2ee.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -8,6 +9,7 @@ String friendlyErrorMessage(
   Object? error, {
   String fallback = "Something didn't work. Please try again.",
 }) {
+  if (error is SecurityFailure) return error.message;
   if (error == null) return fallback;
 
   if (error is String) {

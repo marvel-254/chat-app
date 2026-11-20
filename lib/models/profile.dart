@@ -201,6 +201,7 @@ class Conversation {
 }
 
 class Message {
+  final String securityLabel;
   final String id;
   final String conversationId;
   final String senderId;
@@ -216,6 +217,7 @@ class Message {
   final List<Map<String, dynamic>> reactions;
 
   Message({
+    this.securityLabel = 'Legacy • not secure',
     required this.id,
     required this.conversationId,
     required this.senderId,

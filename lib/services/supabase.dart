@@ -16,13 +16,17 @@ import 'reactions.dart' as reactions;
 import 'message_safety.dart' as message_safety;
 import 'read_receipts.dart' as read_receipts;
 import 'block_report.dart' as block_report;
-import 'e2ee.dart' as e2ee;
+import 'crypto/legacy.dart' as legacy;
+import 'e2ee.dart';
+import 'crypto/attachment.dart';
+import 'linked_devices.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class Supa {
   static SupabaseClient get client => Supabase.instance.client;
   static const _cloudStorageUrl = String.fromEnvironment(
     'CLOUD_STORAGE_URL',
-    defaultValue: 'https://bro-chat-storage.twistedoliver211fs.workers.dev',
+    defaultValue: '',
   );
 
   static Map<String, String> get _storageHeaders => {
@@ -77,28 +81,23 @@ class Supa {
       client.auth.onAuthStateChange;
 
   static Future<void> savePushToken(
-      String firebaseInstallationId, String platform) async {
-    final user = currentUser;
-    if (user == null) return;
-    await client.from('push_tokens').upsert(
-      {
-        'user_id': user.id,
-        'firebase_installation_id': firebaseInstallationId,
-        'platform': platform,
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      },
-      onConflict: 'firebase_installation_id',
-    );
+      String token, String platform, String owner) async {
+    final device = await LinkedDevices.currentDeviceId();
+    if (currentUser?.id != owner) return;
+    await client.from('fcm_devices').upsert({
+      'user_id': owner,
+      'device_id': device,
+      'platform': platform,
+      'token': token
+    }, onConflict: 'user_id,device_id');
   }
 
-  static Future<void> removePushToken(String firebaseInstallationId) async {
-    final user = currentUser;
-    if (user == null) return;
+  static Future<void> removePushToken(String owner) async {
     await client
-        .from('push_tokens')
+        .from('fcm_devices')
         .delete()
-        .eq('user_id', user.id)
-        .eq('firebase_installation_id', firebaseInstallationId);
+        .eq('user_id', owner)
+        .eq('device_id', await LinkedDevices.currentDeviceId());
   }
 
   // Re-send the email confirmation link for an unconfirmed account.
@@ -929,6 +928,33 @@ class Supa {
 
   static Future<Map<String, dynamic>> uploadAttachment(String conversationId,
       Uint8List bytes, String filename, String mimeType) async {
+    if (bytes.length > 20 * 1024 * 1024 - 28)
+      throw StateError('File is too large.');
+    final blob = await compute(AttachmentCipher.seal, bytes);
+    final stored = await uploadTimelineFile(
+        conversationId, blob.bytes, 'blob', 'application/octet-stream');
+    return {
+      ...stored,
+      'kind': mimeType.startsWith('image/') ? 'image' : 'file',
+      'name': filename,
+      'mime': mimeType,
+      'size': bytes.length,
+      'key': blob.key
+    };
+  }
+
+  static Future<Uint8List> readAttachment(Map<String, dynamic> meta) async {
+    final owner = currentUser?.id;
+    final response =
+        await http.get(Uri.parse(await attachmentUrl(meta['path'] as String)));
+    if (owner == null || owner != currentUser?.id)
+      throw StateError('Account changed.');
+    if (response.statusCode != 200) throw StateError('File unavailable.');
+    return AttachmentCipher.open(response.bodyBytes, meta['key'] as String);
+  }
+
+  static Future<Map<String, dynamic>> uploadTimelineFile(String conversationId,
+      Uint8List bytes, String filename, String mimeType) async {
     final uid = currentUser!.id;
     final id = const Uuid().v4();
     final safeName =
@@ -968,7 +994,7 @@ class Supa {
       }
       await client.storage.from('chat-files').remove([objectPath]);
     } catch (e) {
-      debugPrint('deleteAttachment cleanup failed: $e');
+      debugPrint('Attachment cleanup failed.');
     }
   }
 
@@ -1103,7 +1129,11 @@ class Supa {
               peerUsername: r['peer_username'] as String?,
               peerDisplayName: r['peer_display_name'] as String?,
               peerAvatarUrl: r['peer_avatar_url'] as String?,
-              lastMessage: r['last_message'] as String?,
+              lastMessage: (r['last_message'] as String?)
+                          ?.startsWith(SecureChat.prefix) ==
+                      true
+                  ? 'Private message'
+                  : r['last_message'] as String?,
               lastMessageAt: r['last_message_at'] == null
                   ? null
                   : DateTime.parse(r['last_message_at'] as String),
@@ -1157,7 +1187,11 @@ class Supa {
                 peerUsername: r['peer_username'] as String?,
                 peerDisplayName: r['peer_display_name'] as String?,
                 peerAvatarUrl: r['peer_avatar_url'] as String?,
-                lastMessage: r['last_message'] as String?,
+                lastMessage: (r['last_message'] as String?)
+                            ?.startsWith(SecureChat.prefix) ==
+                        true
+                    ? 'Private message'
+                    : r['last_message'] as String?,
                 lastMessageAt: r['last_message_at'] == null
                     ? null
                     : DateTime.parse(r['last_message_at'] as String),
@@ -1202,11 +1236,14 @@ class Supa {
                 readByPeerSet.add(row['message_id'] as String);
               }
               // Fetch reactions for all messages in batch
-              final reactions = await client
+              final reactionRows = await client
                   .from('message_reactions')
-                  .select('message_id,emoji,user_id,created_at')
+                  .select(
+                      'id,message_id,emoji,sealed_content,user_id,created_at')
                   .filter('message_id', 'in', messageIds);
-              for (final row in reactions as List) {
+              for (final raw in reactionRows) {
+                final row =
+                    await reactions.Reactions.decode(raw, conversationId);
                 final mid = row['message_id'] as String;
                 reactionsMap.putIfAbsent(mid, () => []).add(row);
               }
@@ -1222,25 +1259,41 @@ class Supa {
           }
 
           // Fetch E2EE key for this conversation (cached after first call)
-          final e2eeKey = await getConversationKey(conversationId);
+          final legacyKey = rows.any(
+                  (r) => !r['content'].toString().startsWith(SecureChat.prefix))
+              ? await getConversationKey(conversationId)
+              : null;
 
           final now = DateTime.now();
-          return rows
+          return Future.wait(rows
               .where((r) =>
                   !hiddenIds.contains(r['id'] as String) &&
                   (r['expires_at'] == null ||
                       DateTime.parse(r['expires_at'] as String).isAfter(now)))
-              .map((r) {
+              .map((r) async {
             final id = r['id'] as String;
             final msg = Message.fromJson(r);
             // Decrypt the content if it was encrypted
             String content = msg.content;
-            final decrypted =
-                decryptMessageContent(conversationId, msg.content, e2eeKey);
-            if (decrypted != null) {
-              content = decrypted;
+            if (content.startsWith(SecureChat.prefix)) {
+              try {
+                content = await SecureChat.open(content, id, conversationId,
+                    msg.senderId, r['signed_reply'] as String?,
+                    revision: r['secure_revision'] as int? ?? 0);
+              } on SecurityFailure catch (e) {
+                content = '🔒 ${e.message}';
+              } catch (_) {
+                content = '🔒 Could not decrypt this message.';
+              }
+            } else if (legacyKey != null && legacy.isEncrypted(content)) {
+              content = legacy.decrypt(legacyKey, content) ?? content;
             }
             return Message(
+              securityLabel: msg.content.startsWith(SecureChat.prefix)
+                  ? (content.startsWith('🔒')
+                      ? 'Not verified'
+                      : 'Verified device')
+                  : 'Legacy • not secure',
               id: msg.id,
               conversationId: msg.conversationId,
               senderId: msg.senderId,
@@ -1252,21 +1305,27 @@ class Supa {
               editedAt: msg.editedAt,
               originalContent: msg.originalContent,
               readByPeer: readByPeerSet.contains(id) || msg.readAt != null,
-              replyToId: msg.replyToId,
+              replyToId: msg.content.startsWith(SecureChat.prefix)
+                  ? r['signed_reply'] as String?
+                  : msg.replyToId,
               reactions: reactionsMap[id] ?? [],
             );
-          }).toList();
+          }));
         });
   }
 
   static Future<Message> sendMessage(String conversationId, String content,
-      {Duration? expiry, String? replyToId, String? expectedSenderId}) async {
+      {Duration? expiry,
+      String? replyToId,
+      String? expectedSenderId,
+      String? eventId}) async {
     return sendMessageWithReply(
       conversationId: conversationId,
       content: content,
       replyToId: replyToId,
       expiry: expiry,
       expectedSenderId: expectedSenderId,
+      eventId: eventId,
     );
   }
 
@@ -1283,24 +1342,22 @@ class Supa {
     // Fetch current row to get conversation_id for re-encryption
     final current = await client
         .from('messages')
-        .select('content,conversation_id')
+        .select(
+            'content,conversation_id,reply_to_id,signed_reply,secure_revision')
         .eq('id', messageId)
         .single();
-    final previousContent = current['content'] as String;
-    final conversationId = current['conversation_id'] as String;
-    // Re-encrypt the new content
-    final encryptedContent =
-        await encryptForConversation(conversationId, content);
-    // Record edit history (store the encrypted content for consistency)
-    await client.from('message_edit_history').insert({
-      'message_id': messageId,
-      'previous_content': previousContent,
-      'new_content': encryptedContent,
-    });
+    final encryptedContent = await SecureChat.seal(
+        messageId, current['conversation_id'] as String, content,
+        reply: (current['signed_reply'] ?? current['reply_to_id']) as String?,
+        revision: (current['secure_revision'] as int) + 1);
     // Update the message (trigger sets edited_at)
     await client
         .from('messages')
-        .update({'content': encryptedContent}).eq('id', messageId);
+        .update({'content': encryptedContent})
+        .eq('id', messageId)
+        .eq('secure_revision', current['secure_revision'])
+        .select('id')
+        .single();
   }
 
   /// Fetch the edit history for a message.
@@ -1308,9 +1365,32 @@ class Supa {
       String messageId) async {
     final result = await client
         .from('message_edit_history')
-        .select('previous_content, new_content, edited_at')
+        .select('previous_content, new_content, edited_at, revision')
         .eq('message_id', messageId)
         .order('edited_at', ascending: true);
+    final m = await client
+        .from('messages')
+        .select('sender_id,conversation_id,signed_reply')
+        .eq('id', messageId)
+        .single();
+    for (final r in result) {
+      for (final key in ['previous_content', 'new_content']) {
+        final raw = r[key] as String;
+        if (raw.startsWith(SecureChat.prefix)) {
+          try {
+            r[key] = await SecureChat.open(raw, messageId, m['conversation_id'],
+                m['sender_id'], m['signed_reply'],
+                revision: (r['revision'] as int) -
+                    (key == 'previous_content' ? 1 : 0),
+                history: true);
+          } catch (_) {
+            r[key] = 'Could not verify this version';
+          }
+        } else {
+          r[key] = 'Legacy: $raw';
+        }
+      }
+    }
     return List<Map<String, dynamic>>.from(result as List);
   }
 
@@ -1335,35 +1415,13 @@ class Supa {
   static Future<void> deleteMessageForEveryone(String messageId) async {
     final me = currentUser;
     if (me == null) return;
-    // Check if within time window (e.g., 1 hour)
-    final message = await client
+    // A tombstone containing plaintext is not a secure edit. Use the existing
+    // sender-only delete policy, never copy sensitive content into history.
+    await client
         .from('messages')
-        .select('created_at, sender_id')
+        .delete()
         .eq('id', messageId)
-        .single();
-    final senderId = message['sender_id'] as String;
-    final createdAt = DateTime.parse(message['created_at'] as String);
-    final now = DateTime.now().toUtc();
-    final diff = now.difference(createdAt);
-
-    if (diff > const Duration(hours: 1)) {
-      // Soft delete - replace content with "This message was deleted"
-      await client
-          .from('messages')
-          .update({
-            'content': 'This message was deleted',
-            'edited_at': now.toIso8601String(),
-          })
-          .eq('id', messageId)
-          .eq('sender_id', senderId);
-    } else {
-      // Hard delete within 1 hour
-      await client
-          .from('messages')
-          .delete()
-          .eq('id', messageId)
-          .eq('sender_id', senderId);
-    }
+        .eq('sender_id', me.id);
   }
 
   static Future<void> setMessageExpiry(
@@ -1404,17 +1462,17 @@ class Supa {
   static Future<void> saveDraft(String conversationId, String text) async {
     final me = currentUser;
     if (me == null) return;
-    await client.from('conversation_participants').upsert({
-      'conversation_id': conversationId,
-      'user_id': me.id,
-      'draft': text.isEmpty ? null : text,
-    }, onConflict: 'conversation_id,user_id');
+    await const FlutterSecureStorage()
+        .write(key: 'draft.${me.id}.$conversationId', value: text);
   }
 
   /// Load the saved draft for the current user in a conversation.
   static Future<String?> loadDraft(String conversationId) async {
     final me = currentUser;
     if (me == null) return null;
+    final local = await const FlutterSecureStorage()
+        .read(key: 'draft.${me.id}.$conversationId');
+    if (local != null) return local;
     final row = await client
         .from('conversation_participants')
         .select('draft')
@@ -1499,6 +1557,7 @@ class Supa {
     String? replyToId,
     Duration? expiry,
     String? expectedSenderId,
+    String? eventId,
   }) =>
       message_safety.MessageSafety.send(
         conversationId: conversationId,
@@ -1506,6 +1565,7 @@ class Supa {
         replyToId: replyToId,
         expiry: expiry,
         expectedSenderId: expectedSenderId,
+        eventId: eventId,
       );
 
   static Future<Message?> getReplyPreview(String messageId) =>
@@ -1563,36 +1623,6 @@ class Supa {
     }
   }
 
-  /// Encrypt plaintext for a conversation, or return the original plaintext
-  /// if encryption is not available (fallback for backward compatibility).
-  static Future<String> encryptForConversation(
-    String conversationId,
-    String plaintext,
-  ) async {
-    try {
-      final me = currentUser?.id;
-      if (me == null) return plaintext;
-      final peer = await getPeerUserId(conversationId);
-      if (peer == null) return plaintext;
-      final key = await e2ee.getOrDeriveKey(conversationId, me, peer);
-      return e2ee.encrypt(key, plaintext);
-    } catch (_) {
-      return plaintext;
-    }
-  }
-
-  /// Decrypt a message's content, falling back to the original if decryption
-  /// fails (e.g. the message was sent before E2EE was enabled).
-  static String? decryptMessageContent(
-    String conversationId,
-    String content,
-    String? key,
-  ) {
-    if (key == null || key.isEmpty) return null;
-    if (!e2ee.isEncrypted(content)) return null;
-    return e2ee.decrypt(key, content);
-  }
-
   /// Get or derive the E2EE key for a conversation.
   static Future<String?> getConversationKey(String conversationId) async {
     try {
@@ -1600,7 +1630,7 @@ class Supa {
       if (me == null) return null;
       final peer = await getPeerUserId(conversationId);
       if (peer == null) return null;
-      return await e2ee.getOrDeriveKey(conversationId, me, peer);
+      return await legacy.getOrDeriveKey(conversationId, me, peer);
     } catch (_) {
       return null;
     }

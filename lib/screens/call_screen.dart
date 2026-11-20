@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter/foundation.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -32,7 +36,26 @@ class _CallScreenState extends State<CallScreen> {
   RealtimeChannel? _channel;
   RTCPeerConnection? _peerConnection;
   MediaStream? _localStream;
-  bool _ready = false;
+  bool _ready = false,
+      _preparing = false,
+      _accepted = false,
+      _restarting = false,
+      _connected = false;
+  int _retries = 0;
+  Timer? _deadline, _heartbeat;
+  StreamSubscription<List<ConnectivityResult>>? _net;
+  Future<void> _signalTail = Future.value();
+  late final String? _owner = Supa.currentUser?.id;
+  StreamSubscription<AuthState>? _auth;
+  final _elapsed = Stopwatch()..start();
+  static const _capture = MethodChannel('bro/capture');
+  bool get _android =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  void _timeout(int secs, String reason) {
+    _deadline?.cancel();
+    _deadline = Timer(Duration(seconds: secs), () => _endCall(error: reason));
+  }
+
   bool _muted = false;
   bool _cameraOff = false;
   bool _finished = false;
@@ -44,29 +67,54 @@ class _CallScreenState extends State<CallScreen> {
   @override
   void initState() {
     super.initState();
+    _timeout(45, 'Call timed out.');
+    _net = Connectivity()
+        .onConnectivityChanged
+        .distinct((a, b) => setEquals(a.toSet(), b.toSet()))
+        .listen((_) {
+      if (_connected) _recover();
+    });
+    final owner = _owner;
+    _auth = Supa.authStateChanges.listen((_) {
+      if (owner != Supa.currentUser?.id) _endCall(notifyPeer: false);
+    });
     _start();
   }
 
   Future<void> _start() async {
     try {
       await _localRenderer.initialize();
+      if (_finished) {
+        await _quiet(_localRenderer.dispose);
+        return;
+      }
       await _remoteRenderer.initialize();
-      final channel = Supa.client.channel('call:${widget.conversationId}',
+      if (_finished) {
+        await _quiet(_remoteRenderer.dispose);
+        return;
+      }
+      final channel = Supa.client.channel(
+          'call:${widget.conversationId}:${widget.callId}',
           opts: const RealtimeChannelConfig(private: true));
       _channel = channel;
       channel.onBroadcast(
-          event: 'signal', callback: (payload) => _onSignal(payload));
+          event: 'signal',
+          callback: (payload) {
+            _signalTail =
+                _signalTail.then((_) => _onSignal(payload)).catchError((_) {});
+          });
       channel.subscribe((status, error) async {
         if (status == RealtimeSubscribeStatus.subscribed &&
             mounted &&
             !_ready) {
           try {
             await _preparePeer();
-          } catch (_) {
+          } catch (e) {
             _endCall(
                 notifyPeer: false,
-                error:
-                    "We couldn't access the microphone or camera. Check your permissions and try again.");
+                error: e is StateError
+                    ? e.message
+                    : 'Call unavailable. Check permissions and try again.');
           }
         }
       });
@@ -79,70 +127,191 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   Future<void> _preparePeer() async {
-    if (_ready) return;
-    final config = <String, dynamic>{
-      'iceServers': [
-        {'urls': 'stun:stun.l.google.com:19302'},
-      ],
-      'sdpSemantics': 'unified-plan',
-    };
-    final pc = await createPeerConnection(config);
+    if (_preparing || _ready || _finished) return;
+    _preparing = true;
+    List<dynamic> servers;
+    try {
+      final r = await Supa.client.functions.invoke('turn-credentials',
+          body: {'conversation_id': widget.conversationId});
+      servers = r.data['iceServers'] as List;
+    } catch (_) {
+      throw StateError('Call relay unavailable. Try again later.');
+    }
+    if (_finished) return;
+    final pc = await createPeerConnection({
+      'iceServers': servers,
+      'iceTransportPolicy':
+          const bool.fromEnvironment('CALL_RELAY_ONLY') ? 'relay' : 'all',
+      'sdpSemantics': 'unified-plan'
+    });
+    if (_finished) {
+      await pc.close();
+      return;
+    }
     _peerConnection = pc;
     final stream = await navigator.mediaDevices.getUserMedia({
       'audio': true,
       'video': widget.video ? {'facingMode': 'user'} : false,
     });
+    if (_finished) {
+      for (final track in stream.getTracks()) {
+        await track.stop();
+      }
+      await stream.dispose();
+      return;
+    }
     _localStream = stream;
+    if (_android) await _capture.invokeMethod('start', widget.video);
+    if (_finished) return;
     _localRenderer.srcObject = stream;
     for (final track in stream.getTracks()) {
       await pc.addTrack(track, stream);
     }
     pc.onTrack = (event) {
-      if (event.streams.isNotEmpty) {
+      if (!_finished && event.streams.isNotEmpty) {
         _remoteRenderer.srcObject = event.streams.first;
-        if (mounted) setState(() => _status = 'Connected');
+        if (mounted) setState(() {});
       }
     };
     pc.onIceCandidate = (candidate) {
-      if (candidate.candidate != null) {
+      if (!_finished && candidate.candidate != null) {
         _send('ice', {
           'candidate': candidate.candidate,
           'sdpMid': candidate.sdpMid,
           'sdpMLineIndex': candidate.sdpMLineIndex,
-        });
+        }).catchError((_) {});
       }
     };
     pc.onConnectionState = (state) {
-      if (!mounted) return;
+      if (!mounted || _finished) return;
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+        unawaited(_reportRoute(pc));
+        _connected = true;
+        _deadline?.cancel();
+        _restarting = false;
         setState(() => _status = 'Connected');
       }
-      if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
-        setState(() => _status = "Couldn't connect");
+      if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
+          state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
+        _recover();
       }
     };
+    if (_finished) return;
     _ready = true;
     if (widget.outgoing) {
-      await _send('invite', {'video': widget.video});
+      try {
+        await _send('invite', {'video': widget.video});
+      } on PostgrestException catch (e) {
+        if (e.message.contains('busy'))
+          throw StateError('One participant is already on a call.');
+        rethrow;
+      }
       if (mounted) setState(() => _status = 'Calling ${widget.peer.label}…');
     } else {
       await _send('accept', {'video': widget.video});
+      if (_finished) return;
+      _accepted = true;
+      _lease();
       if (mounted) setState(() => _status = 'Joining call…');
     }
   }
 
+  void _lease() {
+    _heartbeat ??= Timer.periodic(const Duration(seconds: 30), (_) {
+      _send('heartbeat', {}).catchError((_) {
+        if (!_finished) _recover();
+      });
+    });
+  }
+
+  Future<void> _reportRoute(RTCPeerConnection pc) async {
+    try {
+      final reports = await pc.getStats();
+      for (final pair in reports.where((r) =>
+          r.type == 'candidate-pair' &&
+          r.values['state'] == 'succeeded' &&
+          r.values['nominated'] == true)) {
+        final relay = reports.any((r) =>
+            (r.id == pair.values['localCandidateId'] ||
+                r.id == pair.values['remoteCandidateId']) &&
+            r.values['candidateType'] == 'relay');
+        debugPrint('Call route: ${relay ? 'relay' : 'direct'}');
+        break;
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _selectOutput() async {
+    try {
+      await Permission.bluetoothConnect.request();
+      final devices = await Helper.audiooutputs;
+      if (!mounted) return;
+      final id = await showDialog<String>(
+          context: context,
+          builder: (ctx) =>
+              SimpleDialog(title: const Text('Call audio output'), children: [
+                for (final d in devices)
+                  SimpleDialogOption(
+                      onPressed: () => Navigator.pop(ctx, d.deviceId),
+                      child: Text(d.label))
+              ]));
+      if (id != null && !_finished) await Helper.selectAudioOutput(id);
+    } catch (_) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content:
+                Text('Audio output unavailable. Use system audio controls.')));
+    }
+  }
+
+  Future<void> _recover() async {
+    if (_finished || !_accepted || _restarting) return;
+    _restarting = true;
+    _connected = false;
+    if (++_retries > 2) {
+      await _endCall(error: 'Connection lost.');
+      return;
+    }
+    _timeout(18, 'Could not restore the connection.');
+    setState(() => _status = 'Reconnecting…');
+    if (!widget.outgoing) {
+      try {
+        await _send('request_restart', {});
+      } catch (_) {}
+      return;
+    }
+    if (widget.outgoing) {
+      try {
+        final pc = _peerConnection!;
+        final offer = await pc.createOffer({'iceRestart': true});
+        await pc.setLocalDescription(offer);
+        await _send('offer', {'sdp': offer.sdp, 'type': offer.type});
+      } catch (_) {
+        await _endCall(error: 'Connection lost.');
+      }
+    }
+  }
+
   Future<void> _onSignal(Map<String, dynamic> payload) async {
-    if (payload['call_id'] != widget.callId || payload['to'] != _myId) return;
+    if (_finished ||
+        payload['from'] != _peerId ||
+        payload['call_id'] != widget.callId ||
+        payload['to'] != _myId) return;
     final pc = _peerConnection;
     if (pc == null) return;
     final kind = payload['kind'] as String?;
     final data = Map<String, dynamic>.from(payload['data'] as Map? ?? const {});
     try {
-      if (kind == 'accept' && widget.outgoing) {
+      if (kind == 'accept' && widget.outgoing && !_accepted) {
+        _accepted = true;
+        _lease();
+        _timeout(30, 'Call did not connect.');
         final offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         await _send('offer', {'sdp': offer.sdp, 'type': offer.type});
         if (mounted) setState(() => _status = 'Connecting…');
+      } else if (kind == 'request_restart' && widget.outgoing) {
+        await _recover();
       } else if (kind == 'offer' && !widget.outgoing) {
         await pc.setRemoteDescription(RTCSessionDescription(
             data['sdp'] as String?, data['type'] as String?));
@@ -164,10 +333,13 @@ class _CallScreenState extends State<CallScreen> {
         final candidate = RTCIceCandidate(data['candidate'] as String?,
             data['sdpMid'] as String?, data['sdpMLineIndex'] as int?);
         if (await pc.getRemoteDescription() == null) {
-          _pendingCandidates.add(candidate);
+          if (_pendingCandidates.length < 128)
+            _pendingCandidates.add(candidate);
         } else {
           await pc.addCandidate(candidate);
         }
+      } else if (kind == 'reject') {
+        await _endCall(notifyPeer: false, error: 'Call declined.');
       } else if (kind == 'hangup') {
         await _endCall(notifyPeer: false);
       }
@@ -179,57 +351,59 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   Future<void> _send(String kind, Map<String, dynamic> data) async {
-    await _channel?.httpSend(event: 'signal', payload: {
-      'call_id': widget.callId,
-      'from': _myId,
-      'to': _peerId,
-      'kind': kind,
-      'data': data,
+    await Supa.client.rpc('signal_call', params: {
+      'p_id': widget.callId,
+      'p_peer': _peerId,
+      'p_conversation': widget.conversationId,
+      'p_kind': kind,
+      'p_data': data
     });
   }
 
-  Future<void> _endCall({bool notifyPeer = true, String? error}) async {
+  Future<void> _quiet(Future<dynamic> Function() fn) async {
+    try {
+      await fn().timeout(const Duration(seconds: 3));
+    } catch (_) {}
+  }
+
+  Future<void> _endCall(
+      {bool notifyPeer = true, String? error, bool pop = true}) async {
     if (_finished) return;
     _finished = true;
-    if (notifyPeer) await _send('hangup', const {});
-    for (final track in _localStream?.getTracks() ?? <MediaStreamTrack>[]) {
-      await track.stop();
+    _deadline?.cancel();
+    _heartbeat?.cancel();
+    unawaited(_net?.cancel());
+    unawaited(_auth?.cancel());
+    if (notifyPeer) unawaited(_quiet(() => _send('hangup', {})));
+    final stream = _localStream;
+    if (stream != null) {
+      for (final t in stream.getTracks()) {
+        await _quiet(t.stop);
+      }
+      await _quiet(stream.dispose);
     }
-    await _localStream?.dispose();
-    await _peerConnection?.close();
+    if (_android) await _quiet(() => _capture.invokeMethod('stop'));
+    final pc = _peerConnection;
+    if (pc != null) {
+      await _quiet(pc.close);
+      await _quiet(pc.dispose);
+    }
     final channel = _channel;
-    if (channel != null) await Supa.client.removeChannel(channel);
-    await _localRenderer.dispose();
-    await _remoteRenderer.dispose();
-    if (!mounted) return;
-    if (error != null) {
+    if (channel != null) await _quiet(() => Supa.client.removeChannel(channel));
+    await _quiet(_localRenderer.dispose);
+    await _quiet(_remoteRenderer.dispose);
+    debugPrint(
+        'Call ended: seconds=${_elapsed.elapsed.inSeconds}, restarts=$_retries');
+    if (!mounted || !pop) return;
+    if (error != null)
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(error)));
-    }
     Navigator.of(context).maybePop();
   }
 
   @override
   void dispose() {
-    if (!_finished) {
-      // Fire-and-forget teardown; silence errors since the app is shutting
-      // down this screen and there's no context to surface them.
-      unawaited(_send('hangup', const {}).catchError((_) {}));
-      final localStream = _localStream;
-      if (localStream != null) {
-        unawaited(localStream.dispose().catchError((_) {}));
-      }
-      final peerConnection = _peerConnection;
-      if (peerConnection != null) {
-        unawaited(peerConnection.close().catchError((_) {}));
-      }
-      final channel = _channel;
-      if (channel != null) {
-        unawaited(Supa.client.removeChannel(channel).catchError((_) => ''));
-      }
-      unawaited(_localRenderer.dispose().catchError((_) {}));
-      unawaited(_remoteRenderer.dispose().catchError((_) {}));
-    }
+    unawaited(_endCall(pop: false));
     super.dispose();
   }
 
@@ -335,20 +509,25 @@ class _CallScreenState extends State<CallScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       _CallControl(
-                          label: _muted
-                              ? 'Unmute microphone'
-                              : 'Mute microphone',
+                          label:
+                              _muted ? 'Unmute microphone' : 'Mute microphone',
                           icon: _muted ? Icons.mic_off : Icons.mic,
                           color: _muted
                               ? Colors.red.withValues(alpha: 0.8)
                               : const Color(0xFF292A2F),
                           onTap: () {
                             setState(() => _muted = !_muted);
-                            for (final track in _localStream?.getAudioTracks() ??
-                                <MediaStreamTrack>[]) {
+                            for (final track
+                                in _localStream?.getAudioTracks() ??
+                                    <MediaStreamTrack>[]) {
                               track.enabled = !_muted;
                             }
                           }),
+                      if (_android && _ready)
+                        _CallControl(
+                            label: 'Audio output',
+                            icon: Icons.speaker,
+                            onTap: _selectOutput),
                       if (widget.video) ...[
                         const SizedBox(width: 14),
                         _CallControl(

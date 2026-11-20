@@ -12,8 +12,32 @@ import java.io.File
 import java.io.FileNotFoundException
 
 class MainActivity : FlutterFragmentActivity() {
+    private var crypto: CryptoRuntime? = null
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        stopService(Intent(this, CallCaptureService::class.java))
+        crypto?.close(); crypto = null
+        super.cleanUpFlutterEngine(flutterEngine)
+    }
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "bro/openpgp").setMethodCallHandler { call, result ->
+            if (call.method != "run" || call.arguments !is String) result.notImplemented() else {
+                val runtime = crypto ?: CryptoRuntime(this).also { crypto = it }
+                runtime.run(call.arguments as String, result)
+            }
+        }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "bro/capture").setMethodCallHandler { call, result ->
+            try {
+                val intent = Intent(this, CallCaptureService::class.java)
+                when (call.method) {
+                    "start" -> { intent.putExtra("video", call.arguments == true); if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent) }
+                    "stop" -> stopService(intent)
+                    else -> { result.notImplemented(); return@setMethodCallHandler }
+                }
+                result.success(null)
+            } catch (_: Exception) { result.error("CAPTURE", "Call service could not start", null) }
+        }
 
         // Existing secure screen channel
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "bro/secure_screen")

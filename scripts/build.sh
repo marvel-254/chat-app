@@ -25,13 +25,17 @@ if [[ -f .env.local ]]; then
     # Trim surrounding whitespace and quotes.
     key="$(echo "$key" | xargs)"
     value="$(echo "$value" | sed 's/^"\(.*\)"$/\1/; s/^'\''\(.*\)'\''$/\1/')"
+    case "$key" in
+      SUPABASE_URL|SUPABASE_ANON_KEY|FIREBASE_WEB_API_KEY|FIREBASE_WEB_APP_ID|FIREBASE_SENDER_ID|FIREBASE_PROJECT_ID|FIREBASE_WEB_VAPID_KEY|CALL_RELAY_ONLY|CLOUD_STORAGE_URL|APP_RELEASE) ;;
+      *) echo "Refusing unsupported client setting: $key" >&2; exit 1;;
+    esac
     DEFINES+=(--dart-define="${key}=${value}")
   done < .env.local
 fi
 
 # CI and shell environments can provide the public Supabase client config too.
 # These values are safe for client apps; never pass a service-role key here.
-for key in SUPABASE_URL SUPABASE_ANON_KEY; do
+for key in SUPABASE_URL SUPABASE_ANON_KEY FIREBASE_WEB_API_KEY FIREBASE_WEB_APP_ID FIREBASE_SENDER_ID FIREBASE_PROJECT_ID FIREBASE_WEB_VAPID_KEY CALL_RELAY_ONLY CLOUD_STORAGE_URL; do
   value="${!key:-}"
   if [[ -n "$value" ]]; then
     DEFINES+=(--dart-define="${key}=${value}")

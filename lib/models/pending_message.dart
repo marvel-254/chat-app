@@ -39,6 +39,7 @@ class PendingMessage {
   Message toOptimisticMessage() {
     return Message(
       id: localId,
+      securityLabel: 'Pending • on this device',
       conversationId: conversationId,
       senderId: senderId,
       content: content,

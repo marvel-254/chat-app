@@ -75,3 +75,6 @@ skills-lock.json
 
 # Local tooling build output
 graphify-out/
+node_modules/
+# Populated copies of deployment templates contain credentials.
+/deploy/*.env

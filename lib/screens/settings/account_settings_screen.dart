@@ -1,3 +1,5 @@
+import '../../services/push_notifications.dart';
+import '../../services/e2ee.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -170,7 +172,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       if (!mounted || Supa.currentUser?.id != owner) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(friendlyErrorMessage(error,
-            fallback: "We couldn't update your photo. Try a JPEG, PNG, WebP, or GIF under 5 MB.")),
+            fallback:
+                "We couldn't update your photo. Try a JPEG, PNG, WebP, or GIF under 5 MB.")),
       ));
     } finally {
       if (mounted) {
@@ -401,6 +404,56 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     });
   }
 
+  Future<void> _deviceKeys() async {
+    final owner = Supa.currentUser?.id;
+    try {
+      final local = await SecureChat.localFingerprint();
+      final all = await SecureChat.ownKeys();
+      if (!mounted || owner != Supa.currentUser?.id) return;
+      final target = await showDialog<String>(
+          context: context,
+          builder: (ctx) => SimpleDialog(
+                  title: const Text('Private message keys'),
+                  children: [
+                    Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: SelectableText('This device: $local')),
+                    for (final fp in all.where((k) => k != local))
+                      SimpleDialogOption(
+                          onPressed: () => Navigator.pop(ctx, fp),
+                          child: Text('Revoke device: $fp')),
+                    SimpleDialogOption(
+                        onPressed: () => Navigator.pop(ctx, local),
+                        child: const Text('Replace this device key'))
+                  ]));
+      if (target == null || !mounted) return;
+      final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+                  title: const Text('Invalidate device key?'),
+                  content: const Text(
+                      'Contacts must verify again. Old messages may become unreadable. Revocation cannot recall files already delivered.'),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Cancel')),
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Invalidate'))
+                  ]));
+      if (ok != true || owner != Supa.currentUser?.id) return;
+      if (target == local) {
+        await SecureChat.replaceLocalKey(local);
+      } else {
+        await SecureChat.revoke(target);
+      }
+    } catch (_) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Could not update private message keys.')));
+    }
+  }
+
   Color _profileColorValue() {
     final value = _profileColor.text.trim();
     if (!RegExp(r'^#[0-9A-Fa-f]{6}$').hasMatch(value)) return _P.primary;
@@ -439,7 +492,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     if (_avatarPreview case final bytes?)
                       ClipOval(
                         child: Image.memory(bytes,
-                            width: 96, height: 96, fit: BoxFit.cover,
+                            width: 96,
+                            height: 96,
+                            fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) => _settingsAvatar()),
                       )
                     else if (_avatarUrlOverride == null &&
@@ -448,7 +503,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     else
                       _settingsAvatar(),
                     TextButton.icon(
-                        onPressed: _uploadingAvatar || _saving ? null : _pickAvatar,
+                        onPressed:
+                            _uploadingAvatar || _saving ? null : _pickAvatar,
                         icon: _uploadingAvatar
                             ? const BroSpinner(size: 16)
                             : const Icon(Icons.photo_camera_outlined),
@@ -487,7 +543,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     decoration: const InputDecoration(labelText: 'Platform'),
                     hint: const Text('Not set'),
                     items: [
-                      const DropdownMenuItem(value: null, child: Text('Not set')),
+                      const DropdownMenuItem(
+                          value: null, child: Text('Not set')),
                       for (final entry in gamePlatforms)
                         DropdownMenuItem(
                             value: entry.value, child: Text(entry.label)),
@@ -523,8 +580,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                                 color: _P.text,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500),
-                            onPressed: () => setState(
-                                () => _gameStatus.text = game),
+                            onPressed: () =>
+                                setState(() => _gameStatus.text = game),
                           ),
                       ],
                     ),
@@ -550,8 +607,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       alignment: Alignment.centerLeft,
                       child: TextButton.icon(
                         onPressed: _clearGameProfile,
-                        icon: const Icon(Icons.delete_outline_outlined,
-                            size: 16),
+                        icon:
+                            const Icon(Icons.delete_outline_outlined, size: 16),
                         label: const Text('Clear gaming profile'),
                       ),
                     ),
@@ -639,6 +696,53 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   ),
                   const SizedBox(height: 10),
                   ListTile(
+                      leading: const Icon(Icons.key),
+                      title: const Text('Private message keys'),
+                      subtitle: const Text(
+                          'Compare, replace or revoke device fingerprints'),
+                      onTap: _deviceKeys),
+                  ListTile(
+                      leading: const Icon(Icons.visibility_outlined),
+                      title: const Text('Notification privacy'),
+                      subtitle: const Text(
+                          'Only unlocked, in-app alerts can show a preview.'),
+                      onTap: () async {
+                        final current = await PushNotifications.previewStyle();
+                        if (!context.mounted) return;
+                        final next = await showDialog<String>(
+                            context: context,
+                            builder: (ctx) => SimpleDialog(
+                                    title: const Text('In-app previews'),
+                                    children: [
+                                      for (final e in const {
+                                        'generic': 'Generic only',
+                                        'sender': 'Sender only',
+                                        'text': 'Message only',
+                                        'both': 'Sender and message'
+                                      }.entries)
+                                        SimpleDialogOption(
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, e.key),
+                                            child: Text(
+                                                '${e.key == current ? '✓ ' : ''}${e.value}'))
+                                    ]));
+                        if (next != null)
+                          await PushNotifications.setPreviewStyle(next);
+                      }),
+                  ListTile(
+                      leading: const Icon(Icons.notifications_outlined),
+                      title: const Text('Enable message notifications'),
+                      subtitle: const Text(
+                          'Get a generic alert on this device, even when BRO is closed. Message text and sender stay hidden.'),
+                      onTap: () async {
+                        final ok = await PushNotifications.enable();
+                        if (context.mounted)
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text(ok
+                                  ? 'Notifications enabled on this device.'
+                                  : 'Notifications unavailable. Check permission, network and device settings.')));
+                      }),
+                  ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.music_note_outlined),
                     title: Text(_profileMusicName ?? 'Profile music'),
@@ -690,8 +794,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       (_digitalAvatar?.enabled ?? false)
                           ? 'Shown on your profile'
                           : 'Build a customizable avatar with reactions',
-                      style:
-                          const TextStyle(color: _P.muted, fontSize: 12),
+                      style: const TextStyle(color: _P.muted, fontSize: 12),
                     ),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => context.push('/settings/digital-avatar'),
@@ -704,7 +807,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       initialValue: _photoVisibility,
                       decoration: const InputDecoration(
                           labelText: 'Profile photo visible to',
-                          helperText: 'Applies in BRO. Direct image links are public.',
+                          helperText:
+                              'Applies in BRO. Direct image links are public.',
                           helperMaxLines: 2),
                       items: const [
                         DropdownMenuItem(
@@ -1701,8 +1805,8 @@ class _GamePresenceCard extends StatelessWidget {
                   color: color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(Icons.sports_esports_outlined,
-                    color: color, size: 20),
+                child:
+                    Icon(Icons.sports_esports_outlined, color: color, size: 20),
               ),
               const SizedBox(width: 12),
               Expanded(

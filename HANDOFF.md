@@ -1,3 +1,5 @@
+> **Current security implementation:** The [2026-11-20 runbook](docs/security-calls-push.md) supersedes historical encryption, push, TURN and deployment notes below. Do not target nyx.
+
 # BRO chat app handoff
 
 This guide describes the app, its backend, local development, and release process. It is intended for the next developer who needs to operate or extend the current implementation.

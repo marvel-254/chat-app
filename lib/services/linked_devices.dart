@@ -62,7 +62,6 @@ class LinkedDevices {
             'device_name': currentDeviceName(),
             'platform': currentPlatform(),
             'last_seen_at': now,
-            'revoked_at': null,
           },
           onConflict: 'user_id,device_id',
         )
