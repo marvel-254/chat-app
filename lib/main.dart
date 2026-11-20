@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'services/app_lock.dart';
 import 'services/app_update.dart';
 import 'screens/call_screen.dart';
+import 'screens/calls/recent_calls_screen.dart';
 import 'screens/circles_screen.dart';
 import 'screens/lock_gate.dart';
 import 'screens/status_composer.dart';
@@ -186,6 +187,11 @@ final _router = GoRouter(
         path: '/conversations',
         builder: (_, __) => const ConversationListScreen()),
     GoRoute(
+        path: '/calls',
+        builder: (_, state) => RecentCallsScreen(
+              callIdToOpen: state.uri.queryParameters['call_id'],
+            )),
+    GoRoute(
         path: '/suggest-friends',
         builder: (_, __) => const SuggestFriendsScreen()),
     GoRoute(path: '/status', builder: (_, __) => const StatusScreen()),
@@ -288,9 +294,13 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
         Presence.unbind();
       }
     });
-    PushNotifications.setOpenHandler(
-      (conversationId) => _router.go('/chat/$conversationId'),
-    );
+    PushNotifications.setOpenHandler((conversationId, callId) {
+      if (callId != null) {
+        _router.go('/calls?call_id=$callId');
+        return;
+      }
+      _router.go('/chat/$conversationId');
+    });
     AppLock.enabled.addListener(_onLockPref);
     unawaited(AppLock.bootstrap());
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybePromptUpdate());

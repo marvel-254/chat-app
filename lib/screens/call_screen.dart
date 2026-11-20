@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 import '../models/profile.dart';
+import '../models/call_history.dart' as history;
 import '../services/supabase.dart';
 import '../services/call_state_machine.dart';
+import '../services/call_history.dart';
 
 /// One-to-one WebRTC call. Supabase Realtime carries only the SDP/ICE setup;
 /// audio and video stay peer-to-peer.
@@ -41,6 +45,15 @@ class _CallScreenState extends State<CallScreen> {
   late final CallStateMachine _callMachine;
   Timer? _ringingTimeout;
   Timer? _reconnectTimeout;
+  Timer? _durationTimer;
+  DateTime? _startedAt;
+  DateTime? _connectedAt;
+  int _durationSeconds = 0;
+  bool _peerHangup = false;
+  bool _historyRecorded = false;
+  bool _switchingCamera = false;
+  List<MediaDeviceInfo> _cameras = const [];
+  int _cameraIndex = 0;
 
   String get _myId => Supa.currentUser!.id;
   String get _peerId => widget.peer.id;
@@ -51,6 +64,7 @@ class _CallScreenState extends State<CallScreen> {
     _callMachine = CallStateMachine(
       initial: widget.outgoing ? CallPhase.outgoing : CallPhase.incoming,
     );
+    _startedAt = DateTime.now().toUtc();
     _start();
   }
 
@@ -151,6 +165,104 @@ class _CallScreenState extends State<CallScreen> {
     }
   }
 
+  void _startDurationTimer() {
+    if (_connectedAt != null) return;
+    _connectedAt = DateTime.now().toUtc();
+    _durationTimer?.cancel();
+    _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted || _finished || _connectedAt == null) return;
+      final seconds = DateTime.now().toUtc()
+          .difference(_connectedAt!)
+          .inSeconds;
+      if (seconds != _durationSeconds) {
+        setState(() => _durationSeconds = seconds);
+      }
+    });
+  }
+
+  Future<void> _loadCameras() async {
+    try {
+      final cameras = await Helper.cameras;
+      if (!_finished) _cameras = cameras;
+    } catch (_) {
+      _cameras = const [];
+    }
+  }
+
+  Future<void> _switchCamera() async {
+    if (_switchingCamera || _finished || _localStream == null) return;
+    final tracks = _localStream!.getVideoTracks();
+    if (tracks.isEmpty) return;
+    final track = tracks.first;
+    setState(() => _switchingCamera = true);
+    try {
+      if (_cameras.isEmpty) await _loadCameras();
+      if (_cameras.length < 2) {
+        if (mounted && !_finished) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Only one camera is available.')),
+          );
+        }
+        return;
+      }
+      final next = (_cameraIndex + 1) % _cameras.length;
+      if (kIsWeb) {
+        await Helper.switchCamera(track, _cameras[next].deviceId, _localStream);
+      } else {
+        await Helper.switchCamera(track);
+      }
+      if (mounted && !_finished) {
+        setState(() => _cameraIndex = next);
+      }
+    } catch (_) {
+      if (mounted && !_finished) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not switch camera.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _switchingCamera = false);
+    }
+  }
+
+  Future<void> _recordHistory({
+    required bool localHangup,
+    required bool peerHangup,
+    String? reason,
+  }) async {
+    if (_historyRecorded) return;
+    _historyRecorded = true;
+    final answered = _connectedAt != null;
+    final status = history.resolveCallStatus(
+      outgoing: widget.outgoing,
+      answered: answered,
+      localHangup: localHangup,
+      peerHangup: peerHangup,
+      reason: reason,
+    );
+    final record = history.CallRecord(
+      id: const Uuid().v4(),
+      callId: widget.callId,
+      conversationId: widget.conversationId,
+      peerUserId: _peerId,
+      kind: widget.video
+          ? history.CallRecord.kindVideo
+          : history.CallRecord.kindVoice,
+      direction: widget.outgoing
+          ? history.CallRecord.directionOutgoing
+          : history.CallRecord.directionIncoming,
+      status: status,
+      startedAt: _startedAt ?? DateTime.now().toUtc(),
+      connectedAt: _connectedAt,
+      endedAt: DateTime.now().toUtc(),
+      durationSeconds: answered ? _durationSeconds : 0,
+      failureReason: status == history.CallRecord.statusFailed
+          ? 'Connection was interrupted.'
+          : null,
+    );
+    await CallHistory().record(record);
+  }
+
   Future<void> _preparePeer() async {
     if (_ready) return;
     final config = <String, dynamic>{
@@ -165,6 +277,7 @@ class _CallScreenState extends State<CallScreen> {
     });
     _localStream = stream;
     _localRenderer.srcObject = stream;
+    if (widget.video) await _loadCameras();
     for (final track in stream.getTracks()) {
       await pc.addTrack(track, stream);
     }
@@ -191,6 +304,7 @@ class _CallScreenState extends State<CallScreen> {
         }
         _ringingTimeout?.cancel();
         _reconnectTimeout?.cancel();
+        _startDurationTimer();
         setState(() => _status = 'Connected');
       }
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
@@ -250,7 +364,8 @@ class _CallScreenState extends State<CallScreen> {
           await pc.addCandidate(candidate);
         }
       } else if (kind == 'hangup') {
-        await _endCall(notifyPeer: false);
+        _peerHangup = true;
+        await _endCall(notifyPeer: false, peerHangup: true);
       }
     } catch (_) {
       _endCall(
@@ -273,11 +388,19 @@ class _CallScreenState extends State<CallScreen> {
     bool notifyPeer = true,
     String? error,
     CallEndReason? reason,
+    bool peerHangup = false,
+    bool localHangup = false,
   }) async {
     if (_finished) return;
     _finished = true;
     _ringingTimeout?.cancel();
     _reconnectTimeout?.cancel();
+    _durationTimer?.cancel();
+    await _recordHistory(
+      localHangup: localHangup || (notifyPeer && reason == null),
+      peerHangup: peerHangup || _peerHangup,
+      reason: reason?.name,
+    );
     if (!_callMachine.state.isTerminal) {
       try {
         _callMachine.transition(CallPhase.failed, reason: reason);
@@ -308,6 +431,10 @@ class _CallScreenState extends State<CallScreen> {
     _ringingTimeout?.cancel();
     _reconnectTimeout?.cancel();
     if (!_finished) {
+      unawaited(_recordHistory(
+        localHangup: true,
+        peerHangup: _peerHangup,
+      ).catchError((_) {}));
       // Fire-and-forget teardown; silence errors since the app is shutting
       // down this screen and there's no context to surface them.
       unawaited(_send('hangup', const {}).catchError((_) {}));
@@ -391,6 +518,13 @@ class _CallScreenState extends State<CallScreen> {
                             color: Colors.white,
                             fontSize: 13,
                             fontWeight: FontWeight.w500)),
+                    if (_connectedAt != null) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        history.formatCallDuration(_durationSeconds),
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 12)),
+                    ],
                   ],
                 ),
               ),
@@ -467,22 +601,23 @@ class _CallScreenState extends State<CallScreen> {
                             }),
                         const SizedBox(width: 14),
                         _CallControl(
-                            label: 'Switch camera',
+                            label: _switchingCamera
+                                ? 'Switching camera'
+                                : (_cameras.length < 2
+                                    ? 'Camera switch unavailable'
+                                    : 'Switch camera'),
                             icon: Icons.flip_camera_ios_outlined,
-                            onTap: () async {
-                              for (final track
-                                  in _localStream?.getVideoTracks() ??
-                                      <MediaStreamTrack>[]) {
-                                await Helper.switchCamera(track);
-                              }
-                            }),
+                            busy: _switchingCamera,
+                            onTap: (_switchingCamera || _cameras.length < 2)
+                                ? null
+                                : _switchCamera),
                       ],
                       const SizedBox(width: 14),
                       _CallControl(
                           label: 'End call',
                           icon: Icons.call_end,
                           color: Colors.redAccent,
-                          onTap: () => _endCall()),
+                          onTap: () => _endCall(localHangup: true)),
                     ],
                   ),
                 ),
@@ -496,14 +631,16 @@ class _CallControl extends StatelessWidget {
       {required this.label,
       required this.icon,
       required this.onTap,
-      this.color = const Color(0xFF292A2F)});
+      this.color = const Color(0xFF292A2F),
+      this.busy = false});
   final String label;
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final Color color;
+  final bool busy;
   @override
   Widget build(BuildContext context) => Semantics(
-      button: true,
+      button: onTap != null,
       label: label,
       child: CircleAvatar(
           radius: 28,
@@ -511,5 +648,11 @@ class _CallControl extends StatelessWidget {
           child: IconButton(
               tooltip: label,
               onPressed: onTap,
-              icon: Icon(icon, color: Colors.white))));
+              icon: busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : Icon(icon, color: Colors.white))));
 }

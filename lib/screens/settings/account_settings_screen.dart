@@ -82,6 +82,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   String _statusVisibility = 'everyone';
   String _aboutVisibility = 'everyone';
   bool _readReceiptsEnabled = true;
+  bool _missedCallPush = true;
   Duration? _defaultMessageExpiry;
   Duration? _autoLockTimer;
   String? _gamePlatform;
@@ -115,6 +116,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       _statusVisibility = profile?.statusVisibility ?? 'everyone';
       _aboutVisibility = profile?.aboutVisibility ?? 'everyone';
       _readReceiptsEnabled = profile?.readReceiptsEnabled ?? true;
+      _missedCallPush = await Supa.missedCallPushEnabled();
       _defaultMessageExpiry = profile?.defaultMessageExpiry;
       _autoLockTimer = profile?.autoLockTimer;
       _gamePlatform = profile?.gamePlatform;
@@ -823,6 +825,35 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                         'Review active devices and sign out other sessions'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => context.push('/settings/linked-devices'),
+                  ),
+                  const SizedBox(height: 20),
+                  Text('Notifications',
+                      style: TextStyle(
+                          color: _P.muted, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.call_missed_outgoing),
+                    title: const Text('Missed call alerts'),
+                    subtitle: Text(
+                      'Send an alert when you miss an incoming call',
+                      style: TextStyle(color: _P.muted, fontSize: 12),
+                    ),
+                    value: _missedCallPush,
+                    onChanged: (value) async {
+                      final previous = _missedCallPush;
+                      setState(() => _missedCallPush = value);
+                      try {
+                        await Supa.setMissedCallPush(value);
+                      } catch (_) {
+                        if (!mounted || !context.mounted) return;
+                        setState(() => _missedCallPush = previous);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('Could not save this setting.')),
+                        );
+                      }
+                    },
                   ),
                   const SizedBox(height: 8),
                   Text('Security',

@@ -25,7 +25,7 @@ class PushNotifications {
   static PushMessageTarget? _pendingTarget;
   static String? _suspendedUserId;
   static const _noticeBody = 'You have a new message.';
-  static void Function(String conversationId)? _openHandler;
+  static void Function(String conversationId, String? callId)? _openHandler;
   static bool _initialized = false;
 
   static bool get _supportedPlatform =>
@@ -131,7 +131,8 @@ class PushNotifications {
     await _registrationSubscription?.cancel();
   }
 
-  static void setOpenHandler(void Function(String) handler) {
+  static void setOpenHandler(
+      void Function(String conversationId, String? callId) handler) {
     _openHandler = handler;
     unawaited(_openPending());
   }
@@ -151,7 +152,7 @@ class PushNotifications {
     if (userId == null) return;
     _pendingTarget = null;
     if (await _canShow(target, userId) && _activeUserId == userId) {
-      handler(target.conversationId);
+      handler(target.conversationId, target.callId);
     }
   }
 

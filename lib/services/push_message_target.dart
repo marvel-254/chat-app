@@ -1,9 +1,16 @@
 /// Parse only known database IDs from Firebase data before routing.
 class PushMessageTarget {
-  const PushMessageTarget(this.conversationId, this.recipientUserId);
+  const PushMessageTarget(
+    this.conversationId,
+    this.recipientUserId, {
+    this.callId,
+    this.isMissedCall = false,
+  });
 
   final String conversationId;
   final String? recipientUserId;
+  final String? callId;
+  final bool isMissedCall;
 
   static final _uuid = RegExp(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
@@ -17,10 +24,23 @@ class PushMessageTarget {
     if (data.containsKey('recipient_user_id')) {
       if (recipient is! String || !_uuid.hasMatch(recipient)) return null;
       return PushMessageTarget(
-          conversation.toLowerCase(), recipient.toLowerCase());
+        conversation.toLowerCase(),
+        recipient.toLowerCase(),
+      );
     }
+
+    final rawCallId = data['call_id'];
+    final callId = rawCallId is String && _uuid.hasMatch(rawCallId)
+        ? rawCallId.toLowerCase()
+        : null;
+    final missed = data['kind'] == 'missed_call' && callId != null;
     // Older queued notifications lack a recipient. The client must check
     // membership under the current session before opening their conversation.
-    return PushMessageTarget(conversation.toLowerCase(), null);
+    return PushMessageTarget(
+      conversation.toLowerCase(),
+      null,
+      callId: missed ? callId : null,
+      isMissedCall: missed,
+    );
   }
 }

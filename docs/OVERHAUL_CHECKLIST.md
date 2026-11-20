@@ -37,3 +37,17 @@ Working checklist for the BRO infrastructure overhaul. Update status as work lan
 - [ ] Migration list and RLS verified against linked project.
 - [ ] CI green; release only after all blockers are resolved.
 - [ ] No commit/deploy that claims E2EE while plaintext fallback remains.
+
+## Phase 11 - Call history, missed calls and camera controls
+
+- [x] Recent Calls screen in main navigation (mobile and desktop).
+- [x] All statuses represented: completed, missed, rejected, cancelled, unanswered, failed.
+- [x] Duration starts at connection and survives reconnections.
+- [x] Filters, details sheet, callbacks, profile link, individual delete and clear-all.
+- [x] Offline cache, pending write queue, loading/error/empty/retry states.
+- [x] Supabase migration with RLS, unique `(user_id, call_id)` and indexes.
+- [x] Missed-call push with deduplication and tap-through to call details.
+- [x] Front/rear camera switch with busy state, resource-safe controls and no peer reset.
+- [x] Tests added; full suite passes.
+- [x] Documentation in `docs/CALL_HISTORY.md`.
+- [ ] Physical-device verification of camera hardware and background push.

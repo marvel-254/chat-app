@@ -60,6 +60,13 @@ class NavSidebar extends StatelessWidget {
               onTap: () => context.go('/conversations'),
             ),
             NavItem(
+              icon: Icons.call_outlined,
+              selectedIcon: Icons.call_rounded,
+              label: 'Calls',
+              selected: location.startsWith('/calls'),
+              onTap: () => context.go('/calls'),
+            ),
+            NavItem(
               icon: Icons.groups_outlined,
               selectedIcon: Icons.groups_rounded,
               label: 'Circles',

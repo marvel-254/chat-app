@@ -111,6 +111,28 @@ class Supa {
         .eq('token', fcmToken);
   }
 
+  /// Missed-call push preference. Absent row means enabled by default.
+  static Future<bool> missedCallPushEnabled() async {
+    final user = currentUser;
+    if (user == null) return true;
+    final row = await client
+        .from('notification_settings')
+        .select('missed_call_push')
+        .eq('user_id', user.id)
+        .maybeSingle();
+    return row?['missed_call_push'] as bool? ?? true;
+  }
+
+  static Future<void> setMissedCallPush(bool enabled) async {
+    final user = currentUser;
+    if (user == null) return;
+    await client.from('notification_settings').upsert({
+      'user_id': user.id,
+      'missed_call_push': enabled,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    });
+  }
+
   // Re-send the email confirmation link for an unconfirmed account.
   static Future<void> resendConfirmation(String email) =>
       client.auth.resend(type: OtpType.signup, email: email);

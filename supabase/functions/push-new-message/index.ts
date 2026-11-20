@@ -4,10 +4,13 @@ type DatabaseWebhook = {
   type: string;
   table: string;
   schema: string;
-  record: {
-    id: string;
-    conversation_id: string;
-    sender_id: string;
+  record?: {
+    id?: string;
+    conversation_id?: string;
+    sender_id?: string;
+    user_id?: string;
+    peer_user_id?: string;
+    call_id?: string;
   };
 };
 
@@ -98,14 +101,22 @@ Deno.serve(async (request) => {
     };
     const isReminder = webhook.type === 'FRIENDSHIP_REMINDER' ||
       Boolean(webhook.record?.reminder_title);
+    const isMissedCall = webhook.type === 'MISSED_CALL' &&
+      webhook.table === 'call_history' &&
+      Boolean(webhook.record?.user_id && webhook.record?.call_id &&
+        webhook.record?.conversation_id);
     if (
       webhook.schema !== 'public' ||
-      webhook.table !== 'messages' || !webhook.record?.id ||
-      !webhook.record.conversation_id ||
-      (!isReminder && !webhook.record.sender_id)
+      (!isMissedCall && webhook.table !== 'messages') ||
+      (!isMissedCall && !webhook.record?.id) ||
+      (!isMissedCall && !webhook.record?.conversation_id) ||
+      (!isReminder && !isMissedCall && !webhook.record?.sender_id)
     ) {
       return Response.json({ ignored: true });
     }
+    const missedCallKey = isMissedCall
+      ? `missed:${webhook.record!.call_id}:${webhook.record!.user_id}`
+      : null;
 
     const encodedServiceAccount =
       Deno.env.get('FIREBASE_SERVICE_ACCOUNT_B64') ?? '';
@@ -125,17 +136,39 @@ Deno.serve(async (request) => {
       { auth: { persistSession: false, autoRefreshToken: false } },
     );
     // Messages go to everyone except the sender; a friendship reminder is
-    // shared by both friends, so it goes to all participants.
-    let participantsQuery = supabase
-      .from('conversation_participants')
-      .select('user_id')
-      .eq('conversation_id', webhook.record.conversation_id);
-    if (!isReminder && webhook.record.sender_id) {
-      participantsQuery = participantsQuery.neq('user_id', webhook.record.sender_id);
+    // shared by both friends. A missed call is delivered only to the callee.
+    let recipients: string[];
+    if (isMissedCall) {
+      recipients = [webhook.record!.user_id!];
+      // Honour the callee's missed-call preference before any FCM request.
+      const { data: preference, error: preferenceError } = await supabase
+        .from('notification_settings')
+        .select('missed_call_push')
+        .eq('user_id', recipients[0])
+        .maybeSingle();
+      if (preferenceError) throw preferenceError;
+      if (preference?.missed_call_push === false) {
+        return Response.json({ sent: 0, disabled: true });
+      }
+      const { data: existing, error: deliveryError } = await supabase
+        .from('notification_deliveries')
+        .select('id')
+        .eq('idempotency_key', missedCallKey!)
+        .maybeSingle();
+      if (deliveryError) throw deliveryError;
+      if (existing) return Response.json({ sent: 0, deduped: true });
+    } else {
+      let participantsQuery = supabase
+        .from('conversation_participants')
+        .select('user_id')
+        .eq('conversation_id', webhook.record!.conversation_id!);
+      if (!isReminder && webhook.record?.sender_id) {
+        participantsQuery = participantsQuery.neq('user_id', webhook.record.sender_id);
+      }
+      const { data: participants, error: participantError } = await participantsQuery;
+      if (participantError) throw participantError;
+      recipients = (participants ?? []).map((item) => item.user_id);
     }
-    const { data: participants, error: participantError } = await participantsQuery;
-    if (participantError) throw participantError;
-    const recipients = (participants ?? []).map((item) => item.user_id);
     if (recipients.length === 0) return Response.json({ sent: 0 });
 
     const { data: devices, error: deviceError } = await supabase
@@ -163,13 +196,21 @@ Deno.serve(async (request) => {
               // ciphertext, or the sender's identity.
               notification: isReminder
                 ? { title: 'BRO', body: 'A friendship anniversary is today.' }
-                : { title: 'BRO', body: 'You have a new message.' },
-              data: {
-                conversation_id: webhook.record.conversation_id,
-                message_id: webhook.record.id,
-                recipient_user_id: device.user_id,
-                ...(isReminder ? { kind: 'friendship_reminder' } : {}),
-              },
+                : isMissedCall
+                  ? { title: 'Missed call', body: 'You missed a call.' }
+                  : { title: 'BRO', body: 'You have a new message.' },
+              data: isMissedCall
+                ? {
+                    conversation_id: webhook.record!.conversation_id!,
+                    call_id: webhook.record!.call_id!,
+                    kind: 'missed_call',
+                  }
+                : {
+                    conversation_id: webhook.record!.conversation_id!,
+                    message_id: webhook.record!.id!,
+                    recipient_user_id: device.user_id,
+                    ...(isReminder ? { kind: 'friendship_reminder' } : {}),
+                  },
               android: { priority: 'HIGH' },
             },
           }),
@@ -193,7 +234,16 @@ Deno.serve(async (request) => {
       return { ok: true };
     }));
 
-    return Response.json({ sent: results.filter((result) => result.ok).length });
+    const sent = results.filter((result) => result.ok).length;
+    if (isMissedCall && sent > 0) {
+      await supabase.from('notification_deliveries').upsert({
+        idempotency_key: missedCallKey,
+        user_id: webhook.record!.user_id!,
+        status: 'sent',
+        updated_at: new Date().toISOString(),
+      });
+    }
+    return Response.json({ sent });
   } catch (error) {
     console.error('Message push handler failed:', error);
     return Response.json({ error: 'Could not send message notification.' }, {
