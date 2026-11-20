@@ -24,6 +24,28 @@ jobs:
           channel: stable
       - run: flutter pub get
       - run: dart run flutter_launcher_icons
+      - name: Verify release configuration
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$VERSION" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match pubspec version v$VERSION"
+            exit 1
+          fi
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD SUPABASE_URL SUPABASE_ANON_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing required release secret: $name"
+              exit 1
+            fi
+          done
+          echo "$KEYSTORE_BASE64" | base64 --decode > /dev/null
+
       - name: Set up release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -44,12 +66,14 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          REQUIRE_RELEASE_SIGNING: 'true'
         run: |
           flutter build apk --release --split-per-abi \
             --build-number="${{ github.run_number }}" \
             --dart-define=SUPABASE_URL="${SUPABASE_URL}" \
             --dart-define=SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}" \
             --dart-define=APP_RELEASE="bro@${{ steps.version.outputs.version }}" \
+            --dart-define=APP_VERSION="${{ steps.version.outputs.version }}" \
             --dart-define=BUILD_NUMBER="${{ github.run_number }}"
       - uses: actions/upload-artifact@v4
         with:

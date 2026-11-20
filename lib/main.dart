@@ -476,7 +476,7 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
     await Future<void>.delayed(const Duration(seconds: 2));
     final ctx = _rootNav.currentContext;
     if (ctx == null || !ctx.mounted) return;
-    await AppUpdate.promptIfNeeded(context: ctx, buildNumber: buildNumber);
+    await AppUpdate.promptIfNeeded(context: ctx, currentVersion: appVersion);
   }
 
   /// Start periodic background update checks (every 6 hours).
@@ -490,7 +490,7 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
       await Future<void>.delayed(AppUpdate.checkInterval);
       if (!mounted) break;
       try {
-        await AppUpdate.backgroundCheck(buildNumber);
+        await AppUpdate.backgroundCheck(appVersion);
       } catch (_) {
         // Silently ignore background check failures
       }

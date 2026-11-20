@@ -1,3 +1,10 @@
+> **Historical handoff notes (2026-11-16/19).** Several details below predate the
+> current code and deployment state. `README.md` and `docs/security-calls-push.md`
+> are authoritative for setup, releases, and the nyx rollout. In particular,
+> `lib/main.dart` remains ~650 lines, `lib/services/supabase.dart` remains a
+> large shared service, `docs/` is intentionally retained, and the app lock now
+> uses PBKDF2 in secure storage.
+
 # BRO chat app handoff
 
 This guide describes the app, its backend, local development, and release process. It is intended for the next developer who needs to operate or extend the current implementation.
@@ -5,7 +12,7 @@ This guide describes the app, its backend, local development, and release proces
 ## Architecture
 
 - **Client:** Flutter 3.47.7. The codebase uses a screen-focused folder structure:
-  - `lib/main.dart` (~200 lines) contains `main()`, `BroApp`, routing, and theme configuration.
+  - `lib/main.dart` contains `main()`, `BroApp`, routing, theme configuration, incoming-call orchestration, and update checks.
   - `lib/theme/app_colors.dart` holds all color constants and the `_P` palette.
   - `lib/screens/auth/` contains auth gate, login, and confirmation screens.
   - `lib/screens/chat/` contains the conversation list, chat screen, and all chat widgets (bubbles, composer, pickers, etc.).
@@ -287,15 +294,15 @@ The auto-updater in `lib/services/app_update.dart` was rewritten to provide a se
 
 ## Current work status (2026-11-16)
 
-**Major refactoring completed:** The monolithic `lib/main.dart` (7,867 lines, 60+ classes) was split into a proper folder structure under `lib/screens/` with focused files. The `lib/services/supabase.dart` (1,272 lines) was split into domain-specific services. All `.md` documentation files were removed except `HANDOFF.md` and `README.md`.
+**Refactoring at the time (historical):** UI files were split into `lib/screens/` and some services were extracted. The monolithic `lib/main.dart` and much of `lib/services/supabase.dart` are still large today, and `docs/` is intentionally retained.
 
 ### Changes
-- `lib/main.dart` reduced to ~200 lines containing only `main()`, `BroApp`, routing, and theme.
+- `lib/main.dart` was partially reduced; it still contains app/router setup plus incoming-call and update orchestration.
 - Screens extracted to `lib/screens/auth/`, `lib/screens/chat/`, `lib/screens/settings/`, `lib/screens/profile/`, and `lib/screens/navigation/`.
 - Chat widgets extracted to `lib/screens/chat/widgets/` (bubbles, composer, pickers, etc.).
-- `lib/services/supabase.dart` reduced to a thin client wrapper; methods split into `auth_service.dart`, `profile_service.dart`, `conversation_service.dart`, `message_service.dart`, `storage_service.dart`, `follow_service.dart`, and `status_service.dart`.
+- `lib/services/supabase.dart` remains the shared Supabase facade; several domain services (reactions, read receipts, presence, calls, and others) are split out.
 - Color constants moved to `lib/theme/app_colors.dart`.
-- All `.md` files removed except `HANDOFF.md` and `README.md`.
+- `docs/` and this handoff are retained as operational documentation.
 
 ### Completed in this session
 - **Code review report:** delivered to the user; findings are listed below as outstanding issues.

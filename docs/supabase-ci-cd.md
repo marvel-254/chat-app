@@ -10,7 +10,7 @@ After CI passes, every push to `main` in `marvel-254/chat-app` deploys to **`nyx
 2. Add these **environment secrets** through GitHub's settings. Never put their values in Git or chat:
    - `SUPABASE_ACCESS_TOKEN`: a Supabase management access token for an account authorized to deploy to `nyx`; use the narrowest available permissions. This is not an anon, publishable, or service-role API key.
    - `SUPABASE_DB_PASSWORD`: the database password for `nyx`.
-3. Leave production CD disabled until the [calls and push cutover](security-calls-push.md#migration-verification-and-rollback) is ready. Two pending migrations replace paths older clients still use. Validate against isolated staging, verify the backup and client rollout plan, and provision the required TURN, Firebase and Vault settings directly in Supabase. The workflow does not provision these.
+3. Leave production CD disabled until the [calls and push cutover](security-calls-push.md#migration-verification-and-rollback) is ready. Two pending migrations replace paths older clients still use; `20261120150000_calls_push_cutover_compat` restores the legacy realtime/push paths alongside them. Validate against isolated staging, verify the backup and client rollout plan, and provision the required TURN, Firebase and Vault settings directly in Supabase. The workflow does not provision these.
 4. When ready, under **Settings → Secrets and variables → Actions → Variables**, set the **repository variable** `SUPABASE_PRODUCTION_DEPLOY_ENABLED` to `true`. Then trigger the workflow from `main` or let the next push do it. Remove the variable or set it to `false` to pause future runs; it does not stop one already in progress.
 
 ## What a deployment does

@@ -34,7 +34,7 @@ jobs:
           CHECK: ${{ matrix.check }}
         run: |
           case "$CHECK" in
-            analyze) task=(flutter analyze --no-fatal-infos --no-fatal-warnings) ;;
+            analyze) task=(flutter analyze --no-fatal-infos) ;;
             test) task=(flutter test --reporter expanded) ;;
             web) task=(./scripts/build.sh web) ;;
             android) task=(flutter build apk --debug) ;;
