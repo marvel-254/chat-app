@@ -10,35 +10,43 @@ permissions:
   contents: read
 
 jobs:
-  analyze-test:
+  flutter:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [analyze, test, web, android]
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.7'
           channel: stable
+          cache: true
       - uses: actions/setup-java@v5
+        if: matrix.check == 'android'
         with:
           distribution: temurin
           java-version: '17'
       - run: flutter pub get
-      - name: Analyze
+      - name: Run Flutter ${{ matrix.check }}
+        env:
+          CHECK: ${{ matrix.check }}
         run: |
+          case "$CHECK" in
+            analyze) task=(flutter analyze --no-fatal-infos --no-fatal-warnings) ;;
+            test) task=(flutter test --reporter expanded) ;;
+            web) task=(./scripts/build.sh web) ;;
+            android) task=(flutter build apk --debug) ;;
+          esac
           set +e
-          flutter analyze --no-fatal-infos --no-fatal-warnings 2>&1 | tee "$RUNNER_TEMP/flutter-analyze.txt"
+          "${task[@]}" 2>&1 | tee "$RUNNER_TEMP/flutter-$CHECK.txt"
           result=${PIPESTATUS[0]}
-          awk '/^[[:space:]]*error[[:space:]]/ && count++ < 20 { print "::error::" $0 }' "$RUNNER_TEMP/flutter-analyze.txt"
+          if [[ "$result" != 0 ]]; then
+            awk '/^[[:space:]]*error[[:space:]]|Error:|\[E\]/ && count++ < 20 { print "::error::" $0 }' "$RUNNER_TEMP/flutter-$CHECK.txt"
+            tail -n 8 "$RUNNER_TEMP/flutter-$CHECK.txt" | sed 's/^/::notice::/'
+          fi
           exit "$result"
-      - name: Test
-        if: success() || failure()
-        run: flutter test
-      - name: Build Web
-        if: success() || failure()
-        run: ./scripts/build.sh web
-      - name: Build Android (debug)
-        if: success() || failure()
-        run: flutter build apk --debug
   calls-push:
     runs-on: ubuntu-latest
     steps:
