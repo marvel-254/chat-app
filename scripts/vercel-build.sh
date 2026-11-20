@@ -15,8 +15,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 if [[ "${VERCEL_ENV:-}" == production ]]; then
-  test "${SUPABASE_URL:-}" = 'https://zchsmnelvcuexchpwfgr.supabase.co' || {
-    echo 'Production must point to the confirmed BRO Supabase project.' >&2
+  test "${SUPABASE_URL:-}" = 'https://dbfgyehzgrmsajpwydps.supabase.co' || {
+    echo 'BRO production must point to the nyx Supabase project.' >&2
     exit 1
   }
   test -n "${SUPABASE_ANON_KEY:-}"
