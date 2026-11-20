@@ -134,8 +134,12 @@ void main() {
       Offset latest = Offset.zero;
       await tester.pumpWidget(harness(enabled: true, onShift: (s) => latest = s));
 
-      final pointer = TestPointer(1, PointerDeviceKind.mouse);
-      await tester.sendEventToBinding(pointer.hover(const Offset(400, 400)));
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: const Offset(200, 200));
+      addTearDown(gesture.removePointer);
+      await tester.pump();
+      // Stay a hair inside the box: the bottom/right edges are exclusive.
+      await gesture.moveTo(const Offset(396, 396));
       await tester.pumpAndSettle();
 
       expect(latest.dx, greaterThan(0.9));
@@ -148,8 +152,11 @@ void main() {
         harness(enabled: false, onShift: (s) => latest = s),
       );
 
-      final pointer = TestPointer(1, PointerDeviceKind.mouse);
-      await tester.sendEventToBinding(pointer.hover(const Offset(400, 400)));
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: const Offset(200, 200));
+      addTearDown(gesture.removePointer);
+      await tester.pump();
+      await gesture.moveTo(const Offset(396, 396));
       await tester.pumpAndSettle();
 
       expect(latest, Offset.zero);
