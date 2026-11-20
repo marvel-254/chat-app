@@ -4,6 +4,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/profile.dart';
 import '../services/supabase.dart';
+import '../services/call_state_machine.dart';
 
 /// One-to-one WebRTC call. Supabase Realtime carries only the SDP/ICE setup;
 /// audio and video stay peer-to-peer.
@@ -37,6 +38,9 @@ class _CallScreenState extends State<CallScreen> {
   bool _cameraOff = false;
   bool _finished = false;
   String _status = 'Connecting…';
+  late final CallStateMachine _callMachine;
+  Timer? _ringingTimeout;
+  Timer? _reconnectTimeout;
 
   String get _myId => Supa.currentUser!.id;
   String get _peerId => widget.peer.id;
@@ -44,6 +48,9 @@ class _CallScreenState extends State<CallScreen> {
   @override
   void initState() {
     super.initState();
+    _callMachine = CallStateMachine(
+      initial: widget.outgoing ? CallPhase.outgoing : CallPhase.incoming,
+    );
     _start();
   }
 
@@ -78,12 +85,76 @@ class _CallScreenState extends State<CallScreen> {
     }
   }
 
+  /// TURN credentials are build-time references only. Long-lived secrets are
+  /// never bundled in the APK; production should fetch short-lived credentials
+  /// from an authenticated endpoint and provide them here.
+  List<Map<String, dynamic>> _iceServers() {
+    final servers = <Map<String, dynamic>>[
+      {'urls': 'stun:stun.l.google.com:19302'},
+    ];
+    const turnUrl = String.fromEnvironment('TURN_URL');
+    const turnUser = String.fromEnvironment('TURN_USER');
+    const turnPass = String.fromEnvironment('TURN_PASS');
+    const relayOnly = bool.fromEnvironment('TURN_RELAY_ONLY');
+    if (turnUrl.isNotEmpty && turnUser.isNotEmpty && turnPass.isNotEmpty) {
+      servers.add({
+        'urls': turnUrl,
+        'username': turnUser,
+        'credential': turnPass,
+      });
+      if (relayOnly) {
+        servers.removeWhere((s) => (s['urls'] as String).startsWith('stun:'));
+        servers.last['urls'] = '$turnUrl?transport=udp';
+      }
+    }
+    return servers;
+  }
+
+  void _startRingingTimeout() {
+    _ringingTimeout?.cancel();
+    _ringingTimeout = Timer(const Duration(seconds: 45), () {
+      if (!mounted || _finished) return;
+      unawaited(_endCall(
+        error: 'No answer. The call timed out.',
+        reason: CallEndReason.timeout,
+      ));
+    });
+  }
+
+  Future<void> _onConnectionFailed() async {
+    final pc = _peerConnection;
+    if (pc == null) return;
+    if (!_callMachine.shouldRetryReconnect) {
+      await _endCall(
+        error: 'Connection lost and could not be restored.',
+        reason: CallEndReason.networkFailure,
+      );
+      return;
+    }
+    try {
+      _callMachine.transition(CallPhase.reconnecting);
+      if (mounted) setState(() => _status = 'Reconnecting…');
+      await pc.restartIce();
+      _reconnectTimeout?.cancel();
+      _reconnectTimeout = Timer(const Duration(seconds: 12), () {
+        if (!mounted || _finished) return;
+        unawaited(_endCall(
+          error: 'Connection lost and could not be restored.',
+          reason: CallEndReason.networkFailure,
+        ));
+      });
+    } catch (_) {
+      await _endCall(
+        error: 'Connection lost and could not be restored.',
+        reason: CallEndReason.networkFailure,
+      );
+    }
+  }
+
   Future<void> _preparePeer() async {
     if (_ready) return;
     final config = <String, dynamic>{
-      'iceServers': [
-        {'urls': 'stun:stun.l.google.com:19302'},
-      ],
+      'iceServers': _iceServers(),
       'sdpSemantics': 'unified-plan',
     };
     final pc = await createPeerConnection(config);
@@ -115,18 +186,28 @@ class _CallScreenState extends State<CallScreen> {
     pc.onConnectionState = (state) {
       if (!mounted) return;
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+        if (_callMachine.state.phase != CallPhase.connected) {
+          _callMachine.transition(CallPhase.connected);
+        }
+        _ringingTimeout?.cancel();
+        _reconnectTimeout?.cancel();
         setState(() => _status = 'Connected');
       }
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
-        setState(() => _status = "Couldn't connect");
+        setState(() => _status = 'Reconnecting…');
+        unawaited(_onConnectionFailed());
       }
     };
     _ready = true;
     if (widget.outgoing) {
       await _send('invite', {'video': widget.video});
+      _callMachine.transition(CallPhase.ringing);
+      _startRingingTimeout();
       if (mounted) setState(() => _status = 'Calling ${widget.peer.label}…');
     } else {
       await _send('accept', {'video': widget.video});
+      _callMachine.transition(CallPhase.accepted);
+      _startRingingTimeout();
       if (mounted) setState(() => _status = 'Joining call…');
     }
   }
@@ -188,9 +269,22 @@ class _CallScreenState extends State<CallScreen> {
     });
   }
 
-  Future<void> _endCall({bool notifyPeer = true, String? error}) async {
+  Future<void> _endCall({
+    bool notifyPeer = true,
+    String? error,
+    CallEndReason? reason,
+  }) async {
     if (_finished) return;
     _finished = true;
+    _ringingTimeout?.cancel();
+    _reconnectTimeout?.cancel();
+    if (!_callMachine.state.isTerminal) {
+      try {
+        _callMachine.transition(CallPhase.failed, reason: reason);
+      } on InvalidCallTransition {
+        // A terminal transition already happened; keep the first reason.
+      }
+    }
     if (notifyPeer) await _send('hangup', const {});
     for (final track in _localStream?.getTracks() ?? <MediaStreamTrack>[]) {
       await track.stop();
@@ -211,6 +305,8 @@ class _CallScreenState extends State<CallScreen> {
 
   @override
   void dispose() {
+    _ringingTimeout?.cancel();
+    _reconnectTimeout?.cancel();
     if (!_finished) {
       // Fire-and-forget teardown; silence errors since the app is shutting
       // down this screen and there's no context to surface them.

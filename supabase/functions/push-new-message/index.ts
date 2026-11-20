@@ -140,7 +140,8 @@ Deno.serve(async (request) => {
 
     const { data: devices, error: deviceError } = await supabase
       .from('push_tokens')
-      .select('firebase_installation_id, user_id')
+      .select('token, user_id')
+      .not('token', 'is', null)
       .in('user_id', recipients);
     if (deviceError) throw deviceError;
     if (!devices?.length) return Response.json({ sent: 0 });
@@ -157,7 +158,7 @@ Deno.serve(async (request) => {
           },
           body: JSON.stringify({
             message: {
-              fid: device.firebase_installation_id,
+              token: device.token,
               // A lock-screen notification should not contain plaintext,
               // ciphertext, or the sender's identity.
               notification: isReminder
@@ -182,7 +183,7 @@ Deno.serve(async (request) => {
           await supabase
             .from('push_tokens')
             .delete()
-            .eq('firebase_installation_id', device.firebase_installation_id)
+            .eq('token', device.token)
             .eq('user_id', device.user_id);
           return { ok: false, removed: true };
         }

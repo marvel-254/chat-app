@@ -21,7 +21,7 @@ class PushNotifications {
 
   static StreamSubscription<AuthState>? _authSubscription;
   static StreamSubscription<String>? _registrationSubscription;
-  static String? _fid;
+  static String? _fcmToken;
   static PushMessageTarget? _pendingTarget;
   static String? _suspendedUserId;
   static const _noticeBody = 'You have a new message.';
@@ -43,9 +43,9 @@ class PushNotifications {
       unawaited(_showForegroundNotice(message));
     });
     FirebaseMessaging.onMessageOpenedApp.listen(_openMessage);
-    _registrationSubscription = messaging.onRegistered.listen((fid) {
+    _registrationSubscription = messaging.onTokenRefresh.listen((token) {
       if (_activeUserId == null) return;
-      _fid = fid;
+      _fcmToken = token;
       unawaited(_registerToken());
     });
     _authSubscription = Supa.authStateChanges.listen((state) {
@@ -86,7 +86,6 @@ class PushNotifications {
       );
       if (_activeUserId != owner ||
           settings.authorizationStatus == AuthorizationStatus.denied) return;
-      await messaging.register();
       if (_activeUserId == owner) await _registerToken();
     } catch (_) {
       debugPrint('Push notification registration failed.');
@@ -94,10 +93,12 @@ class PushNotifications {
   }
 
   static Future<void> _registerToken() async {
-    final fid = _fid;
-    if (fid == null || _activeUserId == null) return;
+    if (_activeUserId == null) return;
     try {
-      await Supa.savePushToken(fid, defaultTargetPlatform.name);
+      final token = _fcmToken ?? await FirebaseMessaging.instance.getToken();
+      if (token == null || token.isEmpty) return;
+      _fcmToken = token;
+      await Supa.savePushToken(token, defaultTargetPlatform.name);
     } catch (_) {
       debugPrint('Could not save the notification registration.');
     }
@@ -107,21 +108,21 @@ class PushNotifications {
     if (!_supportedPlatform) return;
     _suspendedUserId = Supa.currentUser?.id;
     _pendingTarget = null;
-    final fid = _fid;
-    _fid = null;
+    final token = _fcmToken ?? await FirebaseMessaging.instance.getToken();
+    _fcmToken = null;
     try {
-      if (fid != null) {
-        await Supa.removePushToken(fid).timeout(const Duration(seconds: 3));
+      if (token != null && token.isNotEmpty) {
+        await Supa.removePushToken(token).timeout(const Duration(seconds: 3));
       }
     } catch (_) {
       debugPrint('Could not remove the saved notification registration.');
     }
     try {
       await FirebaseMessaging.instance
-          .unregister()
+          .deleteToken()
           .timeout(const Duration(seconds: 3));
     } catch (_) {
-      debugPrint('Could not unregister this device from notifications.');
+      debugPrint('Could not delete this device notification token.');
     }
   }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:async';
 import 'dart:typed_data';
@@ -16,7 +17,7 @@ import 'reactions.dart' as reactions;
 import 'message_safety.dart' as message_safety;
 import 'read_receipts.dart' as read_receipts;
 import 'block_report.dart' as block_report;
-import 'e2ee.dart' as e2ee;
+import 'signal_e2ee.dart';
 
 class Supa {
   static SupabaseClient get client => Supabase.instance.client;
@@ -76,29 +77,38 @@ class Supa {
   static Stream<AuthState> get authStateChanges =>
       client.auth.onAuthStateChange;
 
-  static Future<void> savePushToken(
-      String firebaseInstallationId, String platform) async {
+  /// Registers an actual FCM registration token, scoped to this app install.
+  /// Firebase Installation IDs are not delivery tokens and are never used here.
+  static Future<void> savePushToken(String fcmToken, String platform) async {
     final user = currentUser;
-    if (user == null) return;
+    if (user == null || fcmToken.isEmpty) return;
+    final storage = const FlutterSecureStorage();
+    var deviceId = await storage.read(key: 'bro.push.device_id');
+    if (deviceId == null || deviceId.isEmpty) {
+      deviceId = const Uuid().v4();
+      await storage.write(key: 'bro.push.device_id', value: deviceId);
+    }
     await client.from('push_tokens').upsert(
       {
         'user_id': user.id,
-        'firebase_installation_id': firebaseInstallationId,
+        'device_id': deviceId,
+        'token': fcmToken,
         'platform': platform,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       },
-      onConflict: 'firebase_installation_id',
+      onConflict: 'user_id,device_id',
     );
   }
 
-  static Future<void> removePushToken(String firebaseInstallationId) async {
+  /// Removes only the current install's registration.
+  static Future<void> removePushToken(String fcmToken) async {
     final user = currentUser;
     if (user == null) return;
     await client
         .from('push_tokens')
         .delete()
         .eq('user_id', user.id)
-        .eq('firebase_installation_id', firebaseInstallationId);
+        .eq('token', fcmToken);
   }
 
   // Re-send the email confirmation link for an unconfirmed account.
@@ -1221,25 +1231,40 @@ class Supa {
             } catch (_) {}
           }
 
-          // Fetch E2EE key for this conversation (cached after first call)
-          final e2eeKey = await getConversationKey(conversationId);
-
           final now = DateTime.now();
-          return rows
+          final visible = rows
               .where((r) =>
                   !hiddenIds.contains(r['id'] as String) &&
                   (r['expires_at'] == null ||
                       DateTime.parse(r['expires_at'] as String).isAfter(now)))
-              .map((r) {
+              .toList(growable: false);
+          final decrypted = <String>[];
+          for (final row in visible) {
+            decrypted.add(await decryptForDisplay(
+              row['sender_id'] as String,
+              row['content'] as String,
+            ));
+          }
+          return [
+            for (var i = 0; i < visible.length; i++)
+              _messageFromDecryptedRow(
+                visible[i],
+                decrypted[i],
+                readByPeerSet,
+                reactionsMap,
+              )
+          ];
+        });
+  }
+
+  static Message _messageFromDecryptedRow(
+    Map<String, dynamic> r,
+    String content,
+    Set<String> readByPeerSet,
+    Map<String, List<Map<String, dynamic>>> reactionsMap,
+  ) {
             final id = r['id'] as String;
             final msg = Message.fromJson(r);
-            // Decrypt the content if it was encrypted
-            String content = msg.content;
-            final decrypted =
-                decryptMessageContent(conversationId, msg.content, e2eeKey);
-            if (decrypted != null) {
-              content = decrypted;
-            }
             return Message(
               id: msg.id,
               conversationId: msg.conversationId,
@@ -1255,8 +1280,6 @@ class Supa {
               replyToId: msg.replyToId,
               reactions: reactionsMap[id] ?? [],
             );
-          }).toList();
-        });
   }
 
   static Future<Message> sendMessage(String conversationId, String content,
@@ -1563,47 +1586,208 @@ class Supa {
     }
   }
 
-  /// Encrypt plaintext for a conversation, or return the original plaintext
-  /// if encryption is not available (fallback for backward compatibility).
+  /// Configure the Signal facade against the linked Supabase project.
+  /// Public keys only are registered; private keys stay on this device.
+  static Future<void> _configureSignal() async {
+    final signal = SignalE2ee.instance;
+    signal.fetchBundle ??= (userId) async {
+      final devices = await client
+          .from('signal_devices')
+          .select('device_id,registration_id,identity_key,signed_prekey_id,'
+                  'signed_prekey,signed_prekey_signature')
+          .eq('user_id', userId)
+          .isFilter('revoked_at', null)
+          .order('device_id')
+          .limit(1);
+      if ((devices as List).isEmpty) return null;
+      final device = devices.first as Map<String, dynamic>;
+      final deviceId = device['device_id'] as int;
+      final prekeys = await client
+          .from('signal_one_time_prekeys')
+          .select('prekey_id,public_key')
+          .eq('device_row_id', device['id'] as String? ?? '')
+          .isFilter('used_at', null)
+          .limit(1);
+      // The row id is needed for the atomic claim RPC; fetch it explicitly.
+      final deviceRow = await client
+          .from('signal_devices')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('device_id', deviceId)
+          .single();
+      final claimed = await client.rpc('signal_claim_prekey', params: {
+        'p_device_row_id': deviceRow['id'] as String,
+      });
+      final claimRows = claimed as List?;
+      final hasClaim = claimRows != null && claimRows.isNotEmpty;
+      final prekeyRow = hasClaim
+          ? claimRows.first as Map<String, dynamic>
+          : (prekeys as List).isEmpty
+              ? null
+              : prekeys.first as Map<String, dynamic>;
+      // Kyber public material is stored alongside the signed prekey record.
+      final kyber = await client
+          .from('signal_kyber_prekeys')
+          .select('prekey_id,public_key,signature')
+          .eq('device_row_id', deviceRow['id'] as String)
+          .isFilter('used_at', null)
+          .limit(1);
+      if ((kyber as List).isEmpty) return null;
+      final kyberRow = kyber.first as Map<String, dynamic>;
+      return SignalPublicBundle(
+        userId: userId,
+        deviceId: deviceId,
+        registrationId: device['registration_id'] as int,
+        identityKey: _decodeBytes(device['identity_key'] as String),
+        signedPreKeyId: device['signed_prekey_id'] as int,
+        signedPreKey: _decodeBytes(device['signed_prekey'] as String),
+        signedPreKeySignature:
+            _decodeBytes(device['signed_prekey_signature'] as String),
+        preKeyId: prekeyRow?['prekey_id'] as int?,
+        preKey: prekeyRow == null
+            ? null
+            : _decodeBytes(prekeyRow['public_key'] as String),
+        kyberPreKeyId: kyberRow['prekey_id'] as int,
+        kyberPreKey: _decodeBytes(kyberRow['public_key'] as String),
+        kyberPreKeySignature: _decodeBytes(kyberRow['signature'] as String),
+      );
+    };
+
+    signal.registerBundle ??= (
+      deviceId,
+      registrationId,
+      identityKey,
+      signedPreKeyId,
+      signedPreKey,
+      signedPreKeySignature,
+      oneTimePreKeys,
+      kyberPreKeyId,
+      kyberPreKey,
+      kyberPreKeySignature,
+    ) async {
+      final uid = currentUser?.id;
+      if (uid == null) {
+        throw const E2eeException(E2eeFailure.encryptionUnavailable);
+      }
+      final rows = await client
+          .from('signal_devices')
+          .upsert({
+            'user_id': uid,
+            'device_id': deviceId,
+            'identity_key': _encodeBytes(identityKey),
+            'registration_id': registrationId,
+            'signed_prekey_id': signedPreKeyId,
+            'signed_prekey': _encodeBytes(signedPreKey),
+            'signed_prekey_signature': _encodeBytes(signedPreKeySignature),
+            'last_seen_at': DateTime.now().toUtc().toIso8601String(),
+          }, onConflict: 'user_id,device_id')
+          .select('id')
+          .single();
+      final rowId = rows['id'] as String;
+      await client
+          .from('signal_one_time_prekeys')
+          .upsert([
+            for (final entry in oneTimePreKeys)
+              {
+                'device_row_id': rowId,
+                'prekey_id': entry.$1,
+                'public_key': _encodeBytes(entry.$2),
+                'used_at': null,
+              }
+          ], onConflict: 'device_row_id,prekey_id');
+      await client.from('signal_kyber_prekeys').upsert({
+        'device_row_id': rowId,
+        'prekey_id': kyberPreKeyId,
+        'public_key': _encodeBytes(kyberPreKey),
+        'signature': _encodeBytes(kyberPreKeySignature),
+        'used_at': null,
+      }, onConflict: 'device_row_id,prekey_id');
+    };
+  }
+
+  static String _encodeBytes(List<int> bytes) => base64Encode(bytes);
+  static Uint8List _decodeBytes(String value) => Uint8List.fromList(base64Decode(value));
+
+  /// Encrypts for one peer. Never returns plaintext on failure.
   static Future<String> encryptForConversation(
     String conversationId,
     String plaintext,
   ) async {
-    try {
-      final me = currentUser?.id;
-      if (me == null) return plaintext;
-      final peer = await getPeerUserId(conversationId);
-      if (peer == null) return plaintext;
-      final key = await e2ee.getOrDeriveKey(conversationId, me, peer);
-      return e2ee.encrypt(key, plaintext);
-    } catch (_) {
-      return plaintext;
+    final peer = await getPeerUserId(conversationId);
+    if (peer == null) {
+      throw const E2eeException(E2eeFailure.peerBundleUnavailable);
     }
+    await _configureSignal();
+    await SignalE2ee.instance.init();
+    return SignalE2ee.instance.encrypt(peer, utf8.encode(plaintext));
   }
 
-  /// Decrypt a message's content, falling back to the original if decryption
-  /// fails (e.g. the message was sent before E2EE was enabled).
-  static String? decryptMessageContent(
+  /// Returns display text for a stored message. Legacy plaintext is returned
+  /// unchanged and is NOT labelled encrypted. A `sig1:` envelope that fails
+  /// decryption becomes an explicit error state, never plaintext.
+  static String decryptMessageContent(
     String conversationId,
     String content,
     String? key,
   ) {
-    if (key == null || key.isEmpty) return null;
-    if (!e2ee.isEncrypted(content)) return null;
-    return e2ee.decrypt(key, content);
+    if (!SignalE2ee.instance.isSecureEnvelope(content)) return content;
+    // Decryption is asynchronous; watchMessages resolves it before mapping.
+    return '[Encrypted message]';
   }
 
-  /// Get or derive the E2EE key for a conversation.
-  static Future<String?> getConversationKey(String conversationId) async {
+  /// Decrypts an envelope for display. Throws [E2eeException] on failure.
+  static Future<String> decryptForDisplay(
+    String senderUserId,
+    String content,
+  ) async {
+    if (!SignalE2ee.instance.isSecureEnvelope(content)) return content;
+    await _configureSignal();
+    await SignalE2ee.instance.init();
     try {
-      final me = currentUser?.id;
-      if (me == null) return null;
-      final peer = await getPeerUserId(conversationId);
-      if (peer == null) return null;
-      return await e2ee.getOrDeriveKey(conversationId, me, peer);
-    } catch (_) {
-      return null;
+      final bytes = await SignalE2ee.instance.decrypt(senderUserId, content);
+      return utf8.decode(bytes);
+    } on E2eeException catch (error) {
+      return switch (error.reason) {
+        E2eeFailure.identityChanged => '[Security warning: contact identity changed]',
+        E2eeFailure.malformedEnvelope => '[Encrypted message: invalid format]',
+        _ => '[Encrypted message: could not decrypt]',
+      };
     }
+  }
+
+  /// Kept for API compatibility. Signal derives per-message keys; there is no
+  /// reusable conversation key and no deterministic derivation.
+  static Future<String?> getConversationKey(String conversationId) async => null;
+
+  /// Safety number for out-of-band verification of the peer's Signal identity.
+  static Future<String> safetyNumberForConversation(String conversationId) async {
+    final peer = await getPeerUserId(conversationId);
+    if (peer == null) {
+      throw const E2eeException(E2eeFailure.peerBundleUnavailable);
+    }
+    await _configureSignal();
+    await SignalE2ee.instance.init();
+    return SignalE2ee.instance.safetyNumber(peer);
+  }
+
+  static Future<bool> isPeerVerifiedInConversation(
+    String conversationId,
+    String fingerprint,
+  ) async {
+    final peer = await getPeerUserId(conversationId);
+    if (peer == null) return false;
+    return SignalE2ee.instance.isPeerVerified(peer, fingerprint);
+  }
+
+  static Future<void> verifyPeerInConversation(
+    String conversationId,
+    String fingerprint,
+  ) async {
+    final peer = await getPeerUserId(conversationId);
+    if (peer == null) {
+      throw const E2eeException(E2eeFailure.peerBundleUnavailable);
+    }
+    await SignalE2ee.instance.verifyPeer(peer, fingerprint);
   }
 
   /// Notifier for chat background changes.

@@ -125,3 +125,44 @@ self.addEventListener('fetch', (event) => {
     );
   }
 });
+
+/* Web Push: payloads are generic and contain no message content. */
+self.addEventListener('push', (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch (_) {
+    payload = {};
+  }
+  const title = payload.title || 'BRO';
+  const options = {
+    body: payload.body || 'You have a new message.',
+    icon: 'icons/Icon-192.png',
+    badge: 'icons/Icon-192.png',
+    tag: payload.tag || 'bro-message',
+    data: {
+      conversationId: payload.conversation_id || null,
+      kind: payload.kind || 'message',
+    },
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const conversationId = event.notification.data && event.notification.data.conversationId;
+  const target = conversationId
+    ? new URL(`#/chat/${encodeURIComponent(conversationId)}`, self.location.origin).href
+    : new URL('#/conversations', self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+          client.postMessage({ type: 'bro-navigate', conversationId });
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(target);
+    })
+  );
+});
