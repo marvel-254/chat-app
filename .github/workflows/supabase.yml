@@ -1,0 +1,98 @@
+name: Supabase CI/CD
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  calls-push:
+    name: calls-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
+        with:
+          deno-version: '2.9.6'
+      - run: npm install --no-save --ignore-scripts @electric-sql/pglite@0.5.17
+      - run: node supabase/tests/bro_calls_push.mjs
+      - run: node --test supabase/tests/web_push_worker.test.mjs
+      - run: deno check supabase/functions/*/index.ts
+      - run: deno test supabase/functions
+
+  deploy:
+    name: Deploy to nyx (production)
+    needs: calls-push
+    if: >-
+      github.repository == 'marvel-254/chat-app' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      vars.SUPABASE_PRODUCTION_DEPLOY_ENABLED == 'true'
+    environment: supabase-production
+    concurrency:
+      group: supabase-nyx-production
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_PROJECT_REF: dbfgyehzgrmsajpwydps
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Install pinned Supabase CLI
+        run: |
+          npm install --prefix "$RUNNER_TEMP/supabase-cli" --no-save --ignore-scripts supabase@3.2.0
+          echo "$RUNNER_TEMP/supabase-cli/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Check that this commit is still the tip of main
+        id: main
+        shell: bash
+        run: |
+          head_ref=$(git ls-remote --exit-code origin refs/heads/main)
+          if [[ "${head_ref%%$'\t'*}" == "$GITHUB_SHA" ]]; then
+            echo 'current=true' >> "$GITHUB_OUTPUT"
+          else
+            echo '::notice::Skipping a superseded production run; deploy from the current tip of main.'
+          fi
+      - name: Preview and apply database migrations
+        if: steps.main.outputs.current == 'true'
+        shell: bash
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          : "${SUPABASE_ACCESS_TOKEN:?Set SUPABASE_ACCESS_TOKEN in the supabase-production environment}"
+          : "${SUPABASE_DB_PASSWORD:?Set SUPABASE_DB_PASSWORD in the supabase-production environment}"
+          # nyx already has a newer additive migration; include older pending versions too.
+          supabase db push --remote="$SUPABASE_PROJECT_REF" --include-all --skip-vault --dry-run --agent=no
+          supabase db push --remote="$SUPABASE_PROJECT_REF" --include-all --skip-vault --yes --agent=no
+      - name: Deploy repository Edge Functions
+        if: steps.main.outputs.current == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy --remote="$SUPABASE_PROJECT_REF" --use-api --yes --agent=no
+      - name: Smoke-test function routes without credentials
+        if: steps.main.outputs.current == 'true'
+        shell: bash
+        run: |
+          for slug in call-turn push-new-message; do
+            status=''
+            for attempt in 1 2 3 4 5; do
+              status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
+                -H 'Content-Type: application/json' --data '{}' \
+                "https://$SUPABASE_PROJECT_REF.supabase.co/functions/v1/$slug") || status='unreachable'
+              [[ "$status" != 401 ]] || break
+              if [[ "$attempt" -lt 5 ]]; then sleep 5; fi
+            done
+            if [[ "$status" != 401 ]]; then
+              echo "::error::Expected $slug to reject an unauthenticated POST with 401; got $status."
+              exit 1
+            fi
+          done
