@@ -58,6 +58,9 @@ The database queues event identifiers only. A periodic worker leases up to 32 re
 
 Read-only production preflight (2026-11-20): `nyx` migration history ends at `20261119200000_restore_profile_write_privilege`. None of the three `20261120*` migrations is recorded. Catalog checks also found no `call_sessions`, `bro_push_devices`, `bro_push_events`, or `messages.content_format`. `pg_cron` (1.6.4), `pg_net` (0.20.4), and Vault (0.3.1) are installed. The existing `push-new-message` function is active (version 2); `call-turn` is not listed. No database branches were listed, so identify an isolated staging environment before the rollout. These are observations only; no production migration, function or secret change was made during preflight.
 
+Production rollout update (2026-11-20): the additive `20261120140000_legacy_message_format` migration was applied to `nyx` and recorded under its repository version. `call-turn` v1 is deployed, but relay use is not enabled: `TURN_URLS`, `TURN_SHARED_SECRET`, and the `claim_bro_turn` RPC are missing. The two earlier migrations (`20261120120000_call_sessions` and `20261120130000_push_delivery`) remain pending; the legacy message notification trigger and existing `push-new-message` v2 were left in place. Applying those two migrations as written replaces live signaling and notification paths, so coordinate the worker switch and client rollout or add a backward-compatible transition first. Because the additive migration landed out of order, inspect `supabase db push --linked --include-all --dry-run` and verify it lists only the intended pending versions before the remaining cutover.
+
+
 1. Verify **`nyx`** (`dbfgyehzgrmsajpwydps`) in the Supabase Dashboard, then make a database backup and compare `supabase migration list --linked`. Reconcile any older missing migrations before adding the three `20261120*` migrations. Use isolated Supabase staging for full `supabase db reset`, migration/RLS review, Realtime callback validation and the matrix above. The local PGlite harness runs the real new SQL/RLS against dependency stubs; it does not validate the complete hosted migration history, extensions or production configuration.
 2. Confirm `pg_cron` (supports second-based schedules), `pg_net`, Vault, and Realtime private broadcasts work. Confirm the right Firebase Android app ID and that `google-services.json` matches the FCM project's HTTP v1 service account. Supply APNs credentials and entitlements for iOS if shipping. Set Edge secrets `FIREBASE_SERVICE_ACCOUNT_B64` (least-privilege service account JSON, base64), `PUSH_WEBHOOK_SECRET` (random), and both TURN secrets. The managed Supabase runtime supplies `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`; never provide the service role to clients. Set Vault `push_webhook_url` to the verified `nyx` project `push-new-message` function URL and `push_webhook_secret` to the exact same random secret. Confirm no old DB webhooks still deliver the same event. Do not paste secret values into shell history, logs or Git.
 3. In a staged coordinated release, apply the migrations and deploy `call-turn` and `push-new-message` with config (`verify_jwt=false` for worker secret/explicit TURN auth). Test DB cron jobs/worker counts, Firebase sending and TURN-only calling before enabling the client. New messages require `content_format`; new calls and push registration require the new backend. Old client call signaling and old FID registration are not interoperable with new delivery. Update app stores/web builds together or announce the upgrade requirement. Pages and Vercel production builds must target `nyx`. Use a separate, isolated project for staging; do not point BRO at the unrelated `bro` project.
@@ -68,9 +71,9 @@ After the project verification, backup and staging gates, the production operato
 ```sh
 supabase link --project-ref dbfgyehzgrmsajpwydps
 supabase migration list --linked
-supabase db push --linked --dry-run
-# After checking the dry-run output and project identity:
-supabase db push --linked
+supabase db push --linked --include-all --dry-run
+# Only during the coordinated cutover, after checking the dry run and project identity:
+supabase db push --linked --include-all
 supabase functions deploy call-turn --project-ref dbfgyehzgrmsajpwydps --no-verify-jwt
 supabase functions deploy push-new-message --project-ref dbfgyehzgrmsajpwydps --no-verify-jwt
 ```
