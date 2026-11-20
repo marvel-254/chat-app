@@ -247,7 +247,7 @@ The single-page onboarding screen was replaced with a **3-page swipeable onboard
 - **3 onboarding pages** instead of 1 static screen:
   1. "For the people who feel like home." — conversation artwork with message tiles and voice note preview
   2. "Your circle. Your rules." — animated orbiting avatars around a central group node with connection lines
-  3. "Private. Instant. Yours." — breathing shield icon with floating ENCRYPTED/INSTANT/VERIFIED badges
+  3. "Private. Instant. Yours." — breathing shield icon with floating privacy-control badges
 - **Staggered entrance animations** on each page: title fades/slides in first, then subtitle, then artwork (800ms total)
 - **Ambient background glow** — a subtle radial gradient that slowly orbits behind all pages
 - **Page indicators** — pill-shaped dots at the bottom that animate width on the active page

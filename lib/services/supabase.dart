@@ -1516,7 +1516,7 @@ class Supa {
         details: details,
       );
 
-  // ===== E2EE Helpers =====
+  // ===== Conversation Peer Lookup =====
 
   /// Look up the peer user ID for a 1:1 conversation.
   static Future<String?> getPeerUserId(String conversationId) async {

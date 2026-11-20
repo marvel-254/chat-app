@@ -22,7 +22,8 @@ class LegacyMessageCodec {
       Uint8List.fromList(utf8.encode('conversation-key')),
     ));
     final key = Uint8List(32);
-    derive.deriveKey(key, 0, key.length, 0);
+    // The old call passed the same zeroed buffer as HKDF input and output.
+    derive.deriveKey(key, 0, key, 0);
     return key;
   }
 

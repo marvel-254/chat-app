@@ -193,6 +193,10 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
                           if (record.duration case final duration?)
                             Text(
                                 'Duration: ${CallRecord.formatDuration(duration)}'),
+                          if (record.status == CallStatus.failed)
+                            Text(record.connectedAt == null
+                                ? 'The call could not connect.'
+                                : 'The connection was interrupted.'),
                           const SizedBox(height: 16),
                           Wrap(spacing: 8, runSpacing: 8, children: [
                             if (peer != null &&

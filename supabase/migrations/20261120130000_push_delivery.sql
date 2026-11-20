@@ -8,6 +8,7 @@ create table public.bro_push_devices (
   refreshed_at timestamptz not null default now(),
   unique (user_id, device_id)
 );
+create index bro_push_devices_staleness on public.bro_push_devices (refreshed_at);
 alter table public.bro_push_devices enable row level security;
 revoke all on public.bro_push_devices from public, anon, authenticated;
 grant select, delete on public.bro_push_devices to authenticated;
@@ -164,12 +165,16 @@ declare
   endpoint text;
   secret text;
 begin
-  if not exists (select 1 from public.bro_push_events where expires_at > now()) then return; end if;
+  if not exists (
+    select 1 from public.bro_eligible_push e left join public.bro_push_deliveries q
+      on (q.kind,q.source_id,q.event_day,q.device_id) = (e.kind,e.source_id,e.event_day,e.device_id)
+    where q.id is null or (q.status = 'pending' and q.attempts < 5 and q.available_at <= now())
+  ) then return; end if;
   select decrypted_secret into endpoint from vault.decrypted_secrets where name = 'push_webhook_url';
   select decrypted_secret into secret from vault.decrypted_secrets where name = 'push_webhook_secret';
   if endpoint is not null and secret is not null then
     perform net.http_post(url := endpoint, body := '{}'::jsonb,
-      headers := jsonb_build_object('Content-Type','application/json','x-bro-webhook-secret',secret), timeout_milliseconds := 15000);
+      headers := jsonb_build_object('Content-Type','application/json','x-bro-webhook-secret',secret), timeout_milliseconds := 30000);
   end if;
 end $$;
 revoke all on function public.wake_bro_push() from public, anon, authenticated;

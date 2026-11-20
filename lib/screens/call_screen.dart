@@ -255,6 +255,7 @@ class _CallScreenState extends State<CallScreen> {
             });
           }
           _setStatus('Connected');
+          if (kDebugMode) unawaited(_reportCandidateType(pc));
           unawaited(_refresh());
         case RTCPeerConnectionState.RTCPeerConnectionStateDisconnected:
         case RTCPeerConnectionState.RTCPeerConnectionStateFailed:
@@ -470,6 +471,30 @@ class _CallScreenState extends State<CallScreen> {
     if (mounted && !_finished) setState(() => _status = value);
   }
 
+  Future<void> _reportCandidateType(RTCPeerConnection pc) async {
+    try {
+      final reports = await pc.getStats().timeout(const Duration(seconds: 3));
+      if (_finished) return;
+      final selected = <Object?>{};
+      for (final report in reports) {
+        if (report.type == 'transport')
+          selected.add(report.values['selectedCandidatePairId']);
+      }
+      for (final pair
+          in reports.where((report) => report.type == 'candidate-pair')) {
+        if (!selected.contains(pair.id) &&
+            !(pair.values['nominated'] == true &&
+                pair.values['state'] == 'succeeded')) continue;
+        for (final local in reports
+            .where((report) => report.id == pair.values['localCandidateId'])) {
+          final type = local.values['candidateType'];
+          if (const {'host', 'srflx', 'prflx', 'relay'}.contains(type))
+            _diagnostic('candidate_$type');
+        }
+      }
+    } catch (_) {/* Unsupported or closing connections do not expose stats. */}
+  }
+
   void _diagnostic(String category) {
     assert(() {
       debugPrint('RTC: $category');
@@ -578,6 +603,8 @@ class _CallScreenState extends State<CallScreen> {
     if (_finished) return;
     _finished = true;
     _clock.stop();
+    if (_everConnected)
+      _diagnostic('connected_seconds_${_clock.elapsed.inSeconds}');
     _deadline?.cancel();
     _poll?.cancel();
     _ticker?.cancel();

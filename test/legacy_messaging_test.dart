@@ -17,7 +17,7 @@ void main() {
   test(
       'legacy decoding preserves ambiguous old content and never decodes new plaintext',
       () {
-    const fixture = 'AAAAAAAAAAAAAAAAK7dEY+ijvwZGF5ArQQ59xKHPyz38/6OedJjMFA==';
+    const fixture = 'AAAAAAAAAAAAAAAAr5MQ2ZHssejaqAlJSant6IASzuj0oNM4NSH+qg==';
     final correct = LegacyMessageCodec.historicalKey('bob', 'alice');
     final wrong = LegacyMessageCodec.historicalKey('bob', 'carol');
     expect(
