@@ -199,6 +199,9 @@ class HeroEntrance extends StatefulWidget {
     this.curve = Curves.easeOutCubic,
   });
 
+  /// The element being staged.
+  final Widget child;
+
   /// Intro progress, `0` (hidden) … `1` (rest).
   final Animation<double> animation;
 

@@ -143,7 +143,7 @@ void main() {
     });
 
     testWidgets('reduce-motion never listens to the pointer', (tester) async {
-      Offset latest = Offset.one;
+      Offset latest = const Offset(1, 1);
       await tester.pumpWidget(
         harness(enabled: false, onShift: (s) => latest = s),
       );
