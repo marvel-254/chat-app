@@ -46,3 +46,7 @@ The release must include a manifest file embedded in the APK for the app to veri
 
 Copyright © 2026 marvel-254. All Rights Reserved — see [LICENSE](LICENSE).
 NYX is proprietary software: the source is viewable but no usage, modification, or distribution rights are granted.
+
+### Messaging, calls, and notifications
+
+BRO's legacy messaging is **not end-to-end encrypted**. See the [security and infrastructure rollout guide](docs/security-calls-push.md) for the threat model, Recent Calls behavior, TURN, Android/Web push, deployment and validation steps.

@@ -25,13 +25,16 @@ if [[ -f .env.local ]]; then
     # Trim surrounding whitespace and quotes.
     key="$(echo "$key" | xargs)"
     value="$(echo "$value" | sed 's/^"\(.*\)"$/\1/; s/^'\''\(.*\)'\''$/\1/')"
-    DEFINES+=(--dart-define="${key}=${value}")
+    case "$key" in
+      SUPABASE_URL|SUPABASE_ANON_KEY|CLOUD_STORAGE_URL|CALL_RELAY_ONLY|FIREBASE_WEB_API_KEY|FIREBASE_WEB_APP_ID|FIREBASE_WEB_SENDER_ID|FIREBASE_WEB_PROJECT_ID|FIREBASE_WEB_VAPID_KEY)
+        if [[ -z "${!key:-}" ]]; then export "$key=$value"; fi ;;
+    esac
   done < .env.local
 fi
 
 # CI and shell environments can provide the public Supabase client config too.
 # These values are safe for client apps; never pass a service-role key here.
-for key in SUPABASE_URL SUPABASE_ANON_KEY; do
+for key in SUPABASE_URL SUPABASE_ANON_KEY CLOUD_STORAGE_URL CALL_RELAY_ONLY FIREBASE_WEB_API_KEY FIREBASE_WEB_APP_ID FIREBASE_WEB_SENDER_ID FIREBASE_WEB_PROJECT_ID FIREBASE_WEB_VAPID_KEY; do
   value="${!key:-}"
   if [[ -n "$value" ]]; then
     DEFINES+=(--dart-define="${key}=${value}")
@@ -69,7 +72,8 @@ case "$TARGET" in
     cp web/index-landing.html build/web/index.html
     cp web/index.html build/web/app.html
     cp web/manifest.json web/robots.txt web/sitemap.xml web/llms.txt web/favicon.png build/web/ 2>/dev/null || true
-    cp web/service-worker.js build/web/app/service-worker.js 2>/dev/null || true
+    cp web/service-worker.js build/web/app/service-worker.js
+    node scripts/web-push-config.mjs build/web/app/push-config.js
     cp -r web/css/. build/web/css/
     cp -r web/icons/. build/web/icons/
     cp -r web/assets/. build/web/assets/

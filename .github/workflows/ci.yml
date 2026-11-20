@@ -18,8 +18,31 @@ jobs:
         with:
           flutter-version: '3.47.7'
           channel: stable
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
       - run: flutter pub get
       - name: Analyze
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings || true
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
       - name: Test
         run: flutter test
+      - name: Build Web
+        run: ./scripts/build.sh web
+      - name: Build Android (debug)
+        run: flutter build apk --debug
+  calls-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: '2.9.6'
+      - run: npm install --no-save --ignore-scripts @electric-sql/pglite@0.5.17
+      - run: node supabase/tests/bro_calls_push.mjs
+      - run: node --test supabase/tests/web_push_worker.test.mjs
+      - run: deno check supabase/functions/call-turn/index.ts supabase/functions/push-new-message/index.ts
+      - run: deno test supabase/functions/call-turn supabase/functions/push-new-message

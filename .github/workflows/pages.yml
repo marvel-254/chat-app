@@ -33,10 +33,17 @@ jobs:
       - name: Build Web (Landing + PWA at /app/)
         env:
           # Browser client settings are public Supabase values (never a service-role key).
-          SUPABASE_URL: https://dbfgyehzgrmsajpwydps.supabase.co
-          SUPABASE_ANON_KEY: sb_publishable_LDvClqv8Pb9ShXTMB9FBtA_m8_GRKsv
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+          FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
+          FIREBASE_WEB_APP_ID: ${{ vars.FIREBASE_WEB_APP_ID }}
+          FIREBASE_WEB_SENDER_ID: ${{ vars.FIREBASE_WEB_SENDER_ID }}
+          FIREBASE_WEB_PROJECT_ID: ${{ vars.FIREBASE_WEB_PROJECT_ID }}
+          FIREBASE_WEB_VAPID_KEY: ${{ vars.FIREBASE_WEB_VAPID_KEY }}
           BASE_HREF: /chat-app/app/
         run: |
+          test "$SUPABASE_URL" = 'https://zchsmnelvcuexchpwfgr.supabase.co'
+          test -n "$SUPABASE_ANON_KEY"
           ./scripts/build.sh web
 
       - name: Add SPA fallback for client-side routing at /app/
