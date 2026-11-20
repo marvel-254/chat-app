@@ -237,7 +237,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      const Center(
+                      Center(
                         child: Text(
                           'Create an account or sign in · free, no ads',
                           style: AppText.caption.copyWith(
