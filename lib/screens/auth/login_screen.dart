@@ -464,21 +464,32 @@ class _WelcomeHeroState extends State<WelcomeHero>
   @override
   void initState() {
     super.initState();
-    if (widget.animate && !reduceMotionPlatform()) {
-      _motion.repeat();
+    // Animation is started/stopped in didChangeDependencies where MediaQuery
+    // (OS reduce-motion) is available — keeping this controller quiet in
+    // initState makes widget tests deterministic too.
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncAnimation();
+  }
+
+  void _syncAnimation() {
+    final allow = widget.animate && !reduceMotionOf(context);
+    if (allow) {
+      if (!_motion.isAnimating) _motion.repeat();
+    } else {
+      if (_motion.isAnimating) _motion.stop();
+      _motion.value = 0;
     }
   }
 
   @override
   void didUpdateWidget(covariant WelcomeHero oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.animate != oldWidget.animate) {
-      if (widget.animate && !reduceMotionPlatform()) {
-        _motion.repeat();
-      } else {
-        _motion.stop();
-        _motion.value = 0;
-      }
+    if (oldWidget.animate != widget.animate) {
+      _syncAnimation();
     }
   }
 

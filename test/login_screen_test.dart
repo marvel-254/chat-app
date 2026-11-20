@@ -8,32 +8,18 @@ Finder _fieldWithHint(String hint) => find.byWidgetPredicate(
           widget is TextField && widget.decoration?.hintText == hint,
     );
 
-Future<void> _pumpLogin(
-  WidgetTester tester, {
-  Size size = const Size(390, 844),
-  bool disableAnimations = false,
-}) async {
-  tester.view.physicalSize = size;
-  tester.view.devicePixelRatio = 1.0;
-  addTearDown(tester.view.resetPhysicalSize);
-  addTearDown(tester.view.resetDevicePixelRatio);
-
-  await tester.pumpWidget(
-    MaterialApp(
-      home: MediaQuery(
-        data: MediaQueryData(
-          size: size,
-          disableAnimations: disableAnimations,
-        ),
-        child: const LoginScreen(),
+Widget _app({bool disableAnimations = false}) => MaterialApp(
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context)
+            .copyWith(disableAnimations: disableAnimations),
+        child: child!,
       ),
-    ),
-  );
-}
+      home: const LoginScreen(),
+    );
 
 void main() {
   testWidgets('renders the sign-in form by default', (tester) async {
-    await _pumpLogin(tester);
+    await tester.pumpWidget(_app());
     await tester.pump();
 
     expect(find.text('Good to see you, Bro.'), findsOneWidget);
@@ -46,20 +32,21 @@ void main() {
 
   testWidgets('create-account toggle reveals the username field',
       (tester) async {
-    await _pumpLogin(tester);
+    await tester.pumpWidget(_app());
     await tester.pump();
 
     await tester.tap(find.text('Create Account'));
     await tester.pump();
 
     expect(find.text('WHAT THEY CALL YOU'), findsOneWidget);
-    expect(find.text('Create Account'), findsNWidgets(2)); // toggle + CTA
+    // Toggle + CTA both read "Create Account" now.
+    expect(find.text('Create Account'), findsNWidgets(2));
     expect(find.text('Forgot password?'), findsNothing);
   });
 
   testWidgets('invalid email shows an inline error under the field',
       (tester) async {
-    await _pumpLogin(tester);
+    await tester.pumpWidget(_app());
     await tester.pump();
 
     await tester.enterText(_fieldWithHint('you@bro.network'), 'not-an-email');
@@ -74,7 +61,7 @@ void main() {
 
   testWidgets('forgot password requires a valid email first',
       (tester) async {
-    await _pumpLogin(tester);
+    await tester.pumpWidget(_app());
     await tester.pump();
 
     await tester.enterText(_fieldWithHint('you@bro.network'), 'nope');
@@ -88,10 +75,11 @@ void main() {
   });
 
   testWidgets('short password shows an inline error', (tester) async {
-    await _pumpLogin(tester);
+    await tester.pumpWidget(_app());
     await tester.pump();
 
-    await tester.enterText(_fieldWithHint('you@bro.network'), 'bro@example.com');
+    await tester
+        .enterText(_fieldWithHint('you@bro.network'), 'bro@example.com');
     await tester.enterText(_fieldWithHint('••••••••'), '123');
     await tester.tap(find.byKey(const Key('auth-cta')));
     await tester.pump();
@@ -102,9 +90,9 @@ void main() {
     );
   });
 
-  testWidgets('reduce-motion build still renders the header',
+  testWidgets('reduce-motion build disables the hero loop',
       (tester) async {
-    await _pumpLogin(tester, disableAnimations: true);
+    await tester.pumpWidget(_app(disableAnimations: true));
     await tester.pumpAndSettle();
 
     expect(find.text('Good to see you, Bro.'), findsOneWidget);

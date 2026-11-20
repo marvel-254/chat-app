@@ -45,9 +45,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       vsync: this,
       duration: const Duration(seconds: 8),
     );
-    if (!reduceMotionPlatform()) {
-      _ambientController.repeat();
-    }
     _pageController.addListener(() {
       if (_pageController.page != null) {
         final page = _pageController.page!.round();
@@ -56,6 +53,17 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         }
       }
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (reduceMotionOf(context)) {
+      if (_ambientController.isAnimating) _ambientController.stop();
+      _ambientController.value = 0;
+    } else if (!_ambientController.isAnimating) {
+      _ambientController.repeat();
+    }
   }
 
   @override
@@ -418,9 +426,15 @@ class _OnboardingPageState extends State<_OnboardingPage>
       CurvedAnimation(parent: _controller, curve: const Interval(0.3, 0.65)),
     );
 
-    if (reduceMotionPlatform()) {
+    // resolved in didChangeDependencies where MediaQuery is available
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (reduceMotionOf(context)) {
       _controller.value = 1;
-    } else {
+    } else if (!_controller.isAnimating && _controller.value == 0) {
       _controller.forward();
     }
   }
