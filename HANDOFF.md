@@ -29,7 +29,7 @@ This guide describes the app, its backend, local development, and release proces
 - Settings offer built-in chat backgrounds and user-uploaded images.
 - See [the security, calls and push rollout guide](docs/security-calls-push.md) for the current calls lifecycle, TURN, token delivery, browser worker, setup and release gates. HTTP v1 now targets FCM registration tokens rather than old `push_tokens` FIDs.
 - The Firebase project `omix-systems-cd1af` is the existing client configuration; `google-services.json` and `GoogleService-Info.plist` are public client configuration, not private keys. Confirm this project and its HTTP v1 sender credentials before deploying. iOS still needs APNs configuration. Browser and Android live delivery must be verified on staging.
-- Recovery and project identity: [#107](https://github.com/marvel-254/chat-app/issues/107). Historical rollout entries below refer to what was reported at the time; do not infer the correct production project from an earlier linked environment.
+- BRO production uses **`nyx`** (`dbfgyehzgrmsajpwydps`). The separate project named `bro` discussed in [#107](https://github.com/marvel-254/chat-app/issues/107) is not the production target. Historical rollout entries below do not establish which migrations are currently applied; verify against `nyx` before rollout.
 
 ## Supabase database
 

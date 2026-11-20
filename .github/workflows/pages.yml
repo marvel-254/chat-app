@@ -42,7 +42,7 @@ jobs:
           FIREBASE_WEB_VAPID_KEY: ${{ vars.FIREBASE_WEB_VAPID_KEY }}
           BASE_HREF: /chat-app/app/
         run: |
-          test "$SUPABASE_URL" = 'https://zchsmnelvcuexchpwfgr.supabase.co'
+          test "$SUPABASE_URL" = 'https://dbfgyehzgrmsajpwydps.supabase.co'
           test -n "$SUPABASE_ANON_KEY"
           ./scripts/build.sh web
 
