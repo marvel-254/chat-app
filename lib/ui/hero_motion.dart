@@ -182,7 +182,11 @@ class HeroOrbitPose {
 /// [index] orders the element inside the scene (0 is first). The element is
 /// fully visible when [animation] reaches `1`, which is also the rest pose used
 /// for reduce motion, so a static build is just `value = 1`.
-class HeroEntrance extends StatelessWidget {
+///
+/// Stateful on purpose: the derived [CurvedAnimation] registers a status
+/// listener on the parent controller, so it must be created once and disposed
+/// rather than rebuilt on every frame of the scene.
+class HeroEntrance extends StatefulWidget {
   const HeroEntrance({
     super.key,
     required this.animation,
@@ -216,23 +220,63 @@ class HeroEntrance extends StatelessWidget {
   final Curve curve;
 
   @override
-  Widget build(BuildContext context) {
-    final start = (index * stagger).clamp(0.0, 1.0 - length).toDouble();
-    final curved = CurvedAnimation(
-      parent: animation,
-      curve: Interval(start, start + length, curve: curve),
+  State<HeroEntrance> createState() => _HeroEntranceState();
+}
+
+class _HeroEntranceState extends State<HeroEntrance> {
+  late CurvedAnimation _curve;
+  late Animation<Offset> _slide;
+  late Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _rebuildAnimations();
+  }
+
+  @override
+  void didUpdateWidget(covariant HeroEntrance oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animation != widget.animation ||
+        oldWidget.index != widget.index ||
+        oldWidget.stagger != widget.stagger ||
+        oldWidget.length != widget.length ||
+        oldWidget.slide != widget.slide ||
+        oldWidget.scaleFrom != widget.scaleFrom ||
+        oldWidget.curve != widget.curve) {
+      _curve.dispose();
+      _rebuildAnimations();
+    }
+  }
+
+  void _rebuildAnimations() {
+    final start = (widget.index * widget.stagger)
+        .clamp(0.0, 1.0 - widget.length)
+        .toDouble();
+    _curve = CurvedAnimation(
+      parent: widget.animation,
+      curve: Interval(start, start + widget.length, curve: widget.curve),
     );
+    _slide = Tween<Offset>(
+      begin: Offset(0.0, widget.slide),
+      end: Offset.zero,
+    ).animate(_curve);
+    _scale = Tween<double>(begin: widget.scaleFrom, end: 1.0).animate(_curve);
+  }
+
+  @override
+  void dispose() {
+    _curve.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return FadeTransition(
-      opacity: curved,
+      opacity: _curve,
       child: SlideTransition(
-        position: Tween<Offset>(
-          begin: Offset(0, slide),
-          end: Offset.zero,
-        ).animate(curved),
-        child: ScaleTransition(
-          scale: Tween<double>(begin: scaleFrom, end: 1).animate(curved),
-          child: child,
-        ),
+        position: _slide,
+        child: ScaleTransition(scale: _scale, child: widget.child),
       ),
     );
   }
