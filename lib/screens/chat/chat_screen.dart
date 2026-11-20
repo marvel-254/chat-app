@@ -668,7 +668,7 @@ class _ChatScreenState extends State<ChatScreen> {
           content: SizedBox(
             width: double.maxFinite,
             child: error != null
-                ? Text(error!)
+                ? Text(error)
                 : items.isEmpty
                     ? const Text('Nothing is scheduled in this chat.')
                     : ListView.builder(
