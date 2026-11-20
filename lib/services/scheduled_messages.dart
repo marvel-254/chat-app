@@ -1,3 +1,5 @@
+import 'e2ee.dart';
+import 'package:uuid/uuid.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// A message that will be delivered at a future time.
@@ -57,12 +59,16 @@ class ScheduledMessages {
     final user = _client.auth.currentUser;
     if (user == null) throw Exception('Not authenticated');
 
+    final id = const Uuid().v4();
+    final sealed =
+        await SecureChat.seal(id, conversationId, content, reply: replyToId);
     final res = await _client
         .from('scheduled_messages')
         .insert({
+          'id': id,
           'sender_id': user.id,
           'conversation_id': conversationId,
-          'content': content,
+          'content': sealed,
           if (replyToId != null) 'reply_to_id': replyToId,
           'scheduled_at': scheduledAt.toUtc().toIso8601String(),
         })

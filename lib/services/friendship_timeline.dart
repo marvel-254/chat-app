@@ -73,7 +73,7 @@ class FriendshipTimelineService {
     if (bytes.isEmpty) {
       throw ArgumentError('Pick a photo to share.');
     }
-    final uploaded = await Supa.uploadAttachment(
+    final uploaded = await Supa.uploadTimelineFile(
         conversationId, bytes, filename, _imageMime(filename));
     final row = await Supa.client
         .from('friendship_photos')

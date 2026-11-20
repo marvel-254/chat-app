@@ -20,6 +20,12 @@ jobs:
           channel: stable
       - run: flutter pub get
       - name: Analyze
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings || true
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
       - name: Test
         run: flutter test
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test checks/*.test.cjs
+      - run: flutter build web --release
+      - run: flutter build apk --debug

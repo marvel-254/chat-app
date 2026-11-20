@@ -1,3 +1,4 @@
+import '../../services/push_notifications.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -170,7 +171,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       if (!mounted || Supa.currentUser?.id != owner) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(friendlyErrorMessage(error,
-            fallback: "We couldn't update your photo. Try a JPEG, PNG, WebP, or GIF under 5 MB.")),
+            fallback:
+                "We couldn't update your photo. Try a JPEG, PNG, WebP, or GIF under 5 MB.")),
       ));
     } finally {
       if (mounted) {
@@ -439,7 +441,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     if (_avatarPreview case final bytes?)
                       ClipOval(
                         child: Image.memory(bytes,
-                            width: 96, height: 96, fit: BoxFit.cover,
+                            width: 96,
+                            height: 96,
+                            fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) => _settingsAvatar()),
                       )
                     else if (_avatarUrlOverride == null &&
@@ -448,7 +452,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     else
                       _settingsAvatar(),
                     TextButton.icon(
-                        onPressed: _uploadingAvatar || _saving ? null : _pickAvatar,
+                        onPressed:
+                            _uploadingAvatar || _saving ? null : _pickAvatar,
                         icon: _uploadingAvatar
                             ? const BroSpinner(size: 16)
                             : const Icon(Icons.photo_camera_outlined),
@@ -487,7 +492,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     decoration: const InputDecoration(labelText: 'Platform'),
                     hint: const Text('Not set'),
                     items: [
-                      const DropdownMenuItem(value: null, child: Text('Not set')),
+                      const DropdownMenuItem(
+                          value: null, child: Text('Not set')),
                       for (final entry in gamePlatforms)
                         DropdownMenuItem(
                             value: entry.value, child: Text(entry.label)),
@@ -523,8 +529,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                                 color: _P.text,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500),
-                            onPressed: () => setState(
-                                () => _gameStatus.text = game),
+                            onPressed: () =>
+                                setState(() => _gameStatus.text = game),
                           ),
                       ],
                     ),
@@ -550,8 +556,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       alignment: Alignment.centerLeft,
                       child: TextButton.icon(
                         onPressed: _clearGameProfile,
-                        icon: const Icon(Icons.delete_outline_outlined,
-                            size: 16),
+                        icon:
+                            const Icon(Icons.delete_outline_outlined, size: 16),
                         label: const Text('Clear gaming profile'),
                       ),
                     ),
@@ -639,6 +645,19 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   ),
                   const SizedBox(height: 10),
                   ListTile(
+                      leading: const Icon(Icons.notifications_outlined),
+                      title: const Text('Enable message notifications'),
+                      subtitle: const Text(
+                          'Get a generic alert on this device, even when BRO is closed. Message text and sender stay hidden.'),
+                      onTap: () async {
+                        final ok = await PushNotifications.enable();
+                        if (context.mounted)
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text(ok
+                                  ? 'Notifications enabled on this device.'
+                                  : 'Notifications unavailable. Check permission, network and device settings.')));
+                      }),
+                  ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.music_note_outlined),
                     title: Text(_profileMusicName ?? 'Profile music'),
@@ -690,8 +709,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       (_digitalAvatar?.enabled ?? false)
                           ? 'Shown on your profile'
                           : 'Build a customizable avatar with reactions',
-                      style:
-                          const TextStyle(color: _P.muted, fontSize: 12),
+                      style: const TextStyle(color: _P.muted, fontSize: 12),
                     ),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => context.push('/settings/digital-avatar'),
@@ -704,7 +722,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       initialValue: _photoVisibility,
                       decoration: const InputDecoration(
                           labelText: 'Profile photo visible to',
-                          helperText: 'Applies in BRO. Direct image links are public.',
+                          helperText:
+                              'Applies in BRO. Direct image links are public.',
                           helperMaxLines: 2),
                       items: const [
                         DropdownMenuItem(
@@ -1701,8 +1720,8 @@ class _GamePresenceCard extends StatelessWidget {
                   color: color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(Icons.sports_esports_outlined,
-                    color: color, size: 20),
+                child:
+                    Icon(Icons.sports_esports_outlined, color: color, size: 20),
               ),
               const SizedBox(width: 12),
               Expanded(

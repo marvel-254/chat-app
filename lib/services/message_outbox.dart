@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,7 +20,16 @@ class MessageOutbox {
     if (_loaded) return;
     final prefs = await SharedPreferences.getInstance();
     if (_loaded) return;
-    final raw = prefs.getString(_storageKey);
+    const storage = FlutterSecureStorage();
+    final old = prefs.getString(_storageKey);
+    var raw = await storage.read(key: _storageKey);
+    if (old != null) {
+      if (raw == null) {
+        await storage.write(key: _storageKey, value: old);
+        raw = old;
+      }
+      await prefs.remove(_storageKey);
+    }
     if (raw != null && raw.isNotEmpty) {
       try {
         final decoded = jsonDecode(raw);
@@ -45,10 +55,9 @@ class MessageOutbox {
     _notify();
   }
 
-  static List<PendingMessage> _forSender(String senderId) => _items.values
-      .where((item) => item.senderId == senderId)
-      .toList()
-    ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+  static List<PendingMessage> _forSender(String senderId) =>
+      _items.values.where((item) => item.senderId == senderId).toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
   static List<PendingMessage> forConversation(
     String conversationId, {
@@ -120,9 +129,9 @@ class MessageOutbox {
   }
 
   static Future<void> _persist() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-        _storageKey, jsonEncode(_items.values.map((e) => e.toJson()).toList()));
+    await const FlutterSecureStorage().write(
+        key: _storageKey,
+        value: jsonEncode(_items.values.map((e) => e.toJson()).toList()));
   }
 
   static void _notify() => revision.value++;

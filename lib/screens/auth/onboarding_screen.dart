@@ -141,8 +141,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
               bottom: 0,
               child: SafeArea(
                 child: Padding(
-                  padding:
-                      const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -158,8 +157,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                             decoration: BoxDecoration(
                               color: _currentPage == i
                                   ? app_colors.P.primary
-                                  : app_colors.P.primary
-                                      .withValues(alpha: 0.2),
+                                  : app_colors.P.primary.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(4),
                             ),
                           ),
@@ -195,9 +193,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Text(
-                                      _currentPage < 2
-                                          ? 'Next'
-                                          : 'Get started',
+                                      _currentPage < 2 ? 'Next' : 'Get started',
                                       style: const TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w800,
@@ -298,9 +294,10 @@ class _AmbientGlowPainter extends CustomPainter {
     canvas.drawCircle(
       adjustedCenter,
       radius,
-      Paint()..shader = gradient.createShader(
-        Rect.fromCircle(center: adjustedCenter, radius: radius),
-      ),
+      Paint()
+        ..shader = gradient.createShader(
+          Rect.fromCircle(center: adjustedCenter, radius: radius),
+        ),
     );
   }
 
@@ -792,7 +789,8 @@ class _CircleArtworkState extends State<_CircleArtwork>
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: app_colors.P.primary.withValues(alpha: 0.2),
+                              color:
+                                  app_colors.P.primary.withValues(alpha: 0.2),
                               blurRadius: 24,
                             ),
                           ],
@@ -831,13 +829,11 @@ class _CircleArtworkState extends State<_CircleArtwork>
             right: 28,
             bottom: 4,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
                 color: const Color(0xFF17191E),
                 borderRadius: BorderRadius.circular(17),
-                border:
-                    Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.30),
@@ -889,8 +885,8 @@ class _CircleArtworkState extends State<_CircleArtwork>
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                     decoration: BoxDecoration(
                       color: app_colors.P.success.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
@@ -1089,8 +1085,7 @@ class _PrivacyArtworkState extends State<_PrivacyArtwork>
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color:
-                                app_colors.P.primary.withValues(alpha: 0.15),
+                            color: app_colors.P.primary.withValues(alpha: 0.15),
                             blurRadius: 32,
                             spreadRadius: 4,
                           ),
@@ -1120,7 +1115,7 @@ class _PrivacyArtworkState extends State<_PrivacyArtwork>
                     top: 80 + math.sin(t * math.pi * 2 + 0.5) * 8,
                     child: _FeatureBadge(
                       icon: Icons.lock_rounded,
-                      label: 'ENCRYPTED',
+                      label: 'PRIVATE CHATS',
                       color: app_colors.P.primary,
                     ),
                   ),
@@ -1154,13 +1149,11 @@ class _PrivacyArtworkState extends State<_PrivacyArtwork>
             right: 28,
             bottom: 4,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
                 color: const Color(0xFF17191E),
                 borderRadius: BorderRadius.circular(17),
-                border:
-                    Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.30),
@@ -1190,7 +1183,7 @@ class _PrivacyArtworkState extends State<_PrivacyArtwork>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'End-to-end encrypted by default.',
+                          'Compare device fingerprints before sending.',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(

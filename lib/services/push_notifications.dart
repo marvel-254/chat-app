@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'push_message_target.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'supabase.dart';
 
 final appScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -21,7 +22,7 @@ class PushNotifications {
 
   static StreamSubscription<AuthState>? _authSubscription;
   static StreamSubscription<String>? _registrationSubscription;
-  static String? _fid;
+  static const _vapid = String.fromEnvironment('FIREBASE_WEB_VAPID_KEY');
   static PushMessageTarget? _pendingTarget;
   static String? _suspendedUserId;
   static const _noticeBody = 'You have a new message.';
@@ -29,25 +30,28 @@ class PushNotifications {
   static bool _initialized = false;
 
   static bool get _supportedPlatform =>
-      !kIsWeb &&
+      kIsWeb ||
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
 
   static Future<void> initialize() async {
     if (_initialized || !_supportedPlatform) return;
     _initialized = true;
-    FirebaseMessaging.onBackgroundMessage(firebaseBackgroundMessageHandler);
+    if (!kIsWeb)
+      FirebaseMessaging.onBackgroundMessage(firebaseBackgroundMessageHandler);
     final messaging = FirebaseMessaging.instance;
 
     FirebaseMessaging.onMessage.listen((message) {
       unawaited(_showForegroundNotice(message));
     });
     FirebaseMessaging.onMessageOpenedApp.listen(_openMessage);
-    _registrationSubscription = messaging.onRegistered.listen((fid) {
-      if (_activeUserId == null) return;
-      _fid = fid;
-      unawaited(_registerToken());
+    _registrationSubscription = messaging.onTokenRefresh.listen((token) {
+      final owner = _activeUserId;
+      if (owner != null) unawaited(_sync(owner, prompt: false));
     });
+    if (kIsWeb) {
+      _pendingTarget = PushMessageTarget.fromData(Uri.base.queryParameters);
+    }
     _authSubscription = Supa.authStateChanges.listen((state) {
       if (state.event == AuthChangeEvent.signedOut) {
         _pendingTarget = null;
@@ -56,7 +60,7 @@ class PushNotifications {
       } else if (state.session != null) {
         unawaited(_openPending());
         if (state.event == AuthChangeEvent.signedIn) {
-          unawaited(_requestPermissionAndRegister());
+          unawaited(_sync(state.session!.user.id, prompt: false));
         }
       }
     });
@@ -66,7 +70,10 @@ class PushNotifications {
     } catch (_) {
       debugPrint('Could not read the launch notification.');
     }
-    if (_activeUserId != null) await _requestPermissionAndRegister();
+    if (_activeUserId != null) {
+      unawaited(_openPending());
+      await _sync(_activeUserId!, prompt: false);
+    }
   }
 
   static String? get _activeUserId {
@@ -74,55 +81,56 @@ class PushNotifications {
     return id == _suspendedUserId ? null : id;
   }
 
-  static Future<void> _requestPermissionAndRegister() async {
+  static Future<bool> enable() async {
     final owner = _activeUserId;
-    if (owner == null) return;
-    try {
-      final messaging = FirebaseMessaging.instance;
-      final settings = await messaging.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-      if (_activeUserId != owner ||
-          settings.authorizationStatus == AuthorizationStatus.denied) return;
-      await messaging.register();
-      if (_activeUserId == owner) await _registerToken();
-    } catch (_) {
-      debugPrint('Push notification registration failed.');
-    }
+    if (!_initialized || owner == null) return false;
+    return _sync(owner, prompt: true);
   }
 
-  static Future<void> _registerToken() async {
-    final fid = _fid;
-    if (fid == null || _activeUserId == null) return;
+  static Future<bool> _sync(String owner, {required bool prompt}) async {
     try {
-      await Supa.savePushToken(fid, defaultTargetPlatform.name);
+      final messaging = FirebaseMessaging.instance;
+      if (kIsWeb && _vapid.isEmpty) return false;
+      final settings = prompt
+          ? await messaging.requestPermission()
+          : await messaging.getNotificationSettings();
+      if (_activeUserId != owner) return false;
+      final prefs = await SharedPreferences.getInstance();
+      if (settings.authorizationStatus != AuthorizationStatus.authorized &&
+          settings.authorizationStatus != AuthorizationStatus.provisional) {
+        await Supa.removePushToken(owner);
+        return false;
+      }
+      if (prompt) await prefs.setBool('push.enabled.$owner', true);
+      if (kIsWeb && prefs.getBool('push.enabled.$owner') != true) return false;
+      final token = await messaging.getToken(
+          vapidKey: kIsWeb ? _vapid : null,
+          serviceWorkerScriptPath: kIsWeb ? 'service-worker.js' : null);
+      if (token == null || _activeUserId != owner) return false;
+      await Supa.savePushToken(
+          token, kIsWeb ? 'web' : defaultTargetPlatform.name, owner);
+      return true;
     } catch (_) {
-      debugPrint('Could not save the notification registration.');
+      return false;
     }
   }
 
   static Future<void> unregisterCurrentToken() async {
-    if (!_supportedPlatform) return;
-    _suspendedUserId = Supa.currentUser?.id;
+    final owner = _activeUserId;
+    if (!_supportedPlatform || owner == null) return;
+    _suspendedUserId = owner;
     _pendingTarget = null;
-    final fid = _fid;
-    _fid = null;
     try {
-      if (fid != null) {
-        await Supa.removePushToken(fid).timeout(const Duration(seconds: 3));
-      }
-    } catch (_) {
-      debugPrint('Could not remove the saved notification registration.');
+      await Supa.removePushToken(owner).timeout(const Duration(seconds: 4));
+    } catch (_) {}
+    if (_initialized) {
+      try {
+        await FirebaseMessaging.instance
+            .deleteToken()
+            .timeout(const Duration(seconds: 4));
+      } catch (_) {}
     }
-    try {
-      await FirebaseMessaging.instance
-          .unregister()
-          .timeout(const Duration(seconds: 3));
-    } catch (_) {
-      debugPrint('Could not unregister this device from notifications.');
-    }
+    await (await SharedPreferences.getInstance()).remove('push.enabled.$owner');
   }
 
   static Future<void> dispose() async {
@@ -156,7 +164,7 @@ class PushNotifications {
 
   static Future<bool> _canShow(PushMessageTarget target, String userId) async {
     final recipient = target.recipientUserId;
-    if (recipient != null) return recipient == userId;
+    if (recipient != null && recipient != userId) return false;
     try {
       final row = await Supa.client
           .from('conversation_participants')

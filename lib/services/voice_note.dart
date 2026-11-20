@@ -10,7 +10,6 @@
 
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -58,17 +57,13 @@ class VoiceNoteService {
     }
 
     final messageId = _uuid.v4();
-    final objectPath = _objectPath(conversationId, messageId);
     try {
-      await _uploadToStorage(objectPath, bytes, 'audio/m4a');
-      // Mirror the chat-file pattern: content carries the object path so the
-      // receiving device can reconstruct the download URL without a schema
-      // migration or a separate table.
-      await _sendMessage(conversationId, 'voice:${jsonEncode(_voiceMeta(objectPath))}');
+      final meta = await Supa.uploadAttachment(
+          conversationId, bytes, 'Voice note.m4a', 'audio/mp4');
+      await Supa.sendMessage(conversationId, 'attachment:${jsonEncode(meta)}');
       return messageId;
-    } catch (_) {
+    } finally {
       await File(path).delete();
-      return '';
     }
   }
 
@@ -82,43 +77,5 @@ class VoiceNoteService {
     } catch (_) {
       // Silently ignore playback failures so audio errors never break the UI.
     }
-  }
-
-  static String _objectPath(String conversationId, String messageId) {
-    final safe = conversationId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
-    return '$safe/voice/${Supa.currentUser!.id}/$messageId.m4a';
-  }
-
-  static Map<String, String> _voiceMeta(String objectPath) =>
-      {'path': objectPath, 'mime': 'audio/m4a'};
-
-  static Future<void> _sendMessage(String conversationId, String content) async {
-    final me = Supa.currentUser!.id;
-    final now = DateTime.now().toIso8601String();
-    await Supa.client.from('messages').insert({
-      'id': _uuid.v4(),
-      'conversation_id': conversationId,
-      'sender_id': me,
-      'content': content,
-      'created_at': now,
-    });
-    await Supa.client
-        .from('conversations')
-        .update({'updated_at': now}).eq('id', conversationId);
-  }
-
-  static Future<void> _uploadToStorage(
-      String objectPath, Uint8List bytes, String mime) async {
-    await Supa.client
-        .storage
-        .from('chat-files')
-        .uploadBinary(objectPath, bytes);
-    final url = await Supa.client
-        .storage
-        .from('chat-files')
-        .createSignedUrl(objectPath, 3600);
-    await _player.stop();
-    await _player.setSource(UrlSource(url));
-    await _player.play(UrlSource(url));
   }
 }

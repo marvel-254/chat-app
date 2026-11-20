@@ -9,10 +9,9 @@
  *  - Supabase/API calls → never cached (network-only, pass-through).
  */
 
-const VERSION = 'bro-pwa-v2';
+const VERSION = 'bro-pwa-v3';
 const APP_SHELL = [
   'index.html',
-  'app.html',
   'main.dart.js',
   'flutter.js',
   'flutter_bootstrap.js',
@@ -38,7 +37,7 @@ self.addEventListener('activate', (event) => {
       // Clean up old caches
       const keys = await caches.keys();
       await Promise.all(
-        keys.filter((key) => key !== VERSION).map((key) => caches.delete(key))
+        keys.filter((key) => key.startsWith("bro-pwa-") && key !== VERSION).map((key) => caches.delete(key))
       );
       // Take control of open clients
       await self.clients.claim();
@@ -124,4 +123,26 @@ self.addEventListener('fetch', (event) => {
         .catch(() => caches.match('index.html'))
     );
   }
+});
+
+// FCM data-only Web Push. Never render payload-supplied text or follow a URL.
+const uuid = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i;
+self.addEventListener('push', event => {
+  let data;
+  try { data = event.data.json().data; } catch (_) { return; }
+  if (!data || ![data.conversation_id,data.recipient_user_id,data.message_id].every(id=>typeof id==='string' && uuid.test(id))) return;
+  event.waitUntil(self.registration.showNotification('BRO', {body:'You have a new notification.',tag:`bro:${data.message_id}`,data:{conversation_id:data.conversation_id,recipient_user_id:data.recipient_user_id}}));
+});
+self.addEventListener('notificationclick', event => {
+  const data = event.notification.data;
+  event.notification.close();
+  if (!data || !uuid.test(data.conversation_id) || !uuid.test(data.recipient_user_id)) return;
+  const target=new URL(self.registration.scope);
+  target.search=new URLSearchParams({conversation_id:data.conversation_id,recipient_user_id:data.recipient_user_id});
+  event.waitUntil((async()=>{
+    const tabs=await self.clients.matchAll({type:'window'});
+    const existing=tabs.find(tab=>tab.url.startsWith(self.registration.scope));
+    if(existing){const tab=await existing.navigate(target.href); if(tab) return tab.focus();}
+    return self.clients.openWindow(target.href);
+  })());
 });

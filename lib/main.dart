@@ -82,7 +82,7 @@ void main() async {
       await onboarding.loadOnboardingStatus();
       _setupAuthGateCallback();
       runApp(const BroApp());
-      if (!kIsWeb &&
+      if (kIsWeb ||
           (defaultTargetPlatform == TargetPlatform.android ||
               defaultTargetPlatform == TargetPlatform.iOS)) {
         unawaited(_initializeMobilePush());
@@ -93,7 +93,14 @@ void main() async {
 
 Future<void> _initializeMobilePush() async {
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp(
+        options: kIsWeb
+            ? const FirebaseOptions(
+                apiKey: String.fromEnvironment('FIREBASE_WEB_API_KEY'),
+                appId: String.fromEnvironment('FIREBASE_WEB_APP_ID'),
+                messagingSenderId: String.fromEnvironment('FIREBASE_SENDER_ID'),
+                projectId: String.fromEnvironment('FIREBASE_PROJECT_ID'))
+            : null);
     await PushNotifications.initialize();
   } catch (_) {
     debugPrint('Notifications could not start. Chat is still available.');
@@ -289,7 +296,11 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
       }
     });
     PushNotifications.setOpenHandler(
-      (conversationId) => _router.go('/chat/$conversationId'),
+      (conversationId) {
+        final path = '/chat/$conversationId';
+        if (_router.routeInformationProvider.value.uri.path != path)
+          _router.go(path);
+      },
     );
     AppLock.enabled.addListener(_onLockPref);
     unawaited(AppLock.bootstrap());

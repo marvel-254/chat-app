@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/profile.dart';
-import 'supabase.dart' as supa;
+import 'package:uuid/uuid.dart';
+import 'e2ee.dart';
 
 /// Message validation, rate limiting, and send operations.
 ///
@@ -96,14 +97,16 @@ class MessageSafety {
     final now = DateTime.now().toUtc();
 
     // Encrypt the content before storing
+    final id = const Uuid().v4();
     final encryptedContent =
-        await supa.Supa.encryptForConversation(conversationId, content);
+        await SecureChat.seal(id, conversationId, content, reply: replyToId);
 
     if (_currentUser?.id != me.id) {
       throw StateError('The sender is no longer signed in.');
     }
 
     final insert = {
+      'id': id,
       'conversation_id': conversationId,
       'sender_id': me.id,
       'content': encryptedContent,
@@ -118,9 +121,8 @@ class MessageSafety {
     // conversations.last_message_at is not on older schemas; a DB trigger
     // now maintains it. Never fail the send if the bump 400s.
     try {
-      await _client
-          .from('conversations')
-          .update({'updated_at': now.toIso8601String()}).eq('id', conversationId);
+      await _client.from('conversations').update(
+          {'updated_at': now.toIso8601String()}).eq('id', conversationId);
     } catch (_) {}
 
     return Message.fromJson(res);

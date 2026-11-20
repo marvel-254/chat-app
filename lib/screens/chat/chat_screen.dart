@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import '../../theme/app_colors.dart' as app_colors;
 import '../../services/supabase.dart';
+import '../../services/e2ee.dart';
 import '../../services/presence.dart';
 import '../../services/connection_monitor.dart';
 import '../../services/message_outbox.dart';
@@ -72,6 +73,15 @@ class _ChatScreenState extends State<ChatScreen> {
   Timer? _peerTypingTimer;
   RealtimeChannel? _callChannel;
   bool _incomingPrompt = false;
+  String? _ringId;
+  BuildContext? _ringDialog;
+  Timer? _ringTimeout;
+  void _dismissRing() {
+    final ctx = _ringDialog;
+    if (ctx != null && ctx.mounted && ModalRoute.of(ctx)?.isCurrent == true)
+      Navigator.pop(ctx);
+  }
+
   String _chatBackground = 'default';
   String? _chatBackgroundImageUrl;
   Duration? _messageExpiry;
@@ -198,6 +208,41 @@ class _ChatScreenState extends State<ChatScreen> {
         Supa.authStateChanges.listen(_onOutboxAuthChanged);
     unawaited(_restorePendingMessages());
     Supa.chatBackgroundChanged.addListener(_chatBackgroundListener);
+  }
+
+  Future<void> _verifyDevices() async {
+    final owner = Supa.currentUser?.id;
+    if (owner == null) return;
+    try {
+      final keys = await SecureChat.devices(widget.conversationId);
+      final trusted = await SecureChat.verified(widget.conversationId, keys);
+      if (!mounted) return;
+      final answer = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+                  title: Text(trusted
+                      ? 'Verified devices'
+                      : 'Verify device fingerprints'),
+                  content: SingleChildScrollView(
+                      child: SelectableText(
+                          'Compare every fingerprint with its owner in person or via a separate trusted channel. Unexpected change? Cancel. Both people must open this screen on each device.\n\n${keys.map((k) => "${k.owner == owner ? 'Your account' : k.owner}\n${k.fingerprint}").join("\n\n")}')),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Cancel')),
+                    FilledButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Fingerprints match'))
+                  ]));
+      if (answer == true && mounted) {
+        await SecureChat.approve(owner, widget.conversationId, keys);
+        if (mounted) setState(() {});
+      }
+    } catch (e) {
+      if (mounted)
+        _unsupported(friendlyErrorMessage(e,
+            fallback: 'Could not verify devices. Nothing was sent.'));
+    }
   }
 
   Future<void> _loadDraft() async {
@@ -362,6 +407,12 @@ class _ChatScreenState extends State<ChatScreen> {
         .onBroadcast(
             event: 'signal',
             callback: (payload) {
+              if (payload['call_id'] == _ringId &&
+                  const {'hangup', 'accept', 'reject'}
+                      .contains(payload['kind'])) {
+                _dismissRing();
+                return;
+              }
               if (payload['to'] != Supa.currentUser?.id ||
                   payload['kind'] != 'invite' ||
                   _incomingPrompt) {
@@ -373,48 +424,81 @@ class _ChatScreenState extends State<ChatScreen> {
                     payload['from'] as String?);
               }
             })
-        .subscribe();
+        .subscribe((status, _) async {
+      if (status != RealtimeSubscribeStatus.subscribed || !mounted) return;
+      try {
+        final rows = await Supa.client
+            .from('call_sessions')
+            .select('id,sender_id,video')
+            .eq('conversation_id', widget.conversationId)
+            .eq('recipient_id', Supa.currentUser!.id)
+            .eq('state', 'ringing')
+            .gt('expires_at', DateTime.now().toUtc().toIso8601String())
+            .limit(1);
+        if (rows.isNotEmpty && mounted) {
+          final r = rows.first;
+          await _showIncomingCall(
+              r['id'] as String, r, r['sender_id'] as String);
+        }
+      } catch (_) {}
+    });
   }
 
   Future<void> _showIncomingCall(
       String callId, Map? details, String? callerId) async {
+    if (_incomingPrompt ||
+        !mounted ||
+        ModalRoute.of(context)?.isCurrent != true) return;
+    _incomingPrompt = true;
+    _ringId = callId;
     final peer =
         _peer ?? (callerId == null ? null : await Supa.getProfile(callerId));
-    if (peer == null || !mounted) return;
-    _incomingPrompt = true;
+    if (peer == null || !mounted || callerId != peer.id) {
+      _incomingPrompt = false;
+      return;
+    }
+    _ringTimeout = Timer(const Duration(seconds: 42), _dismissRing);
     final video = details?['video'] == true;
     final answer = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
-        builder: (dialogContext) => AlertDialog(
-              backgroundColor: _P.surface,
-              title: Text(video ? 'Incoming video call' : 'Incoming voice call',
-                  style: const TextStyle(color: _P.text)),
-              content: Text('${peer.label} (@${peer.username}) is calling.',
-                  style: const TextStyle(color: _P.muted)),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(dialogContext, false),
-                    child: const Text('Decline')),
-                FilledButton(
-                    onPressed: () => Navigator.pop(dialogContext, true),
-                    child: const Text('Answer')),
-              ],
-            ));
+        builder: (dialogContext) {
+          _ringDialog = dialogContext;
+          return AlertDialog(
+            backgroundColor: _P.surface,
+            title: Text(video ? 'Incoming video call' : 'Incoming voice call',
+                style: const TextStyle(color: _P.text)),
+            content: Text('${peer.label} (@${peer.username}) is calling.',
+                style: const TextStyle(color: _P.muted)),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Decline')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Answer')),
+            ],
+          );
+        });
+    _ringTimeout?.cancel();
+    _ringDialog = null;
+    _ringId = null;
     _incomingPrompt = false;
     if (!mounted) return;
     if (answer == true) {
       context.push(
           '/call/${widget.conversationId}?id=$callId&video=$video&outgoing=false',
           extra: peer);
-    } else {
-      await _callChannel?.httpSend(event: 'signal', payload: {
-        'call_id': callId,
-        'from': Supa.currentUser!.id,
-        'to': peer.id,
-        'kind': 'hangup',
-        'data': const {},
-      });
+    } else if (answer == false) {
+      try {
+        await Supa.client.rpc('signal_call', params: {
+          'p_id': callId,
+          'p_peer': peer.id,
+          'p_conversation': widget.conversationId,
+          'p_kind': 'reject',
+          'p_data': {}
+        });
+      } catch (_) {}
     }
   }
 
@@ -469,6 +553,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _ringTimeout?.cancel();
     _ctrl.removeListener(_onDraftChanged);
     unawaited(SecureScreen.disable());
     Supa.unsubscribeTyping(widget.conversationId);
@@ -1761,18 +1846,10 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
         actions: [
-          // E2EE security indicator
-          Tooltip(
-            message: 'Messages are end-to-end encrypted',
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: Icon(
-                Icons.lock_rounded,
-                size: 18,
-                color: Colors.green.shade300,
-              ),
-            ),
-          ),
+          IconButton(
+              tooltip: 'Verify devices • older messages are legacy',
+              icon: const Icon(Icons.shield_outlined),
+              onPressed: _verifyDevices),
           _ActionBtn(Icons.videocam_rounded,
               onTap: () => _startCall(video: true)),
           _ActionBtn(Icons.phone_rounded,
@@ -2981,6 +3058,7 @@ class _Bubble extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
+              Text(msg.securityLabel, style: const TextStyle(fontSize: 10)),
               if (replyTarget != null)
                 _ReplyPreviewInline(msg: replyTarget!, mine: mine),
               if (msg.content.startsWith('voice:'))
@@ -3087,6 +3165,31 @@ class _AttachmentContent extends StatelessWidget {
     final name = attachment['name'] as String? ?? 'Shared file';
     if (objectPath == null) {
       return Text(name, style: const TextStyle(color: _P.text));
+    }
+    if (attachment.containsKey('key')) {
+      return TextButton.icon(
+          icon: const Icon(Icons.download),
+          label: Text(name),
+          onPressed: () async {
+            try {
+              final bytes = await Supa.readAttachment(attachment);
+              if (!context.mounted) return;
+              if (attachment['kind'] == 'image') {
+                await showDialog<void>(
+                    context: context,
+                    builder: (_) => Dialog(
+                        child: InteractiveViewer(child: Image.memory(bytes))));
+              } else {
+                await FilePicker.saveFile(
+                    fileName: name.replaceAll(RegExp(r'[^a-zA-Z0-9._ -]'), '_'),
+                    bytes: bytes);
+              }
+            } catch (_) {
+              if (context.mounted)
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Could not open authenticated file.')));
+            }
+          });
     }
     return FutureBuilder<String>(
       future: Supa.attachmentUrl(objectPath),

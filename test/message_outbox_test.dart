@@ -1,3 +1,4 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -8,6 +9,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
+    FlutterSecureStorage.setMockInitialValues({});
     SharedPreferences.setMockInitialValues({});
     await MessageOutbox.load();
   });
@@ -53,7 +55,8 @@ void main() {
 
     expect(sent, isTrue);
     expect(
-      MessageOutbox.forConversation('conversation-success', senderId: 'sender-1'),
+      MessageOutbox.forConversation('conversation-success',
+          senderId: 'sender-1'),
       isEmpty,
     );
   });
@@ -74,14 +77,16 @@ void main() {
     }, senderId: 'sender-1', isSenderActive: () => true);
 
     final remaining = MessageOutbox.forConversation(
-      'conversation-failure', senderId: 'sender-1',
+      'conversation-failure',
+      senderId: 'sender-1',
     );
     expect(remaining, hasLength(1));
     expect(remaining.single.status, 'failed');
     expect(remaining.single.retryCount, 1);
   });
 
-  test('outbox only lists and sends messages for the requested account', () async {
+  test('outbox only lists and sends messages for the requested account',
+      () async {
     const conversation = 'shared-conversation';
     final sent = <String>[];
     for (final sender in ['alice', 'bob']) {
@@ -95,7 +100,8 @@ void main() {
       ));
     }
 
-    final visible = MessageOutbox.forConversation(conversation, senderId: 'bob');
+    final visible =
+        MessageOutbox.forConversation(conversation, senderId: 'bob');
     expect(visible.map((item) => item.localId), ['bob-message']);
     await MessageOutbox.flush(
       (item) async {
@@ -106,7 +112,8 @@ void main() {
     );
 
     expect(sent, ['bob-message']);
-    final retained = MessageOutbox.forConversation(conversation, senderId: 'alice');
+    final retained =
+        MessageOutbox.forConversation(conversation, senderId: 'alice');
     expect(retained.single.status, 'queued');
   });
 
@@ -136,7 +143,8 @@ void main() {
     );
 
     expect(sent, ['switch-0']);
-    final remaining = MessageOutbox.forConversation(conversation, senderId: sender);
+    final remaining =
+        MessageOutbox.forConversation(conversation, senderId: sender);
     expect(remaining.single.localId, 'switch-1');
     expect(remaining.single.status, 'queued');
   });
