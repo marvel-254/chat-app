@@ -16,13 +16,13 @@ import 'reactions.dart' as reactions;
 import 'message_safety.dart' as message_safety;
 import 'read_receipts.dart' as read_receipts;
 import 'block_report.dart' as block_report;
-import 'e2ee.dart' as e2ee;
+import 'legacy_message_codec.dart';
+import 'legacy_messaging.dart';
 
 class Supa {
   static SupabaseClient get client => Supabase.instance.client;
   static const _cloudStorageUrl = String.fromEnvironment(
     'CLOUD_STORAGE_URL',
-    defaultValue: 'https://bro-chat-storage.twistedoliver211fs.workers.dev',
   );
 
   static Map<String, String> get _storageHeaders => {
@@ -71,35 +71,13 @@ class Supa {
   static Future<AuthResponse> signIn(String email, String password) =>
       client.auth.signInWithPassword(email: email, password: password);
 
-  static Future<void> signOut() => client.auth.signOut();
+  static Future<void> signOut() {
+    LegacyMessaging.reset();
+    return client.auth.signOut();
+  }
   static User? get currentUser => client.auth.currentUser;
   static Stream<AuthState> get authStateChanges =>
       client.auth.onAuthStateChange;
-
-  static Future<void> savePushToken(
-      String firebaseInstallationId, String platform) async {
-    final user = currentUser;
-    if (user == null) return;
-    await client.from('push_tokens').upsert(
-      {
-        'user_id': user.id,
-        'firebase_installation_id': firebaseInstallationId,
-        'platform': platform,
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      },
-      onConflict: 'firebase_installation_id',
-    );
-  }
-
-  static Future<void> removePushToken(String firebaseInstallationId) async {
-    final user = currentUser;
-    if (user == null) return;
-    await client
-        .from('push_tokens')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('firebase_installation_id', firebaseInstallationId);
-  }
 
   // Re-send the email confirmation link for an unconfirmed account.
   static Future<void> resendConfirmation(String email) =>
@@ -930,6 +908,7 @@ class Supa {
   static Future<Map<String, dynamic>> uploadAttachment(String conversationId,
       Uint8List bytes, String filename, String mimeType) async {
     final uid = currentUser!.id;
+    LegacyMessaging.requireAllowed(uid);
     final id = const Uuid().v4();
     final safeName =
         path.basename(filename).replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
@@ -983,7 +962,10 @@ class Supa {
   /// Download a GIF from a URL and upload it to storage as an attachment.
   static Future<Map<String, dynamic>> uploadAttachmentFromUrl(
       String conversationId, String url, String extension) async {
+    final owner = currentUser?.id;
+    LegacyMessaging.requireAllowed(owner);
     final response = await http.get(Uri.parse(url));
+    if (currentUser?.id != owner) throw StateError('Account changed');
     if (response.statusCode != 200) {
       throw Exception('Failed to download attachment: ${response.statusCode}');
     }
@@ -1221,8 +1203,11 @@ class Supa {
             } catch (_) {}
           }
 
-          // Fetch E2EE key for this conversation (cached after first call)
-          final e2eeKey = await getConversationKey(conversationId);
+          final owner = currentUser?.id;
+          final peer = rows.any((row) => row['content_format'] != LegacyMessageCodec.plaintext)
+              ? await getPeerUserId(conversationId) : null;
+          final legacyKey = owner == null || peer == null || currentUser?.id != owner
+              ? null : LegacyMessageCodec.historicalKey(owner, peer);
 
           final now = DateTime.now();
           return rows
@@ -1233,13 +1218,8 @@ class Supa {
               .map((r) {
             final id = r['id'] as String;
             final msg = Message.fromJson(r);
-            // Decrypt the content if it was encrypted
-            String content = msg.content;
-            final decrypted =
-                decryptMessageContent(conversationId, msg.content, e2eeKey);
-            if (decrypted != null) {
-              content = decrypted;
-            }
+            final content = LegacyMessageCodec.display(msg.content,
+                r['content_format'] as String? ?? LegacyMessageCodec.unversioned, legacyKey);
             return Message(
               id: msg.id,
               conversationId: msg.conversationId,
@@ -1280,27 +1260,19 @@ class Supa {
   }
 
   static Future<void> updateMessage(String messageId, String content) async {
-    // Fetch current row to get conversation_id for re-encryption
-    final current = await client
-        .from('messages')
-        .select('content,conversation_id')
-        .eq('id', messageId)
-        .single();
-    final previousContent = current['content'] as String;
-    final conversationId = current['conversation_id'] as String;
-    // Re-encrypt the new content
-    final encryptedContent =
-        await encryptForConversation(conversationId, content);
-    // Record edit history (store the encrypted content for consistency)
+    final owner = currentUser?.id;
+    LegacyMessaging.requireAllowed(owner);
+    final current = await client.from('messages').select('content')
+        .eq('id', messageId).eq('sender_id', owner!).single();
+    if (currentUser?.id != owner) throw StateError('Account changed');
+    if (content == current['content']) return;
+    await client.from('messages').update({
+      'content': content, 'content_format': LegacyMessageCodec.plaintext,
+    }).eq('id', messageId).eq('sender_id', owner).select('id').single();
+    if (currentUser?.id != owner) return;
     await client.from('message_edit_history').insert({
-      'message_id': messageId,
-      'previous_content': previousContent,
-      'new_content': encryptedContent,
+      'message_id': messageId, 'previous_content': current['content'], 'new_content': content,
     });
-    // Update the message (trigger sets edited_at)
-    await client
-        .from('messages')
-        .update({'content': encryptedContent}).eq('id', messageId);
   }
 
   /// Fetch the edit history for a message.
@@ -1403,7 +1375,7 @@ class Supa {
   /// Save a draft for the current user in a conversation.
   static Future<void> saveDraft(String conversationId, String text) async {
     final me = currentUser;
-    if (me == null) return;
+    if (me == null || (text.isNotEmpty && !LegacyMessaging.allowed(me.id))) return;
     await client.from('conversation_participants').upsert({
       'conversation_id': conversationId,
       'user_id': me.id,
@@ -1544,7 +1516,7 @@ class Supa {
         details: details,
       );
 
-  // ===== E2EE Helpers =====
+  // ===== Conversation Peer Lookup =====
 
   /// Look up the peer user ID for a 1:1 conversation.
   static Future<String?> getPeerUserId(String conversationId) async {
@@ -1558,49 +1530,6 @@ class Supa {
           .neq('user_id', me);
       if ((res as List).isEmpty) return null;
       return res.first['user_id'] as String;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// Encrypt plaintext for a conversation, or return the original plaintext
-  /// if encryption is not available (fallback for backward compatibility).
-  static Future<String> encryptForConversation(
-    String conversationId,
-    String plaintext,
-  ) async {
-    try {
-      final me = currentUser?.id;
-      if (me == null) return plaintext;
-      final peer = await getPeerUserId(conversationId);
-      if (peer == null) return plaintext;
-      final key = await e2ee.getOrDeriveKey(conversationId, me, peer);
-      return e2ee.encrypt(key, plaintext);
-    } catch (_) {
-      return plaintext;
-    }
-  }
-
-  /// Decrypt a message's content, falling back to the original if decryption
-  /// fails (e.g. the message was sent before E2EE was enabled).
-  static String? decryptMessageContent(
-    String conversationId,
-    String content,
-    String? key,
-  ) {
-    if (key == null || key.isEmpty) return null;
-    if (!e2ee.isEncrypted(content)) return null;
-    return e2ee.decrypt(key, content);
-  }
-
-  /// Get or derive the E2EE key for a conversation.
-  static Future<String?> getConversationKey(String conversationId) async {
-    try {
-      final me = currentUser?.id;
-      if (me == null) return null;
-      final peer = await getPeerUserId(conversationId);
-      if (peer == null) return null;
-      return await e2ee.getOrDeriveKey(conversationId, me, peer);
     } catch (_) {
       return null;
     }

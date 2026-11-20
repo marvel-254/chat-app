@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 class HomeNavBar extends StatelessWidget {
   const HomeNavBar({super.key, required this.index});
 
-  /// 0 = Chats, 1 = Circles, 2 = Status.
+  /// 0 = Chats, 1 = Circles, 2 = Status, 3 = Calls.
   final int index;
 
   static const _surface = Color(0xFF1E1F25);
@@ -18,9 +18,7 @@ class HomeNavBar extends StatelessWidget {
     return Container(
       decoration: const BoxDecoration(
         color: _surface,
-        border: Border(
-          top: BorderSide(color: _surfaceBorder, width: 1),
-        ),
+        border: Border(top: BorderSide(color: _surfaceBorder, width: 1)),
       ),
       child: NavigationBarTheme(
         data: NavigationBarThemeData(
@@ -43,20 +41,18 @@ class HomeNavBar extends StatelessWidget {
           }),
           iconTheme: WidgetStateProperty.resolveWith((states) {
             final selected = states.contains(WidgetState.selected);
-            return IconThemeData(
-              color: selected ? _primary : _muted,
-              size: 23,
-            );
+            return IconThemeData(color: selected ? _primary : _muted, size: 23);
           }),
         ),
         child: NavigationBar(
-          selectedIndex: index.clamp(0, 2),
+          selectedIndex: index.clamp(0, 3),
           animationDuration: const Duration(milliseconds: 300),
           onDestinationSelected: (i) {
             if (i == index) return;
             if (i == 0) context.go('/conversations');
             if (i == 1) context.go('/circles');
             if (i == 2) context.go('/status');
+            if (i == 3) context.go('/recent-calls');
           },
           destinations: const [
             NavigationDestination(
@@ -73,6 +69,11 @@ class HomeNavBar extends StatelessWidget {
               icon: Icon(Icons.slow_motion_video_outlined),
               selectedIcon: Icon(Icons.slow_motion_video_rounded),
               label: 'Status',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.call_outlined),
+              selectedIcon: Icon(Icons.call),
+              label: 'Calls',
             ),
           ],
         ),

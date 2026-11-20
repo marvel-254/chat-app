@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/profile.dart';
-import 'supabase.dart' as supa;
+import 'legacy_message_codec.dart';
+import 'legacy_messaging.dart';
 
 /// Message validation, rate limiting, and send operations.
 ///
@@ -77,7 +78,7 @@ class MessageSafety {
 
   /// Send a message with optional reply-to and expiry.
   /// Throws [StateError] if content fails validation.
-  /// The content is encrypted end-to-end before being stored.
+  /// This is the explicitly opted-in, server-readable legacy transport.
   static Future<Message> send({
     required String conversationId,
     required String content,
@@ -95,18 +96,13 @@ class MessageSafety {
     }
     final now = DateTime.now().toUtc();
 
-    // Encrypt the content before storing
-    final encryptedContent =
-        await supa.Supa.encryptForConversation(conversationId, content);
-
-    if (_currentUser?.id != me.id) {
-      throw StateError('The sender is no longer signed in.');
-    }
+    LegacyMessaging.requireAllowed(me.id);
 
     final insert = {
       'conversation_id': conversationId,
       'sender_id': me.id,
-      'content': encryptedContent,
+      'content': content,
+      'content_format': LegacyMessageCodec.plaintext,
       'created_at': now.toIso8601String(),
       if (replyToId != null) 'reply_to_id': replyToId,
       if (expiry != null && expiry > Duration.zero)
@@ -118,9 +114,8 @@ class MessageSafety {
     // conversations.last_message_at is not on older schemas; a DB trigger
     // now maintains it. Never fail the send if the bump 400s.
     try {
-      await _client
-          .from('conversations')
-          .update({'updated_at': now.toIso8601String()}).eq('id', conversationId);
+      await _client.from('conversations').update(
+          {'updated_at': now.toIso8601String()}).eq('id', conversationId);
     } catch (_) {}
 
     return Message.fromJson(res);

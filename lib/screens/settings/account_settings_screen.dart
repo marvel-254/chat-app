@@ -697,6 +697,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     onTap: () => context.push('/settings/digital-avatar'),
                   ),
                   const SizedBox(height: 20),
+                  ListTile(leading: const Icon(Icons.notifications_outlined), title: const Text('Notifications'),
+                    trailing: const Icon(Icons.chevron_right), onTap: () => context.push('/settings/notifications')),
                   Text('Privacy',
                       style: TextStyle(
                           color: _P.muted, fontWeight: FontWeight.w600)),

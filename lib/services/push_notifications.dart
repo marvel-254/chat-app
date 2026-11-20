@@ -4,8 +4,12 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
+import '../models/call_record.dart';
+import 'calls.dart';
 import 'push_message_target.dart';
 import 'supabase.dart';
 
@@ -19,54 +23,89 @@ Future<void> firebaseBackgroundMessageHandler(RemoteMessage message) async {
 class PushNotifications {
   PushNotifications._();
 
-  static StreamSubscription<AuthState>? _authSubscription;
-  static StreamSubscription<String>? _registrationSubscription;
-  static String? _fid;
-  static PushMessageTarget? _pendingTarget;
+  static const webApiKey = String.fromEnvironment('FIREBASE_WEB_API_KEY');
+  static const webAppId = String.fromEnvironment('FIREBASE_WEB_APP_ID');
+  static const webSender = String.fromEnvironment('FIREBASE_WEB_SENDER_ID');
+  static const webProject = String.fromEnvironment('FIREBASE_WEB_PROJECT_ID');
+  static const webVapidKey = String.fromEnvironment('FIREBASE_WEB_VAPID_KEY');
+  static const _storage = FlutterSecureStorage();
+  static const _deviceKey = 'bro_push_device_v1';
+  static const _ownerKey = 'bro_push_owner_v1';
+  static const _timeout = Duration(seconds: 8);
+  static final _shown = <String>{}, _opened = <String>{};
+  static PushMessageTarget? _pending;
   static String? _suspendedUserId;
-  static const _noticeBody = 'You have a new message.';
-  static void Function(String conversationId)? _openHandler;
+  static String? _lastOwner;
+  static String? _deviceId;
+  static void Function(PushMessageTarget)? _openHandler;
   static bool _initialized = false;
+  static Future<void> _work = Future.value();
+  static DateTime? _lastRefresh;
 
-  static bool get _supportedPlatform =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.android ||
-          defaultTargetPlatform == TargetPlatform.iOS);
+  static bool get configured => kIsWeb
+      ? [
+          webApiKey,
+          webAppId,
+          webSender,
+          webProject,
+          webVapidKey,
+        ].every((value) => value.isNotEmpty)
+      : defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS;
 
-  static Future<void> initialize() async {
-    if (_initialized || !_supportedPlatform) return;
-    _initialized = true;
-    FirebaseMessaging.onBackgroundMessage(firebaseBackgroundMessageHandler);
+  static Future<void> initialize({Uri? launchUri}) async {
+    if (_initialized || !configured) return;
+    if (kIsWeb) {
+      await Firebase.initializeApp(
+        options: const FirebaseOptions(
+          apiKey: webApiKey,
+          appId: webAppId,
+          messagingSenderId: webSender,
+          projectId: webProject,
+        ),
+      );
+    } else {
+      await Firebase.initializeApp();
+      FirebaseMessaging.onBackgroundMessage(firebaseBackgroundMessageHandler);
+    }
     final messaging = FirebaseMessaging.instance;
-
-    FirebaseMessaging.onMessage.listen((message) {
-      unawaited(_showForegroundNotice(message));
-    });
-    FirebaseMessaging.onMessageOpenedApp.listen(_openMessage);
-    _registrationSubscription = messaging.onRegistered.listen((fid) {
-      if (_activeUserId == null) return;
-      _fid = fid;
-      unawaited(_registerToken());
-    });
-    _authSubscription = Supa.authStateChanges.listen((state) {
+    if (!await messaging.isSupported()) return;
+    _deviceId = await _storage.read(key: _deviceKey) ?? const Uuid().v4();
+    await _storage.write(key: _deviceKey, value: _deviceId);
+    _lastOwner = await _storage.read(key: _ownerKey);
+    _initialized = true;
+    FirebaseMessaging.onMessage.listen(
+      (message) => unawaited(_foreground(message)),
+    );
+    if (!kIsWeb) {
+      FirebaseMessaging.onMessageOpenedApp.listen(
+        (message) => _receive(message.data),
+      );
+      // Deliberately use the token API, not FID registration, with message.token.
+      // ignore: deprecated_member_use
+      messaging.onTokenRefresh.listen((_) => refresh(force: true));
+    }
+    Supa.authStateChanges.listen((state) {
       if (state.event == AuthChangeEvent.signedOut) {
-        _pendingTarget = null;
+        _pending = null;
         _suspendedUserId = null;
+        _shown.clear();
+        _opened.clear();
         appScaffoldMessengerKey.currentState?.clearSnackBars();
-      } else if (state.session != null) {
-        unawaited(_openPending());
-        if (state.event == AuthChangeEvent.signedIn) {
-          unawaited(_requestPermissionAndRegister());
-        }
+      } else if (state.event == AuthChangeEvent.signedIn ||
+          state.event == AuthChangeEvent.initialSession) {
+        unawaited(flushPending());
+        refresh(force: true);
       }
     });
-    try {
-      final initialMessage = await messaging.getInitialMessage();
-      if (initialMessage != null) _openMessage(initialMessage);
-    } catch (_) {
-      debugPrint('Could not read the launch notification.');
+    if (kIsWeb) {
+      final query = (launchUri ?? Uri.base).queryParameters;
+      if (query['bro_push'] == '1') _receive(query);
+    } else {
+      final initial = await messaging.getInitialMessage();
+      if (initial != null) _receive(initial.data);
     }
-    if (_activeUserId != null) await _requestPermissionAndRegister();
+    refresh(force: true);
   }
 
   static String? get _activeUserId {
@@ -74,121 +113,193 @@ class PushNotifications {
     return id == _suspendedUserId ? null : id;
   }
 
-  static Future<void> _requestPermissionAndRegister() async {
-    final owner = _activeUserId;
-    if (owner == null) return;
-    try {
-      final messaging = FirebaseMessaging.instance;
-      final settings = await messaging.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-      if (_activeUserId != owner ||
-          settings.authorizationStatus == AuthorizationStatus.denied) return;
-      await messaging.register();
-      if (_activeUserId == owner) await _registerToken();
-    } catch (_) {
-      debugPrint('Push notification registration failed.');
-    }
+  static Future<void> _serialize(Future<void> Function() action) {
+    final next = _work.then((_) => action());
+    _work = next.catchError((Object _) {});
+    return next;
   }
 
-  static Future<void> _registerToken() async {
-    final fid = _fid;
-    if (fid == null || _activeUserId == null) return;
-    try {
-      await Supa.savePushToken(fid, defaultTargetPlatform.name);
-    } catch (_) {
-      debugPrint('Could not save the notification registration.');
+  /// Permission must be requested directly from a user gesture on browsers.
+  static Future<void> enable() async {
+    final owner = _activeUserId;
+    if (!_initialized || owner == null)
+      throw StateError('Notifications unavailable');
+    final permission = await FirebaseMessaging.instance.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+    if (!_permitted(permission)) throw StateError('Notifications are blocked');
+    await _serialize(() => _sync(owner));
+  }
+
+  static bool _permitted(NotificationSettings settings) =>
+      settings.authorizationStatus == AuthorizationStatus.authorized ||
+      settings.authorizationStatus == AuthorizationStatus.provisional;
+
+  static void refresh({bool force = false}) {
+    final owner = _activeUserId;
+    if (!_initialized || owner == null) return;
+    if (!force &&
+        _lastRefresh != null &&
+        DateTime.now().difference(_lastRefresh!) < const Duration(minutes: 2))
+      return;
+    _lastRefresh = DateTime.now();
+    unawaited(
+      _serialize(() => _sync(owner)).catchError((Object _) {
+        debugPrint('Notification registration unavailable.');
+      }),
+    );
+  }
+
+  static Future<void> _sync(String owner) async {
+    if (_activeUserId != owner) return;
+    final messaging = FirebaseMessaging.instance;
+    if (!_permitted(
+      await messaging.getNotificationSettings().timeout(_timeout),
+    )) {
+      await _deleteRegistration(owner);
+      return;
     }
+    if (_lastOwner != null && _lastOwner != owner) {
+      // A new account must not inherit an existing account's push token.
+      // ignore: deprecated_member_use
+      await messaging.deleteToken().timeout(_timeout);
+    }
+    if (_activeUserId != owner) return;
+    final worker =
+        kIsWeb ? Uri.base.resolve('service-worker.js').toString() : null;
+    // ignore: deprecated_member_use
+    final token = await messaging
+        .getToken(
+          vapidKey: kIsWeb ? webVapidKey : null,
+          serviceWorkerScriptPath: worker,
+        )
+        .timeout(_timeout);
+    if (_activeUserId != owner) return;
+    if (token == null || token.isEmpty) throw StateError('No push token');
+    // Persist before the RPC: a process kill after registration still rotates on account switch.
+    await _storage.write(key: _ownerKey, value: owner);
+    _lastOwner = owner;
+    if (_activeUserId != owner) return;
+    await Supa.client.rpc(
+      'register_bro_push',
+      params: {
+        'p_owner': owner,
+        'p_device': _deviceId,
+        'p_token': token,
+        'p_platform': kIsWeb ? 'web' : defaultTargetPlatform.name,
+      },
+    ).timeout(_timeout);
+  }
+
+  static Future<void> _deleteRegistration(String owner) async {
+    if (Supa.currentUser?.id != owner || _deviceId == null) return;
+    await Supa.client
+        .from('bro_push_devices')
+        .delete()
+        .eq('user_id', owner)
+        .eq('device_id', _deviceId!)
+        .timeout(_timeout);
   }
 
   static Future<void> unregisterCurrentToken() async {
-    if (!_supportedPlatform) return;
-    _suspendedUserId = Supa.currentUser?.id;
-    _pendingTarget = null;
-    final fid = _fid;
-    _fid = null;
-    try {
-      if (fid != null) {
-        await Supa.removePushToken(fid).timeout(const Duration(seconds: 3));
-      }
-    } catch (_) {
-      debugPrint('Could not remove the saved notification registration.');
-    }
-    try {
-      await FirebaseMessaging.instance
-          .unregister()
-          .timeout(const Duration(seconds: 3));
-    } catch (_) {
-      debugPrint('Could not unregister this device from notifications.');
-    }
+    final owner = Supa.currentUser?.id;
+    if (owner == null || !_initialized) return;
+    _suspendedUserId = owner;
+    _pending = null;
+    await _serialize(() async {
+      await Future.wait([
+        _deleteRegistration(owner).catchError((Object _) {}),
+        // ignore: deprecated_member_use
+        FirebaseMessaging.instance
+            .deleteToken()
+            .timeout(_timeout)
+            .catchError((Object _) {}),
+      ]);
+    });
   }
 
-  static Future<void> dispose() async {
-    await _authSubscription?.cancel();
-    await _registrationSubscription?.cancel();
-  }
-
-  static void setOpenHandler(void Function(String) handler) {
+  static void setOpenHandler(void Function(PushMessageTarget) handler) {
     _openHandler = handler;
-    unawaited(_openPending());
+    unawaited(flushPending());
   }
 
-  static void _openMessage(RemoteMessage message) {
-    final target = PushMessageTarget.fromData(message.data);
+  static void _receive(Map<String, dynamic> data) {
+    final target = PushMessageTarget.fromData(data);
     if (target == null) return;
-    _pendingTarget = target;
-    unawaited(_openPending());
+    _pending = target;
+    unawaited(flushPending());
   }
 
-  static Future<void> _openPending() async {
-    final target = _pendingTarget;
+  static Future<void> flushPending() async {
+    final target = _pending;
     final handler = _openHandler;
-    if (target == null || handler == null) return;
-    final userId = _activeUserId;
-    if (userId == null) return;
-    _pendingTarget = null;
-    if (await _canShow(target, userId) && _activeUserId == userId) {
-      handler(target.conversationId);
-    }
+    final owner = _activeUserId;
+    if (target == null || handler == null || owner == null) return;
+    _pending = null;
+    if (await _canShow(target, owner) &&
+        _activeUserId == owner &&
+        _once(_opened, target.eventId)) handler(target);
   }
 
-  static Future<bool> _canShow(PushMessageTarget target, String userId) async {
-    final recipient = target.recipientUserId;
-    if (recipient != null) return recipient == userId;
+  static bool _once(Set<String> seen, String? id) {
+    if (id == null) return true;
+    if (!seen.add(id)) return false;
+    if (seen.length > 128) seen.remove(seen.first);
+    return true;
+  }
+
+  static Future<bool> _canShow(PushMessageTarget target, String owner) async {
+    if (target.recipientUserId != null && target.recipientUserId != owner)
+      return false;
     try {
-      final row = await Supa.client
+      final member = await Supa.client
           .from('conversation_participants')
           .select('user_id')
           .eq('conversation_id', target.conversationId)
-          .eq('user_id', userId)
-          .maybeSingle();
-      return row != null;
+          .eq('user_id', owner)
+          .maybeSingle()
+          .timeout(_timeout);
+      if (member == null) return false;
+      if (target.callId case final callId?) {
+        final call = await Calls.get(callId);
+        return call?.calleeId == owner &&
+            call?.conversationId == target.conversationId &&
+            (target.missed
+                ? call?.status == CallStatus.missed
+                : call?.status == CallStatus.ringing &&
+                    call!.expiresAt.isAfter(DateTime.now()));
+      }
+      return true;
     } catch (_) {
       return false;
     }
   }
 
-  static Future<void> _showForegroundNotice(RemoteMessage message) async {
-    final userId = _activeUserId;
+  static Future<void> _foreground(RemoteMessage message) async {
+    final owner = _activeUserId;
     final target = PushMessageTarget.fromData(message.data);
-    if (userId == null ||
+    if (owner == null ||
         target == null ||
-        !await _canShow(target, userId) ||
-        _activeUserId != userId) return;
-
+        !await _canShow(target, owner) ||
+        _activeUserId != owner ||
+        !_once(_shown, target.eventId)) return;
+    // Foreground ringing is presented by the call coordinator, not a second notice.
+    if (target.incoming) return;
     final messenger = appScaffoldMessengerKey.currentState;
     messenger?.hideCurrentSnackBar();
-    messenger?.showSnackBar(SnackBar(
-      content: const Text(_noticeBody),
-      behavior: SnackBarBehavior.floating,
-      action: SnackBarAction(
-        label: 'Open',
-        onPressed: () {
-          if (_activeUserId == userId) _openMessage(message);
-        },
+    messenger?.showSnackBar(
+      SnackBar(
+        content: Text(target.notice),
+        behavior: SnackBarBehavior.floating,
+        action: SnackBarAction(
+          label: 'Open',
+          onPressed: () {
+            if (_activeUserId == owner) _receive(message.data);
+          },
+        ),
       ),
-    ));
+    );
   }
 }

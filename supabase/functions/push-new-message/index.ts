@@ -1,15 +1,6 @@
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient } from "npm:@supabase/supabase-js@2.89.0";
 
-type DatabaseWebhook = {
-  type: string;
-  table: string;
-  schema: string;
-  record: {
-    id: string;
-    conversation_id: string;
-    sender_id: string;
-  };
-};
+import { classify, type Delivery, payload, retryDelay } from "./delivery.ts";
 
 type FirebaseServiceAccount = {
   project_id: string;
@@ -21,9 +12,12 @@ const encoder = new TextEncoder();
 let cachedAccessToken: { value: string; expiresAt: number } | null = null;
 
 function encodeBase64Url(value: Uint8Array): string {
-  let binary = '';
+  let binary = "";
   for (const byte of value) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(
+    /=+$/,
+    "",
+  );
 }
 
 function encodeJson(value: unknown): string {
@@ -38,40 +32,45 @@ async function firebaseAccessToken(
   }
 
   const privateKey = account.private_key
-    .replace('-----BEGIN PRIVATE KEY-----', '')
-    .replace('-----END PRIVATE KEY-----', '')
-    .replaceAll(/\s/g, '');
+    .replace("-----BEGIN PRIVATE KEY-----", "")
+    .replace("-----END PRIVATE KEY-----", "")
+    .replaceAll(/\s/g, "");
   const signingKey = await crypto.subtle.importKey(
-    'pkcs8',
+    "pkcs8",
     Uint8Array.from(atob(privateKey), (character) => character.charCodeAt(0)),
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
     false,
-    ['sign'],
+    ["sign"],
   );
 
   const now = Math.floor(Date.now() / 1000);
-  const unsignedJwt = `${encodeJson({ alg: 'RS256', typ: 'JWT' })}.${encodeJson({
-    iss: account.client_email,
-    scope: 'https://www.googleapis.com/auth/firebase.messaging',
-    aud: 'https://oauth2.googleapis.com/token',
-    iat: now,
-    exp: now + 3600,
-  })}`;
+  const unsignedJwt = `${encodeJson({ alg: "RS256", typ: "JWT" })}.${
+    encodeJson({
+      iss: account.client_email,
+      scope: "https://www.googleapis.com/auth/firebase.messaging",
+      aud: "https://oauth2.googleapis.com/token",
+      iat: now,
+      exp: now + 3600,
+    })
+  }`;
   const signature = await crypto.subtle.sign(
-    'RSASSA-PKCS1-v1_5',
+    "RSASSA-PKCS1-v1_5",
     signingKey,
     encoder.encode(unsignedJwt),
   );
-  const assertion = `${unsignedJwt}.${encodeBase64Url(new Uint8Array(signature))}`;
-  const response = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  const assertion = `${unsignedJwt}.${
+    encodeBase64Url(new Uint8Array(signature))
+  }`;
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    signal: AbortSignal.timeout(5000),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
       assertion,
     }),
   });
-  if (!response.ok) throw new Error('Firebase authorization failed.');
+  if (!response.ok) throw new Error("Firebase authorization failed.");
   const result = await response.json();
   cachedAccessToken = {
     value: result.access_token,
@@ -81,122 +80,87 @@ async function firebaseAccessToken(
 }
 
 Deno.serve(async (request) => {
-  if (request.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 });
+  if (request.method !== "POST") {
+    return new Response("Method not allowed", { status: 405 });
   }
-  if (
-    request.headers.get('x-bro-webhook-secret') !==
-      Deno.env.get('PUSH_WEBHOOK_SECRET') ||
-    !Deno.env.get('PUSH_WEBHOOK_SECRET')
-  ) {
-    return new Response('Unauthorized', { status: 401 });
+  const secret = Deno.env.get("PUSH_WEBHOOK_SECRET");
+  if (!secret || request.headers.get("x-bro-webhook-secret") !== secret) {
+    return new Response("Unauthorized", { status: 401 });
   }
-
   try {
-    const webhook = await request.json() as DatabaseWebhook & {
-      record?: { reminder_title?: string };
-    };
-    const isReminder = webhook.type === 'FRIENDSHIP_REMINDER' ||
-      Boolean(webhook.record?.reminder_title);
-    if (
-      webhook.schema !== 'public' ||
-      webhook.table !== 'messages' || !webhook.record?.id ||
-      !webhook.record.conversation_id ||
-      (!isReminder && !webhook.record.sender_id)
-    ) {
-      return Response.json({ ignored: true });
-    }
-
-    const encodedServiceAccount =
-      Deno.env.get('FIREBASE_SERVICE_ACCOUNT_B64') ?? '';
-    const serviceAccount = JSON.parse(
-      atob(encodedServiceAccount),
+    const account = JSON.parse(
+      atob(Deno.env.get("FIREBASE_SERVICE_ACCOUNT_B64") ?? ""),
     ) as FirebaseServiceAccount;
-    if (
-      !serviceAccount.project_id || !serviceAccount.client_email ||
-      !serviceAccount.private_key
-    ) {
-      throw new Error('Firebase service account is not configured.');
+    if (!account.project_id || !account.client_email || !account.private_key) {
+      throw new Error();
     }
-
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-      { auth: { persistSession: false, autoRefreshToken: false } },
+    const db = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      {
+        auth: { persistSession: false, autoRefreshToken: false },
+      },
     );
-    // Messages go to everyone except the sender; a friendship reminder is
-    // shared by both friends, so it goes to all participants.
-    let participantsQuery = supabase
-      .from('conversation_participants')
-      .select('user_id')
-      .eq('conversation_id', webhook.record.conversation_id);
-    if (!isReminder && webhook.record.sender_id) {
-      participantsQuery = participantsQuery.neq('user_id', webhook.record.sender_id);
-    }
-    const { data: participants, error: participantError } = await participantsQuery;
-    if (participantError) throw participantError;
-    const recipients = (participants ?? []).map((item) => item.user_id);
-    if (recipients.length === 0) return Response.json({ sent: 0 });
-
-    const { data: devices, error: deviceError } = await supabase
-      .from('push_tokens')
-      .select('firebase_installation_id, user_id')
-      .in('user_id', recipients);
-    if (deviceError) throw deviceError;
-    if (!devices?.length) return Response.json({ sent: 0 });
-
-    const accessToken = await firebaseAccessToken(serviceAccount);
-    const results = await Promise.all(devices.map(async (device) => {
-      const response = await fetch(
-        `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            message: {
-              fid: device.firebase_installation_id,
-              // A lock-screen notification should not contain plaintext,
-              // ciphertext, or the sender's identity.
-              notification: isReminder
-                ? { title: 'BRO', body: 'A friendship anniversary is today.' }
-                : { title: 'BRO', body: 'You have a new message.' },
-              data: {
-                conversation_id: webhook.record.conversation_id,
-                message_id: webhook.record.id,
-                recipient_user_id: device.user_id,
-                ...(isReminder ? { kind: 'friendship_reminder' } : {}),
-              },
-              android: { priority: 'HIGH' },
-            },
-          }),
-        },
+    // Authenticate before leasing so credential misconfiguration does not burn attempts.
+    const access = await firebaseAccessToken(account);
+    const { data, error } = await db.rpc("claim_bro_push");
+    if (error) throw error;
+    const deliveries = (data ?? []) as Delivery[];
+    const counts = { sent: 0, discarded: 0, retry: 0, ackFailed: 0 };
+    for (let i = 0; i < deliveries.length; i += 8) {
+      await Promise.all(
+        deliveries.slice(i, i + 8).map(async (job) => {
+          let outcome: ReturnType<typeof classify> = "retry";
+          let retryAfter: string | null = null;
+          if (Date.parse(job.expires_at) <= Date.now()) outcome = "discarded";
+          else {
+            try {
+              const response = await fetch(
+                `https://fcm.googleapis.com/v1/projects/${account.project_id}/messages:send`,
+                {
+                  method: "POST",
+                  signal: AbortSignal.timeout(4500),
+                  headers: {
+                    Authorization: `Bearer ${access}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ message: payload(job) }),
+                },
+              );
+              retryAfter = response.headers.get("Retry-After");
+              const result = response.ok
+                ? null
+                : await response.json().catch(() => null);
+              outcome = classify(response.status, result);
+              if (response.status === 401) cachedAccessToken = null;
+            } catch (_) { /* transient transport error */ }
+          }
+          if (outcome === "invalid") {
+            // Never delete a token that rotated while this delivery was leased.
+            const removed = await db.from("bro_push_devices").delete().eq(
+              "id",
+              job.device_id,
+            ).eq("token", job.token);
+            if (removed.error) counts.ackFailed++;
+            outcome = "discarded";
+          }
+          if (outcome === "retry" && job.attempts >= 5) outcome = "discarded";
+          counts[outcome]++;
+          const next = new Date(
+            Date.now() + retryDelay(job.attempts, retryAfter),
+          ).toISOString();
+          const ack = await db.from("bro_push_deliveries").update({
+            status: outcome === "retry" ? "pending" : outcome,
+            available_at: next,
+          }).eq("id", job.id).eq("attempts", job.attempts);
+          if (ack.error) counts.ackFailed++;
+        }),
       );
-      if (!response.ok) {
-        const result = await response.json().catch(() => ({}));
-        const details: { errorCode?: string }[] = Array.isArray(result?.error?.details)
-          ? result.error.details : [];
-        if (details.some((entry) => entry?.errorCode === 'UNREGISTERED')) {
-          await supabase
-            .from('push_tokens')
-            .delete()
-            .eq('firebase_installation_id', device.firebase_installation_id)
-            .eq('user_id', device.user_id);
-          return { ok: false, removed: true };
-        }
-        console.error('Firebase push delivery failed:', result?.error?.status);
-        return { ok: false };
-      }
-      return { ok: true };
-    }));
-
-    return Response.json({ sent: results.filter((result) => result.ok).length });
-  } catch (error) {
-    console.error('Message push handler failed:', error);
-    return Response.json({ error: 'Could not send message notification.' }, {
-      status: 500,
-    });
+    }
+    if (deliveries.length) console.info("BRO push batch", counts);
+    return Response.json(counts);
+  } catch (_) {
+    console.error("BRO push worker unavailable");
+    return Response.json({ error: "Worker unavailable" }, { status: 503 });
   }
 });

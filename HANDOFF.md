@@ -27,13 +27,9 @@ This guide describes the app, its backend, local development, and release proces
 - The conversation list can suggest/search existing profiles. Conversations display profile images and usernames.
 - Direct messages use Supabase Postgres and Realtime. Attachments include images, videos, and documents.
 - Settings offer built-in chat backgrounds and user-uploaded images.
-- Voice and video calls use WebRTC for peer-to-peer media and private Supabase Realtime broadcasts for offer, answer, ICE, and call invitations. The recipient needs the conversation open to receive an incoming call. The current connection setup uses public STUN; networks that block direct peer connections need a TURN service configured in the call implementation for dependable production calls.
-- Android message notifications use Firebase Cloud Messaging (FCM). The Flutter client registers a Firebase Installation ID for the signed-in user, and the `push_tokens` table stores those IDs. An insert trigger on `messages` calls the `push-new-message` Supabase Edge Function, which resolves the other conversation participant and sends the notification through FCM. Push previews use a generic message without sender or message content. Taps open the conversation for the intended signed-in account; foreground notifications offer an in-app **Open** action.
-- Firebase project `omix-systems-cd1af` already belonged to the Omix Systems account and had the related Omixsystems web app. The BRO Android (`com.omixsystems.pulsechat`) and iOS (`com.omixsystems.chatApp`) apps are registered there. `android/app/google-services.json` and `ios/Runner/GoogleService-Info.plist` contain Firebase client configuration and are not private keys. A new Firebase project could not be created because the Google account has reached its project quota.
-- Supabase Edge Function secrets `FIREBASE_SERVICE_ACCOUNT_B64` and `PUSH_WEBHOOK_SECRET` are configured remotely. The database trigger reads its function URL and webhook secret from Supabase Vault. The service account has the Firebase Cloud Messaging API Admin role. Never commit its key or copy it into handoff notes.
-- To verify an Android release on two devices, allow notifications and test delivery while the recipient is in the app, in the background, and after a cold start. Verify that the alert opens the expected chat and that signing out or switching accounts does not open the old account’s chat. Deploy `push-new-message` to enable the generic lock-screen payload.
-
-- iOS delivery still requires an APNs authentication key to be uploaded in Firebase and Push Notifications capability configured for the Apple app. Web push is not enabled yet; it needs a Firebase Web app, a VAPID key, and the Firebase messaging service worker. Android delivery has not been physically tested because this machine has no Android SDK/device; install a release APK on two Android devices to verify end-to-end delivery.
+- See [the security, calls and push rollout guide](docs/security-calls-push.md) for the current calls lifecycle, TURN, token delivery, browser worker, setup and release gates. HTTP v1 now targets FCM registration tokens rather than old `push_tokens` FIDs.
+- The Firebase project `omix-systems-cd1af` is the existing client configuration; `google-services.json` and `GoogleService-Info.plist` are public client configuration, not private keys. Confirm this project and its HTTP v1 sender credentials before deploying. iOS still needs APNs configuration. Browser and Android live delivery must be verified on staging.
+- Recovery and project identity: [#107](https://github.com/marvel-254/chat-app/issues/107). Historical rollout entries below refer to what was reported at the time; do not infer the correct production project from an earlier linked environment.
 
 ## Supabase database
 
@@ -251,7 +247,7 @@ The single-page onboarding screen was replaced with a **3-page swipeable onboard
 - **3 onboarding pages** instead of 1 static screen:
   1. "For the people who feel like home." — conversation artwork with message tiles and voice note preview
   2. "Your circle. Your rules." — animated orbiting avatars around a central group node with connection lines
-  3. "Private. Instant. Yours." — breathing shield icon with floating ENCRYPTED/INSTANT/VERIFIED badges
+  3. "Private. Instant. Yours." — breathing shield icon with floating privacy-control badges
 - **Staggered entrance animations** on each page: title fades/slides in first, then subtitle, then artwork (800ms total)
 - **Ambient background glow** — a subtle radial gradient that slowly orbits behind all pages
 - **Page indicators** — pill-shaped dots at the bottom that animate width on the active page

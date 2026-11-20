@@ -1120,7 +1120,7 @@ class _PrivacyArtworkState extends State<_PrivacyArtwork>
                     top: 80 + math.sin(t * math.pi * 2 + 0.5) * 8,
                     child: _FeatureBadge(
                       icon: Icons.lock_rounded,
-                      label: 'ENCRYPTED',
+                      label: 'CONTROLS',
                       color: app_colors.P.primary,
                     ),
                   ),
@@ -1140,7 +1140,7 @@ class _PrivacyArtworkState extends State<_PrivacyArtwork>
                     bottom: 70 + math.sin(t * math.pi * 2 + 2.5) * 7,
                     child: _FeatureBadge(
                       icon: Icons.check_circle_rounded,
-                      label: 'VERIFIED',
+                      label: 'PRIVACY',
                       color: app_colors.P.success,
                     ),
                   ),
@@ -1190,7 +1190,7 @@ class _PrivacyArtworkState extends State<_PrivacyArtwork>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'End-to-end encrypted by default.',
+                          'Choose your privacy settings.',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(

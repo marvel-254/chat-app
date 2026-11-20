@@ -9,10 +9,9 @@
  *  - Supabase/API calls → never cached (network-only, pass-through).
  */
 
-const VERSION = 'bro-pwa-v2';
+const VERSION = 'bro-pwa-v3';
 const APP_SHELL = [
   'index.html',
-  'app.html',
   'main.dart.js',
   'flutter.js',
   'flutter_bootstrap.js',
@@ -38,7 +37,7 @@ self.addEventListener('activate', (event) => {
       // Clean up old caches
       const keys = await caches.keys();
       await Promise.all(
-        keys.filter((key) => key !== VERSION).map((key) => caches.delete(key))
+        keys.filter((key) => key.startsWith('bro-pwa-') && key !== VERSION).map((key) => caches.delete(key))
       );
       // Take control of open clients
       await self.clients.claim();
@@ -50,7 +49,13 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
   // Network-only for API / auth traffic (Supabase, R2, GitHub releases)
-  if (url.origin !== self.location.origin) return;
+  if (event.request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.endsWith('/push-config.js')) return;
+
+  if (event.request.mode === 'navigate') {
+    const shell = new URL('index.html', self.registration.scope).href;
+    event.respondWith(fetch(event.request).catch(() => caches.match(shell).then(cached => cached || Response.error())));
+    return;
+  }
 
   // App shell and assets: cache-first, except the Dart bundle and bootstrap,
   // which go network-first so new releases reach users without a version bump.
@@ -104,24 +109,76 @@ self.addEventListener('fetch', (event) => {
             }
             return response;
           })
-          .catch(() => caches.match('index.html'));
+          .catch(() => Response.error());
       })
     );
     return;
   }
 
-  // Navigations (SPA routes like /app/chat/<id>): network-first, fallback to shell
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(VERSION).then((cache) => {
-            cache.put(event.request, copy).catch(() => {});
-          });
-          return response;
-        })
-        .catch(() => caches.match('index.html'))
-    );
-  }
+
 });
+
+// Register this before Firebase's click handler. A push can only open BRO's
+// own scope, and Flutter revalidates account, membership and call status.
+const BRO_PUSH_BODY = {
+  message: 'You have a new message.',
+  incoming_call: 'You have an incoming call.',
+  missed_call: 'You missed a call.',
+  friendship_reminder: 'A friendship anniversary is today.',
+};
+const BRO_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+function broPushData(value) {
+  if (!value || !Object.hasOwn(BRO_PUSH_BODY, value.kind) ||
+      !BRO_ID.test(value.recipient_user_id ?? '') || !BRO_ID.test(value.conversation_id ?? '') ||
+      !Number.isFinite(Date.parse(value.expires_at)) || Date.parse(value.expires_at) <= Date.now()) return null;
+  const call = value.kind === 'incoming_call' || value.kind === 'missed_call';
+  const id = call ? value.call_id : value.message_id;
+  if (!BRO_ID.test(id ?? '')) return null;
+  return {
+    kind: value.kind,
+    recipient_user_id: value.recipient_user_id,
+    conversation_id: value.conversation_id,
+    [call ? 'call_id' : 'message_id']: id,
+    expires_at: value.expires_at,
+    event_id: `${value.kind}-${id}`,
+  };
+}
+
+self.addEventListener('notificationclick', (event) => {
+  if (!event.notification.data?.bro) return;
+  event.stopImmediatePropagation();
+  event.notification.close();
+  const data = broPushData(event.notification.data.bro);
+  if (!data) return;
+  event.waitUntil((async () => {
+    const url = new URL(self.registration.scope);
+    url.search = new URLSearchParams({ bro_push: '1', ...data }).toString();
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const existing = windows.find(client => client.url.startsWith(self.registration.scope));
+    if (existing) {
+      const navigated = await existing.navigate(url.href).catch(() => null);
+      if (navigated) return navigated.focus();
+    }
+    return self.clients.openWindow(url.href);
+  })());
+});
+
+try {
+  importScripts('push-config.js');
+  if (self.BRO_FIREBASE_CONFIG) {
+    importScripts('https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js',
+      'https://www.gstatic.com/firebasejs/12.10.0/firebase-messaging-compat.js');
+    firebase.initializeApp(self.BRO_FIREBASE_CONFIG);
+    firebase.messaging().onBackgroundMessage(({ data }) => {
+      const bro = broPushData(data);
+      if (!bro) return;
+      return self.registration.showNotification('BRO', {
+        body: BRO_PUSH_BODY[bro.kind],
+        icon: new URL('icons/Icon-192.png', self.registration.scope).href,
+        tag: bro.event_id, renotify: false, data: { bro },
+      });
+    });
+  }
+} catch (_) {
+  // Offline caching remains available on deployments without Firebase web configuration.
+}

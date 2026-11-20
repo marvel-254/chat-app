@@ -1,3 +1,5 @@
+import '../../services/legacy_messaging.dart';
+import '../../services/calls.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -70,8 +72,6 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _lockReady = false;
   String? _peerTyping;
   Timer? _peerTypingTimer;
-  RealtimeChannel? _callChannel;
-  bool _incomingPrompt = false;
   String _chatBackground = 'default';
   String? _chatBackgroundImageUrl;
   Duration? _messageExpiry;
@@ -122,7 +122,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _flushOutbox() async {
     final senderId = Supa.currentUser?.id;
-    if (senderId == null || !ConnectionMonitor.isOnline.value) return;
+    if (!LegacyMessaging.allowed(senderId) || senderId == null || !ConnectionMonitor.isOnline.value) return;
     bool isSenderActive() => Supa.currentUser?.id == senderId;
     await MessageOutbox.flush(
       (item) async {
@@ -188,7 +188,6 @@ class _ChatScreenState extends State<ChatScreen> {
     _loadMessageExpiry();
     _loadDraft();
     Supa.onTyping(widget.conversationId, _onPeerTyping);
-    _listenForCalls();
     _checkConversationLock();
     _ctrl.addListener(_onDraftChanged);
     _scroll.addListener(_onScroll);
@@ -354,81 +353,13 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _listenForCalls() {
-    final channel = Supa.client.channel('call:${widget.conversationId}',
-        opts: const RealtimeChannelConfig(private: true));
-    _callChannel = channel;
-    channel
-        .onBroadcast(
-            event: 'signal',
-            callback: (payload) {
-              if (payload['to'] != Supa.currentUser?.id ||
-                  payload['kind'] != 'invite' ||
-                  _incomingPrompt) {
-                return;
-              }
-              final callId = payload['call_id'] as String?;
-              if (callId != null) {
-                _showIncomingCall(callId, payload['data'] as Map?,
-                    payload['from'] as String?);
-              }
-            })
-        .subscribe();
-  }
-
-  Future<void> _showIncomingCall(
-      String callId, Map? details, String? callerId) async {
-    final peer =
-        _peer ?? (callerId == null ? null : await Supa.getProfile(callerId));
-    if (peer == null || !mounted) return;
-    _incomingPrompt = true;
-    final video = details?['video'] == true;
-    final answer = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => AlertDialog(
-              backgroundColor: _P.surface,
-              title: Text(video ? 'Incoming video call' : 'Incoming voice call',
-                  style: const TextStyle(color: _P.text)),
-              content: Text('${peer.label} (@${peer.username}) is calling.',
-                  style: const TextStyle(color: _P.muted)),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(dialogContext, false),
-                    child: const Text('Decline')),
-                FilledButton(
-                    onPressed: () => Navigator.pop(dialogContext, true),
-                    child: const Text('Answer')),
-              ],
-            ));
-    _incomingPrompt = false;
-    if (!mounted) return;
-    if (answer == true) {
-      context.push(
-          '/call/${widget.conversationId}?id=$callId&video=$video&outgoing=false',
-          extra: peer);
-    } else {
-      await _callChannel?.httpSend(event: 'signal', payload: {
-        'call_id': callId,
-        'from': Supa.currentUser!.id,
-        'to': peer.id,
-        'kind': 'hangup',
-        'data': const {},
-      });
-    }
-  }
-
   void _startCall({required bool video}) {
     final peer = _peer;
     if (peer == null) {
-      _unsupported(
-          'The other person’s profile is still loading. Try again in a moment.');
+      _unsupported('The other person’s profile is still loading. Try again in a moment.');
       return;
     }
-    final callId = const Uuid().v4();
-    context.push(
-        '/call/${widget.conversationId}?id=$callId&video=$video&outgoing=true',
-        extra: peer);
+    context.push(Calls.route(widget.conversationId, Calls.newId(), video, true), extra: peer);
   }
 
   void _onPeerTyping(String userId, bool isTyping) {
@@ -482,12 +413,11 @@ class _ChatScreenState extends State<ChatScreen> {
     ConnectionMonitor.isOnline.removeListener(_outboxConnectivityListener);
     unawaited(_outboxAuthSubscription?.cancel());
     Supa.chatBackgroundChanged.removeListener(_chatBackgroundListener);
-    final callChannel = _callChannel;
-    if (callChannel != null) Supa.client.removeChannel(callChannel);
     super.dispose();
   }
 
   Future<void> _openVoiceNote() async {
+    if (!await _allowLegacyMessaging() || !mounted) return;
     final result = await showDialog<String>(
       context: context,
       builder: (dialogContext) =>
@@ -498,11 +428,28 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<bool> _allowLegacyMessaging() async {
+    final owner = Supa.currentUser?.id;
+    if (owner == null) return false;
+    if (LegacyMessaging.allowed(owner)) return true;
+    final accept = await showDialog<bool>(context: context, builder: (dialog) => AlertDialog(
+      title: const Text('Use legacy messaging?'),
+      content: const Text('BRO’s server can read messages, drafts, reactions and files sent using this mode. Enable it for this session only. Do not share sensitive information here.'),
+      actions: [TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Keep read-only')),
+        FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('Enable legacy messaging'))],
+    ));
+    if (!mounted || Supa.currentUser?.id != owner || accept != true) return false;
+    setState(() => LegacyMessaging.allow(owner));
+    unawaited(_restorePendingMessages());
+    return true;
+  }
+
   Future<void> _send() async {
     final draft = _ctrl.text;
     final content = draft.trim();
     final senderId = Supa.currentUser?.id;
-    if (senderId == null || content.isEmpty || _sendingMessage) return;
+    if (senderId == null || content.isEmpty || _sendingMessage || !await _allowLegacyMessaging() ||
+        !mounted || Supa.currentUser?.id != senderId || _sendingMessage) return;
 
     setState(() => _sendingMessage = true);
     _typingTimer?.cancel();
@@ -1029,9 +976,9 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
       ),
-    ).then((emoji) {
-      if (emoji != null && emoji is String) {
-        Supa.addReaction(message.id, emoji);
+    ).then((emoji) async {
+      if (mounted && emoji is String && await _allowLegacyMessaging()) {
+        try { await Supa.addReaction(message.id, emoji); } catch (_) { if (mounted) _unsupported('Could not add reaction.'); }
       }
     });
   }
@@ -1046,7 +993,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (hasReacted) {
       await Supa.removeReaction(messageId, emoji);
     } else {
-      await Supa.addReaction(messageId, emoji);
+      if (mounted && await _allowLegacyMessaging()) await Supa.addReaction(messageId, emoji);
     }
   }
 
@@ -1241,7 +1188,7 @@ class _ChatScreenState extends State<ChatScreen> {
         if (updated != null &&
             updated.isNotEmpty &&
             updated != message.content) {
-          await Supa.updateMessage(message.id, updated);
+          if (await _allowLegacyMessaging()) await Supa.updateMessage(message.id, updated);
         }
       }
       if (action == 'delete_for_everyone' && mounted) {
@@ -1518,6 +1465,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (confirmed != true) return;
     try {
+      if (!await _allowLegacyMessaging()) return;
       await scheduled.ScheduledMessages.schedule(
         conversationId: widget.conversationId,
         content: text,
@@ -1539,6 +1487,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// Show a GIF picker using the Giphy API.
   Future<void> _showGifPicker() async {
+    if (!await _allowLegacyMessaging() || !mounted) return;
     await showModalBottomSheet(
       context: context,
       backgroundColor: _P.surface,
@@ -1568,6 +1517,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// Show a sticker picker and send the chosen sticker.
   Future<void> _showStickerPicker() async {
+    if (!await _allowLegacyMessaging() || !mounted) return;
     await showModalBottomSheet(
       context: context,
       backgroundColor: _P.surface,
@@ -1595,7 +1545,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendAttachment(
       Uint8List bytes, String name, String mimeType) async {
     final senderId = Supa.currentUser?.id;
-    if (senderId == null || _sendingMessage) return;
+    if (senderId == null || _sendingMessage || !await _allowLegacyMessaging() || !mounted ||
+        Supa.currentUser?.id != senderId || _sendingMessage) return;
     if (bytes.length > 20 * 1024 * 1024) {
       _unsupported('Files must be 20 MB or smaller.');
       return;
@@ -1761,18 +1712,6 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
         actions: [
-          // E2EE security indicator
-          Tooltip(
-            message: 'Messages are end-to-end encrypted',
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: Icon(
-                Icons.lock_rounded,
-                size: 18,
-                color: Colors.green.shade300,
-              ),
-            ),
-          ),
           _ActionBtn(Icons.videocam_rounded,
               onTap: () => _startCall(video: true)),
           _ActionBtn(Icons.phone_rounded,
@@ -1781,15 +1720,19 @@ class _ChatScreenState extends State<ChatScreen> {
           const SizedBox(width: 6),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          if (constraints.maxWidth > _adaptiveBreakpoint) {
-            return _buildLargeScreenChat(context);
-          } else {
-            return _buildSmallScreenChat(context);
-          }
-        },
-      ),
+      body: Column(children: [
+        ListTile(
+          leading: const Icon(Icons.lock_open_outlined),
+          title: const Text('Not end-to-end encrypted'),
+          subtitle: Text(LegacyMessaging.allowed(Supa.currentUser?.id)
+              ? 'Legacy messaging enabled for this session.'
+              : 'You can read history. Sending requires opting in.'),
+          trailing: LegacyMessaging.allowed(Supa.currentUser?.id)
+              ? null : TextButton(onPressed: _allowLegacyMessaging, child: const Text('Review')),
+        ),
+        Expanded(child: LayoutBuilder(builder: (context, constraints) =>
+            constraints.maxWidth > _adaptiveBreakpoint ? _buildLargeScreenChat(context) : _buildSmallScreenChat(context))),
+      ]),
     );
   }
 
