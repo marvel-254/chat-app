@@ -5,7 +5,9 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../theme/app_colors.dart' as app_colors;
+import '../../theme/app_text.dart';
 import '../../ui/motion.dart';
+import '../../ui/auth_backdrop.dart';
 import 'widgets/bro_wordmark.dart';
 
 const _onboardingSeenKey = 'bro_onboarding_seen';
@@ -30,21 +32,15 @@ class OnboardingScreen extends StatefulWidget {
   State<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
-class _OnboardingScreenState extends State<OnboardingScreen>
-    with TickerProviderStateMixin {
+class _OnboardingScreenState extends State<OnboardingScreen> {
   bool _continuing = false;
   late final PageController _pageController;
-  late final AnimationController _ambientController;
   int _currentPage = 0;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController();
-    _ambientController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 8),
-    );
     _pageController.addListener(() {
       if (_pageController.page != null) {
         final page = _pageController.page!.round();
@@ -56,20 +52,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (reduceMotionOf(context)) {
-      if (_ambientController.isAnimating) _ambientController.stop();
-      _ambientController.value = 0;
-    } else if (!_ambientController.isAnimating) {
-      _ambientController.repeat();
-    }
-  }
-
-  @override
   void dispose() {
     _pageController.dispose();
-    _ambientController.dispose();
     super.dispose();
   }
 
@@ -104,24 +88,10 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     final reduce = reduceMotionOf(context);
     return Scaffold(
       backgroundColor: app_colors.P.bg,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            // Ambient animated background glow
-            AnimatedBuilder(
-              animation: _ambientController,
-              builder: (context, child) {
-                final t = _ambientController.value;
-                return Positioned.fill(
-                  child: CustomPaint(
-                    painter: _AmbientGlowPainter(
-                      phase: t * math.pi * 2,
-                      color: app_colors.P.primary,
-                    ),
-                  ),
-                );
-              },
-            ),
+      body: AuthBackdrop(
+        child: SafeArea(
+          child: Stack(
+            children: [
             Center(
               child: PageView(
                 controller: _pageController,
@@ -253,11 +223,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                                       _currentPage < 2
                                           ? 'Next'
                                           : 'Get started',
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: 0.2,
-                                      ),
+                                      style: AppText.button,
                                     ),
                                     const SizedBox(width: 9),
                                     Icon(
@@ -274,9 +240,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                       const Center(
                         child: Text(
                           'Create an account or sign in · free, no ads',
-                          style: TextStyle(
-                            color: app_colors.P.muted,
-                            fontSize: 11,
+                          style: AppText.caption.copyWith(
                             fontWeight: FontWeight.w600,
                             letterSpacing: 0.2,
                           ),
@@ -320,53 +284,11 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                 ),
               ),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );
-  }
-}
-
-/// Animated ambient background glow that shifts subtly
-class _AmbientGlowPainter extends CustomPainter {
-  _AmbientGlowPainter({required this.phase, required this.color});
-
-  final double phase;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width * 0.6, size.height * 0.35);
-    final radius = math.max(size.width, size.height) * 0.45;
-
-    // Slowly orbiting glow
-    final offsetX = math.sin(phase) * size.width * 0.1;
-    final offsetY = math.cos(phase * 0.7) * size.height * 0.08;
-    final adjustedCenter = center + Offset(offsetX, offsetY);
-
-    final gradient = RadialGradient(
-      center: Alignment.center,
-      radius: 1.0,
-      colors: [
-        color.withValues(alpha: 0.06),
-        color.withValues(alpha: 0.02),
-        Colors.transparent,
-      ],
-      stops: const [0, 0.5, 1],
-    );
-
-    canvas.drawCircle(
-      adjustedCenter,
-      radius,
-      Paint()..shader = gradient.createShader(
-        Rect.fromCircle(center: adjustedCenter, radius: radius),
-      ),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_AmbientGlowPainter oldDelegate) {
-    return phase != oldDelegate.phase;
   }
 }
 
@@ -474,13 +396,7 @@ class _OnboardingPageState extends State<_OnboardingPage>
                           offset: Offset(0, _slideTitle.value),
                           child: Text(
                             widget.title,
-                            style: TextStyle(
-                              color: app_colors.P.text,
-                              fontSize: compact ? 33 : 42,
-                              height: 1.0,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: compact ? -1.1 : -1.8,
-                            ),
+                            style: compact ? AppText.displayLG : AppText.displayXL,
                           ),
                         ),
                       );
@@ -497,11 +413,7 @@ class _OnboardingPageState extends State<_OnboardingPage>
                           offset: Offset(0, _slideSubtitle.value),
                           child: Text(
                             widget.subtitle,
-                            style: const TextStyle(
-                              color: app_colors.P.muted,
-                              fontSize: 14,
-                              height: 1.55,
-                            ),
+                            style: AppText.body,
                           ),
                         ),
                       );

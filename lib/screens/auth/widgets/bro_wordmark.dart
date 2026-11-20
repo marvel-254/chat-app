@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart' as app_colors;
+import '../../../theme/app_text.dart';
 
 /// The BRO wordmark: a tilted volt tile + heavy BRO letterforms.
 ///
@@ -40,11 +41,9 @@ class BroWordmark extends StatelessWidget {
           SizedBox(width: fontSize * 0.66),
           Text(
             'BRO',
-            style: TextStyle(
-              color: app_colors.P.text,
+            style: AppText.wordmark.copyWith(
               fontSize: fontSize,
-              fontWeight: FontWeight.w900,
-              letterSpacing: fontSize * 0.2,
+              letterSpacing: fontSize * 0.21,
             ),
           ),
         ],

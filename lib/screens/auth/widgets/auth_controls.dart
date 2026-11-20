@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart' as app_colors;
+import '../../../theme/app_text.dart';
 import '../../../ui/states.dart' show BroSpinner;
 
 /// Shared controls for the auth surfaces (login / get started / confirmation).
@@ -60,14 +61,7 @@ class AuthPrimaryButton extends StatelessWidget {
                   color: app_colors.P.darkOnAccent,
                 ),
               )
-            : Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.3,
-                ),
-              ),
+            : Text(label, style: AppText.button),
       ),
     );
   }
@@ -219,12 +213,7 @@ class _AuthTextFieldState extends State<AuthTextField> {
           padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
           child: Text(
             widget.label.toUpperCase(),
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: app_colors.P.muted,
-              letterSpacing: 0.08,
-            ),
+            style: AppText.fieldLabel,
           ),
         ),
         Container(
