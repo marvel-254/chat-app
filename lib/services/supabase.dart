@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:async';
 import 'dart:typed_data';
@@ -1518,7 +1517,7 @@ class Supa {
           .order('device_id')
           .limit(1);
       if ((devices as List).isEmpty) return null;
-      final device = devices.first as Map<String, dynamic>;
+      final device = devices.first;
       final deviceId = device['device_id'] as int;
       final deviceRowId = device['id'] as String;
       final prekeys = await client
@@ -1537,7 +1536,7 @@ class Supa {
           ? claimRows.first as Map<String, dynamic>
           : (prekeys as List).isEmpty
               ? null
-              : prekeys.first as Map<String, dynamic>;
+              : prekeys.first;
       // Kyber public material is stored alongside the signed prekey record.
       final kyber = await client
           .from('signal_kyber_prekeys')
@@ -1546,7 +1545,7 @@ class Supa {
           .isFilter('used_at', null)
           .limit(1);
       if ((kyber as List).isEmpty) return null;
-      final kyberRow = kyber.first as Map<String, dynamic>;
+      final kyberRow = kyber.first;
       return SignalPublicBundle(
         userId: userId,
         deviceId: deviceId,
