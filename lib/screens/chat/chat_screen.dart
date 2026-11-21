@@ -18,6 +18,7 @@ import '../../services/signal_e2ee.dart';
 import '../../services/presence.dart';
 import '../../services/connection_monitor.dart';
 import '../../services/message_outbox.dart';
+import '../../chat/widgets.dart';
 import '../../services/voice_note.dart';
 import '../../services/scheduled_messages.dart' as scheduled;
 import '../../services/secure_screen.dart';
@@ -84,6 +85,8 @@ class _ChatScreenState extends State<ChatScreen> {
   int _lastMarkedMessageCount = 0;
   String? _lastMarkedMessageId;
   bool _showJumpToBottom = false;
+  String? _unreadDividerId;
+  bool _unreadDividerResolved = false;
   late final VoidCallback _chatBackgroundListener = () => _loadChatBackground();
   late final VoidCallback _outboxConnectivityListener = _onConnectivityChanged;
   StreamSubscription<AuthState>? _outboxAuthSubscription;
@@ -562,6 +565,14 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     merged.sort((a, b) => a.createdAt.compareTo(b.createdAt));
     return merged;
+  }
+
+  void _resolveUnreadDivider(List<Message> messages) {
+    if (_unreadDividerResolved || messages.isEmpty) return;
+    final currentUserId = Supa.currentUser?.id;
+    if (currentUserId == null) return;
+    _unreadDividerId = firstUnreadInboundMessageId(messages, currentUserId);
+    _unreadDividerResolved = true;
   }
 
   /// Mark unread messages as read. Called once when the chat opens and again
@@ -1910,6 +1921,7 @@ class _ChatScreenState extends State<ChatScreen> {
       stream: Supa.watchMessages(widget.conversationId),
       builder: (context, snapshot) {
         final messages = snapshot.data ?? [];
+        _resolveUnreadDivider(messages);
         final display = _displayMessages(messages);
         final pinnedMessages = messages
             .where((m) => m.pinnedAt != null)
@@ -2000,20 +2012,34 @@ class _ChatScreenState extends State<ChatScreen> {
                             controller: _scroll,
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 12, vertical: 12),
-                            itemCount: display.length,
-                            itemBuilder: (_, i) => _MessageRow(
-                              msg: display[i],
-                              prev: i > 0 ? display[i - 1] : null,
-                              next: i + 1 < display.length
-                                  ? display[i + 1]
-                                  : null,
-                              me: Supa.currentUser!.id,
-                              onLongPress: _showMessageActions,
-                              onReactionTap: _toggleReaction,
-                              messages: display,
-                              pendingStatus:
-                                  _pendingMessages[display[i].id]?.status,
-                            ),
+                            itemCount: display.length +
+                                (_unreadDividerId == null ? 0 : 1),
+                            itemBuilder: (_, index) {
+                              final dividerIndex = _unreadDividerId == null
+                                  ? -1
+                                  : display.indexWhere(
+                                      (m) => m.id == _unreadDividerId);
+                              if (dividerIndex >= 0 && index == dividerIndex) {
+                                return const UnreadDivider();
+                              }
+                              final i =
+                                  dividerIndex >= 0 && index > dividerIndex
+                                      ? index - 1
+                                      : index;
+                              return _MessageRow(
+                                msg: display[i],
+                                prev: i > 0 ? display[i - 1] : null,
+                                next: i + 1 < display.length
+                                    ? display[i + 1]
+                                    : null,
+                                me: Supa.currentUser!.id,
+                                onLongPress: _showMessageActions,
+                                onReactionTap: _toggleReaction,
+                                messages: display,
+                                pendingStatus:
+                                    _pendingMessages[display[i].id]?.status,
+                              );
+                            },
                           ),
                           Positioned(
                             bottom: 12,
@@ -2096,6 +2122,7 @@ class _ChatScreenState extends State<ChatScreen> {
             stream: Supa.watchMessages(widget.conversationId),
             builder: (context, snapshot) {
               final messages = snapshot.data ?? [];
+              _resolveUnreadDivider(messages);
               final display = _displayMessages(messages);
               final pinnedMessages = messages
                   .where((m) => m.pinnedAt != null)
@@ -2188,20 +2215,37 @@ class _ChatScreenState extends State<ChatScreen> {
                                   controller: _scroll,
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 12, vertical: 12),
-                                  itemCount: display.length,
-                                  itemBuilder: (_, i) => _MessageRow(
-                                    msg: display[i],
-                                    prev: i > 0 ? display[i - 1] : null,
-                                    next: i + 1 < display.length
-                                        ? display[i + 1]
-                                        : null,
-                                    me: Supa.currentUser!.id,
-                                    onLongPress: _showMessageActions,
-                                    onReactionTap: _toggleReaction,
-                                    messages: display,
-                                    pendingStatus:
-                                        _pendingMessages[display[i].id]?.status,
-                                  ),
+                                  itemCount: display.length +
+                                      (_unreadDividerId == null ? 0 : 1),
+                                  itemBuilder: (_, index) {
+                                    final dividerIndex = _unreadDividerId ==
+                                            null
+                                        ? -1
+                                        : display.indexWhere(
+                                            (m) => m.id == _unreadDividerId);
+                                    if (dividerIndex >= 0 &&
+                                        index == dividerIndex) {
+                                      return const UnreadDivider();
+                                    }
+                                    final i = dividerIndex >= 0 &&
+                                            index > dividerIndex
+                                        ? index - 1
+                                        : index;
+                                    return _MessageRow(
+                                      msg: display[i],
+                                      prev: i > 0 ? display[i - 1] : null,
+                                      next: i + 1 < display.length
+                                          ? display[i + 1]
+                                          : null,
+                                      me: Supa.currentUser!.id,
+                                      onLongPress: _showMessageActions,
+                                      onReactionTap: _toggleReaction,
+                                      messages: display,
+                                      pendingStatus:
+                                          _pendingMessages[display[i].id]
+                                              ?.status,
+                                    );
+                                  },
                                 ),
                                 Positioned(
                                   bottom: 12,
@@ -3150,6 +3194,13 @@ class _Bubble extends StatelessWidget {
                           strokeWidth: 1.5,
                           color: _P.darkOnAccent.withValues(alpha: 0.6),
                         ),
+                      ),
+                    ] else if (pendingStatus == 'queued') ...[
+                      const SizedBox(width: 2),
+                      Icon(
+                        Icons.schedule_rounded,
+                        size: 13,
+                        color: _P.darkOnAccent.withValues(alpha: 0.7),
                       ),
                     ] else if (pendingStatus == 'failed') ...[
                       const SizedBox(width: 2),
