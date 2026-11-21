@@ -1,5 +1,5 @@
 name: bro_chat
-version: 1.5.1+23
+version: 1.5.2+24
 
 description: "BRO - A beautifully dark messaging app."
 # The following line prevents the package from being accidentally published to
