@@ -1,20 +1,30 @@
 # Auth look pass — design and delivery notes
 
-The BRO auth surfaces (login and onboarding) were rebuilt in a four-part look
-pass. This document is the reference for the typography, artwork and motion
-decisions so the next change stays inside the same system instead of drifting.
+The BRO auth surfaces (login and onboarding) share one small design system:
+Space Grotesk type, an atmospheric backdrop, and **one 3D prop per screen**.
+This document is the reference for those decisions so the next change stays
+inside the system instead of drifting.
 
-## Scope
+## The one-prop rule
 
-| Part | Theme | Surface | Status |
-| --- | --- | --- | --- |
-| 1 | Space Grotesk type scale + atmospheric backdrop | `app_text.dart`, `auth_backdrop.dart`, both auth screens | merged (#114) |
-| 2 | Regenerated hero artwork (four props) | `assets/images/hero_*`, `ASSET_SOURCES.md` | this pass |
-| 3 | Expressive hero choreography | `hero_motion.dart`, `welcome_hero.dart` | this pass |
-| 4 | Tests, docs, performance guardrails | `test/hero_motion_test.dart`, `test/welcome_hero_test.dart`, this file | this pass |
+Every auth screen shows exactly one object, lit once, grounded once:
 
-Nothing in the pass changes auth behaviour: same routes, same strings, same
-Supabase calls, same validation. It is entirely presentation.
+| Screen | Prop | Asset |
+| --- | --- | --- |
+| Login / sign up | The "Bro" mascot, waving | `prop_mascot.webp` |
+| Onboarding 1 — *people* | Two rounded chat bubbles | `prop_chat.webp` |
+| Onboarding 2 — *circle* | Charcoal/volt torus | `prop_circle.webp` |
+| Onboarding 3 — *fast & personal* | Chunky lightning bolt | `prop_bolt.webp` |
+
+Nothing orbits, floats alongside or decorates around the prop. That is what
+keeps the scenes reading as objects in a room rather than as a staged collage
+of easter eggs. If a screen needs another idea, it needs its own screen.
+
+![Auth props](images/auth-props-preview.webp)
+
+*Static 2× composition mock (Space Grotesk copy rendered from the bundled font,
+the real prop assets in their real slots). A design reference, not a device
+screenshot.*
 
 ## Typography — Space Grotesk
 
@@ -22,116 +32,91 @@ Space Grotesk is bundled as static weights (400/500/600/700) in
 `assets/fonts/space_grotesk/` and is the app-wide `fontFamily` in `main.dart`.
 The auth screens compose from `AppText` tokens only:
 
-- `displayXL` / `displayLG` — onboarding hero titles.
+- `displayXL` / `displayLG` — onboarding titles.
 - `heroTitle` / `heroTitleCompact` — login hero and compact header.
-- `eyebrow` — the uppercase chip above the hero headline.
+- `eyebrow` — the uppercase chip above the login headline.
 - `fieldLabel`, `body`, `caption`, `button`, `wordmark` — form and footer copy.
 
-Rules of thumb: letter spacing is negative on display sizes (`-1.8` at 42 px,
-`-0.8` at 28 px) and positive on the 9 px eyebrow (`1.05`). Do not add one-off
-`fontSize` values; extend `AppText` instead. All lettering in the artwork is
-live text — no type is baked into the images, so copy changes never require a
-re-render.
+Letter spacing is negative on display sizes (`-1.8` at 42 px, `-0.8` at 28 px)
+and positive on the 9 px eyebrow (`1.05`). Do not add one-off `fontSize`
+values; extend `AppText` instead. No type is baked into the artwork, so copy
+changes never require a re-render.
 
-## Artwork — four original hero props
+## Artwork
 
-![Auth hero composition](images/auth-hero-preview.webp)
+All four props are original BRO renders: matte charcoal surfaces
+(`#121318`–`#292A2F`) with volt-lime (`#D4FF00`) bevels, one studio key light
+from the upper left, no baked floor and no glow spill into the background. The
+app adds the halo and the contact shadow, so a prop sits on the backdrop
+instead of on a card.
 
-*Static composition mock of the hero at 2× (Space Grotesk copy rendered from the
-bundled font, the four generated props on their orbit paths). It is a design
-reference, not a device screenshot; the live scene adds parallax, entrance and
-depth-sorted orbits.*
+They were rendered on a flat magenta chroma field and keyed to alpha with a
+"magenta-ness" ramp (`min(R, B) − G`), then un-mixed and despilled. See
+[`assets/images/ASSET_SOURCES.md`](../assets/images/ASSET_SOURCES.md) for the
+full pipeline and the file sizes (~167 KB total, WebP q92).
 
+`AuthArt` in `lib/screens/auth/widgets/auth_prop.dart` is the single Dart
+reference to the files; `pubspec.yaml` lists them.
 
-| Asset | Role | Intrinsic | On disk |
-| --- | --- | --- | --- |
-| `hero_mascot.webp` | The "Bro" mascot, waving | 560 × 1003 | ~70 KB |
-| `hero_ball.webp` | Charcoal/volt football orb | 300 × 210 | ~20 KB |
-| `hero_gamepad.webp` | Charcoal/volt controller | 480 × 283 | ~21 KB |
-| `hero_supercar.webp` | Original graphite/volt supercar | 512 × 229 | ~26 KB |
+## Motion — quiet support, never the subject
 
-Art direction: near-black charcoal surfaces (`#121318`–`#292A2F`) with volt-lime
-(`#D4FF00`) emissive accents, soft-touch matte materials, chrome edge light, no
-baked floor or shadow. That is the same "Electric Street" palette the UI uses, so
-the props read as part of the product rather than stock 3D renders.
+`AuthProp` renders one prop with:
 
-The props replace four third-party transparent PNGs (a blue football, a stock
-controller, a yellow Lamborghini and a portrait render) whose commercial-use
-terms had never been verified. The new set is original work with no attribution
-requirements — see [`assets/images/ASSET_SOURCES.md`](../assets/images/ASSET_SOURCES.md)
-for the generation and chroma-key pipeline.
+- a slow idle float (11 s loop, ±5 px) and a whisper of yaw (±0.05 rad),
+- pointer parallax (the prop leans up to ~10 px, the shadow tracks it),
+- a soft static halo and a contact shadow.
 
-Total hero artwork weight dropped from ~715 KB of PNG to ~140 KB of WebP.
+`WelcomeHero` adds a 1.1 s staggered entrance (eyebrow → headline → subhead →
+prop) using `HeroEntrance`. Onboarding keeps its existing per-page entrance.
 
-## Motion — expressive, but one timeline
-
-Motion is deliberately **expressive** on the hero and still disciplined
-everywhere else. Two controllers drive the whole scene:
-
-- `_loop` — 16 s repeating loop: orbits, bob, halo breathing, ring rotation,
-  bead pulse.
-- `_intro` — 1.25 s one-shot: staggered entrance.
-
-The reusable pieces live in `lib/ui/hero_motion.dart`:
-
-- **`HeroOrbitPose`** — pure function of a `0..1` phase: elliptical offset,
-  depth (`-1` far … `1` near), depth-based scale, yaw and roll. Props with
-  `depth < 0` paint behind the mascot, `depth >= 0` in front, sorted by
-  `sortKey`.
-- **`HeroEntrance`** — fade + rise + settle for one element of a stagger,
-  driven by the intro animation.
-- **`HeroParallax`** — normalised pointer shift (`-1..1`) with easing, for hover
-  on desktop/web and drags on touch.
-
-Choreography in `welcome_hero.dart`:
-
-1. Halo breathes, two orbit rings counter-rotate.
-2. Eyebrow, headline, subhead settle in, then the mascot, then the props, then
-   the floating cards and the message bead.
-3. The mascot travels an elliptical depth path (yaw ±0.3 rad, depth scale
-   0.95–1.05) with a contact shadow that fades as she lifts.
-4. The ball, controller and supercar orbit her torso on their own paths; the
-   supercar runs a slower 0.92 loop so the motion never looks uniform.
-5. Pointer movement leans the stage: the mascot counter-moves, each prop reacts
-   with its own parallax weight (18–30 px per unit of shift).
+There are no orbiting props, no counter-rotating rings and no scene timeline
+any more — the old `HeroOrbitPose` maths was removed with them.
 
 ### Reduce motion
 
-`reduceMotionOf(context)` is the single switch. When the OS asks for reduced
-motion the hero renders a **rest pose** — intro at `1`, loop phase `0`, zero
-parallax — and both controllers are stopped, not merely hidden. The loop never
-starts, so `pumpAndSettle` in tests completes. This is covered by
-`test/welcome_hero_test.dart`.
+`reduceMotionOf(context)` is the single switch. Under reduce motion:
 
-### Performance guardrails
+- `AuthProp` never starts its idle controller and reports a zero parallax
+  shift, so it renders as a still object;
+- `WelcomeHero` renders the completed intro (rest pose);
+- onboarding page entrances jump to their end state.
 
-- One `AnimatedBuilder` on a merged listenable rebuilds the stage; no per-child
-  controllers.
-- Props are pre-resized assets (no runtime decode of huge images) drawn with
-  `FilterQuality.medium` and `gaplessPlayback`.
-- The stage is a fixed 372 px box; nothing in it triggers layout on each frame
-  (only transforms, opacity and gradients).
-- All decorative nodes are `IgnorePointer` + `ExcludeSemantics`; the headline,
-  subhead and cards remain the accessible content.
-- Assets are WebP q92, trimmed to the silhouette.
+Because nothing repeats, `pumpAndSettle` in tests completes — that behaviour is
+covered by `test/welcome_hero_test.dart` and `test/onboarding_screen_test.dart`.
+
+## Layout
+
+- **Login**: the hero is a fixed 380 px column. The copy sizes itself and the
+  prop gets the remaining height, capped at 268 px (236 px on narrow phones),
+  so a two-line sign-up headline can never collide with the mascot. The hero is
+  hidden on short screens and while the keyboard is open.
+- **Onboarding**: each page keeps a 278 px artwork slot under the subtitle; the
+  prop is centred in it (chat 214, circle 232, bolt 244).
+
+## Performance guardrails
+
+- One `AnimationController` per prop (idle) plus one per hero/page entrance; no
+  per-child controllers and no merged scene timeline.
+- Props are pre-resized assets (~2× on-screen size) drawn with
+  `FilterQuality.medium` + `gaplessPlayback`.
+- Decorative nodes are `IgnorePointer` + `ExcludeSemantics`; the headline,
+  subhead and card copy remain the accessible content.
 
 ## Tests
 
-- `test/hero_motion_test.dart` — orbit pose maths, depth sorting, entrance rest
-  pose, parallax on/off.
-- `test/welcome_hero_test.dart` — every regenerated asset renders, sign-up copy
-  swap, feature-card toggle, reduce-motion settle, loop runs without errors.
-- `test/login_screen_test.dart` — unchanged; still asserts the form, inline
-  validation and the reduce-motion build.
+- `test/hero_motion_test.dart` — entrance rest pose, parallax enabled/disabled.
+- `test/welcome_hero_test.dart` — the hero is exactly one prop (the mascot) plus
+  copy, sign-up copy swap, reduce-motion settle, idle float runs cleanly.
+- `test/onboarding_screen_test.dart` — each page shows exactly one prop, and the
+  walkthrough still reaches login.
+- `test/login_screen_test.dart` — form, validation and the reduce-motion build.
 
-## Delivery
-
-The pass is split into four reviewable PRs so each layer can be reviewed (and
-reverted) on its own:
+## Delivery history
 
 1. **Type + atmosphere** — Space Grotesk bundle, `AppText` tokens,
    `AuthBackdrop` (#114).
-2. **Artwork** — regenerate all four hero props, update `pubspec.yaml`,
-   rewrite the asset provenance notes.
-3. **Motion** — `hero_motion.dart` primitives and the rebuilt `WelcomeHero`.
-4. **Polish** — tests, this document, performance and accessibility guardrails.
+2. **Artwork** — first hero props (#115).
+3. **Motion** — expressive orbit choreography (#115).
+4. **This refinement** — replaced the orbit collage with one prop per screen,
+   added the three onboarding props, deleted the hand-drawn artwork and the
+   orbit maths.

@@ -4,6 +4,15 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:bro_chat/screens/auth/onboarding_screen.dart';
+import 'package:bro_chat/screens/auth/widgets/auth_prop.dart';
+
+Finder _image(String asset) => find.byWidgetPredicate(
+      (widget) =>
+          widget is Image &&
+          widget.image is AssetImage &&
+          (widget.image as AssetImage).assetName == asset,
+      description: 'asset image $asset',
+    );
 
 Widget _buildApp({bool disableAnimations = true}) {
   final router = GoRouter(
@@ -82,6 +91,22 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Fast. Personal.\nYours.'), findsOneWidget);
+  });
+
+  testWidgets('each page carries its own 3D prop', (tester) async {
+    await tester.pumpWidget(_buildApp(disableAnimations: true));
+    await tester.pumpAndSettle();
+
+    expect(_image(AuthArt.chat), findsOneWidget);
+    expect(_image(AuthArt.bolt), findsNothing);
+
+    await tester.tap(find.text('Next'));
+    await tester.pumpAndSettle();
+    expect(_image(AuthArt.circle), findsOneWidget);
+
+    await tester.tap(find.text('Next'));
+    await tester.pumpAndSettle();
+    expect(_image(AuthArt.bolt), findsOneWidget);
   });
 
   testWidgets('first-run route renders before animation completes',
