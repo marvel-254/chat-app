@@ -11,7 +11,7 @@ Every auth screen shows exactly one object, lit once, grounded once:
 
 | Screen | Prop | Asset |
 | --- | --- | --- |
-| Login / sign up | The "Bro" mascot, waving | `prop_mascot.webp` |
+| Login / sign up | The "Bro" mascot, mid-laugh, hand in her pocket | `prop_mascot.webp` |
 | Onboarding 1 — *people* | Two rounded chat bubbles | `prop_chat.webp` |
 | Onboarding 2 — *circle* | Charcoal/volt torus | `prop_circle.webp` |
 | Onboarding 3 — *fast & personal* | Chunky lightning bolt | `prop_bolt.webp` |
