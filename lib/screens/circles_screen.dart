@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../ui/states.dart';
 import '../ui/motion.dart';
@@ -19,6 +21,8 @@ class _CirclesScreenState extends State<CirclesScreen> {
   final _descriptionController = TextEditingController();
   final _addMemberController = TextEditingController();
 
+  StreamSubscription<List<Circle>>? _circlesSub;
+
   bool _isLoading = true;
   List<Circle> _circles = [];
   String? _error;
@@ -27,12 +31,14 @@ class _CirclesScreenState extends State<CirclesScreen> {
   void initState() {
     super.initState();
     _loadCircles();
-    Circles.watchMyCircles().listen((circles) {
+    _circlesSub = Circles.watchMyCircles().listen((circles) {
+      if (!mounted) return;
       setState(() {
         _circles = circles;
         _isLoading = false;
       });
-    }).onError((e) {
+    }, onError: (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _isLoading = false;
@@ -189,6 +195,7 @@ class _CirclesScreenState extends State<CirclesScreen> {
 
   @override
   void dispose() {
+    _circlesSub?.cancel();
     _scrollController.dispose();
     _nameController.dispose();
     _descriptionController.dispose();

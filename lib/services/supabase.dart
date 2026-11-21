@@ -1344,11 +1344,13 @@ class Supa {
   static Future<void> saveDraft(String conversationId, String text) async {
     final me = currentUser;
     if (me == null || (text.isNotEmpty && !LegacyMessaging.allowed(me.id))) return;
-    await client.from('conversation_participants').upsert({
-      'conversation_id': conversationId,
-      'user_id': me.id,
-      'draft': text.isEmpty ? null : text,
-    }, onConflict: 'conversation_id,user_id');
+    // Drafts only update an existing participation row. Inserting a row here
+    // is forbidden by RLS and produced recurring 42501 errors in production.
+    await client
+        .from('conversation_participants')
+        .update({'draft': text.isEmpty ? null : text})
+        .eq('conversation_id', conversationId)
+        .eq('user_id', me.id);
   }
 
   /// Load the saved draft for the current user in a conversation.
@@ -1360,8 +1362,8 @@ class Supa {
         .select('draft')
         .eq('conversation_id', conversationId)
         .eq('user_id', me.id)
-        .single();
-    return row['draft'] as String?;
+        .maybeSingle();
+    return row?['draft'] as String?;
   }
 
   // Realtime typing broadcast on the conversation's private channel.
