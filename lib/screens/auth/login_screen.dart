@@ -11,6 +11,7 @@ import '../../theme/app_text.dart';
 import '../../app_constants.dart';
 import 'auth_validation.dart';
 import 'widgets/auth_controls.dart';
+import 'widgets/auth_prop_backdrop.dart';
 import 'widgets/bro_wordmark.dart';
 import 'widgets/welcome_hero.dart';
 
@@ -391,18 +392,27 @@ class _LoginScreenState extends State<LoginScreen> {
 
     Widget content;
     if (wide && showHero) {
+      // The prop is the page background (see AuthPropBackdrop), so the copy and
+      // the form stack in one column on the left and she keeps the right.
       content = Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
             flex: 11,
-            child: WelcomeHero(
-              isSignUp: _isSignUp,
-              animate: !reduce,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                WelcomeHero(
+                  isSignUp: _isSignUp,
+                  animate: !reduce,
+                  showProp: false,
+                ),
+                const SizedBox(height: 28),
+                form,
+              ],
             ),
           ),
-          const SizedBox(width: 48),
-          Expanded(flex: 9, child: Center(child: form)),
+          const Spacer(flex: 9),
         ],
       );
     } else {
@@ -413,6 +423,7 @@ class _LoginScreenState extends State<LoginScreen> {
             WelcomeHero(
               isSignUp: _isSignUp,
               animate: !reduce,
+              showProp: false,
             ),
             const SizedBox(height: 28),
           ] else if (!keyboardOpen) ...[
@@ -425,18 +436,26 @@ class _LoginScreenState extends State<LoginScreen> {
 
     return Scaffold(
       body: AuthBackdrop(
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              padding: EdgeInsets.fromLTRB(24, keyboardOpen ? 12 : 20, 24, 24),
-              child: ConstrainedBox(
-                constraints:
-                    BoxConstraints(maxWidth: wide && showHero ? 940 : 460),
-                child: content,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            const AuthPropBackdrop(),
+            SafeArea(
+              child: Center(
+                child: SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding:
+                      EdgeInsets.fromLTRB(24, keyboardOpen ? 12 : 20, 24, 24),
+                  child: ConstrainedBox(
+                    constraints:
+                        BoxConstraints(maxWidth: wide && showHero ? 940 : 460),
+                    child: content,
+                  ),
+                ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );

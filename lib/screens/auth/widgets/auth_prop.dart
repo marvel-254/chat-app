@@ -12,7 +12,8 @@ import '../../../ui/motion.dart';
 /// charcoal with volt-lime accents, keyed from a chroma field so they sit
 /// straight on the auth backdrop without a card or a frame around them.
 abstract final class AuthArt {
-  /// Sign in / sign up.
+  /// Sign in / sign up — the mascot, caught mid-laugh, hands in her hoodie,
+  /// cropped at the hip so she reads as a prop in the room.
   static const mascot = 'assets/images/prop_mascot.webp';
 
   /// Onboarding 1 — the people you talk to.
@@ -25,7 +26,7 @@ abstract final class AuthArt {
   static const bolt = 'assets/images/prop_bolt.webp';
 
   /// width / height for each render, so a prop keeps its proportions.
-  static const mascotAspect = 560 / 1003;
+  static const mascotAspect = 533 / 800;
   static const chatAspect = 520 / 417;
   static const circleAspect = 510 / 462;
   static const boltAspect = 300 / 507;

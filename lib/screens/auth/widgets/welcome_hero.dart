@@ -8,7 +8,7 @@ import '../../../ui/hero_motion.dart';
 import '../../../ui/motion.dart';
 import 'auth_prop.dart';
 
-/// The sign-in hero: the welcome copy, and one 3D prop standing under it.
+/// The sign-in hero: the welcome copy, and (optionally) one 3D prop under it.
 ///
 /// It is deliberately quiet — a single figure, a soft halo and a grounded
 /// shadow, instead of a collage of objects orbiting the character. The copy
@@ -20,6 +20,7 @@ class WelcomeHero extends StatefulWidget {
     required this.isSignUp,
     this.animate = true,
     this.showEyebrow = true,
+    this.showProp = true,
   });
 
   final bool isSignUp;
@@ -28,6 +29,11 @@ class WelcomeHero extends StatefulWidget {
   final bool animate;
 
   final bool showEyebrow;
+
+  /// Whether to stand the prop under the copy. The login screen turns this off
+  /// and paints [AuthPropBackdrop] behind the whole page instead, so the copy
+  /// and the art stop competing for the same column.
+  final bool showProp;
 
   @override
   State<WelcomeHero> createState() => _WelcomeHeroState();
@@ -88,17 +94,15 @@ class _WelcomeHeroState extends State<WelcomeHero>
   @override
   Widget build(BuildContext context) {
     final intro = _motionOn ? _intro : _rest;
-    return SizedBox(
-      height: _stageHeight,
-      width: double.infinity,
-      child: LayoutBuilder(
+    final body = LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 350;
           // The copy sizes itself; the prop takes whatever room is left, so a
           // two-line sign-up headline can never collide with her.
           final maxPropHeight = compact ? 236.0 : 268.0;
           return Column(
-            mainAxisSize: MainAxisSize.max,
+            mainAxisSize:
+                widget.showProp ? MainAxisSize.max : MainAxisSize.min,
             children: [
               Column(
                 children: [
@@ -157,6 +161,7 @@ class _WelcomeHeroState extends State<WelcomeHero>
                   ),
                 ],
               ),
+              if (widget.showProp)
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, propBox) {
@@ -185,7 +190,12 @@ class _WelcomeHeroState extends State<WelcomeHero>
             ],
           );
         },
-      ),
+      );
+    if (!widget.showProp) return body;
+    return SizedBox(
+      height: _stageHeight,
+      width: double.infinity,
+      child: body,
     );
   }
 }

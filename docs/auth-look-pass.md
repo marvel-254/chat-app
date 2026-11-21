@@ -11,7 +11,7 @@ Every auth screen shows exactly one object, lit once, grounded once:
 
 | Screen | Prop | Asset |
 | --- | --- | --- |
-| Login / sign up | The "Bro" mascot, waving | `prop_mascot.webp` |
+| Login / sign up | The "Bro" mascot, mid-laugh, hand in her pocket | `prop_mascot.webp` |
 | Onboarding 1 — *people* | Two rounded chat bubbles | `prop_chat.webp` |
 | Onboarding 2 — *circle* | Charcoal/volt torus | `prop_circle.webp` |
 | Onboarding 3 — *fast & personal* | Chunky lightning bolt | `prop_bolt.webp` |
@@ -86,10 +86,13 @@ covered by `test/welcome_hero_test.dart` and `test/onboarding_screen_test.dart`.
 
 ## Layout
 
-- **Login**: the hero is a fixed 380 px column. The copy sizes itself and the
-  prop gets the remaining height, capped at 268 px (236 px on narrow phones),
-  so a two-line sign-up headline can never collide with the mascot. The hero is
-  hidden on short screens and while the keyboard is open.
+- **Login**: the prop is the *background of the page* — `AuthPropBackdrop`
+  pins her to the right and bottom on wide layouts (mirrored, so she faces back
+  into the form) and across the top on phones, behind a scrim that keeps the
+  copy and the fields legible. The copy and the form then share one 420 px
+  column on the left; `WelcomeHero` renders copy-only there (`showProp: false`).
+  On short screens and while the keyboard is open the copy collapses to the
+  compact header, but the background prop stays — it is the page, not a panel.
 - **Onboarding**: each page keeps a 278 px artwork slot under the subtitle; the
   prop is centred in it (chat 214, circle 232, bolt 244).
 
