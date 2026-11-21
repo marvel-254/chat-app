@@ -123,7 +123,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _flushOutbox() async {
     final senderId = Supa.currentUser?.id;
-    if (!LegacyMessaging.allowed(senderId) || senderId == null || !ConnectionMonitor.isOnline.value) return;
+    if (!LegacyMessaging.allowed(senderId) ||
+        senderId == null ||
+        !ConnectionMonitor.isOnline.value) return;
     bool isSenderActive() => Supa.currentUser?.id == senderId;
     await MessageOutbox.flush(
       (item) async {
@@ -357,10 +359,12 @@ class _ChatScreenState extends State<ChatScreen> {
   void _startCall({required bool video}) {
     final peer = _peer;
     if (peer == null) {
-      _unsupported('The other person’s profile is still loading. Try again in a moment.');
+      _unsupported(
+          'The other person’s profile is still loading. Try again in a moment.');
       return;
     }
-    context.push(Calls.route(widget.conversationId, Calls.newId(), video, true), extra: peer);
+    context.push(Calls.route(widget.conversationId, Calls.newId(), video, true),
+        extra: peer);
   }
 
   void _onPeerTyping(String userId, bool isTyping) {
@@ -433,13 +437,23 @@ class _ChatScreenState extends State<ChatScreen> {
     final owner = Supa.currentUser?.id;
     if (owner == null) return false;
     if (LegacyMessaging.allowed(owner)) return true;
-    final accept = await showDialog<bool>(context: context, builder: (dialog) => AlertDialog(
-      title: const Text('Use legacy messaging?'),
-      content: const Text('BRO’s server can read messages, drafts, reactions and files sent using this mode. Enable it for this session only. Do not share sensitive information here.'),
-      actions: [TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Keep read-only')),
-        FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('Enable legacy messaging'))],
-    ));
-    if (!mounted || Supa.currentUser?.id != owner || accept != true) return false;
+    final accept = await showDialog<bool>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+              title: const Text('Use legacy messaging?'),
+              content: const Text(
+                  'BRO’s server can read messages, drafts, reactions and files sent using this mode. Enable it for this session only. Do not share sensitive information here.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(dialog, false),
+                    child: const Text('Keep read-only')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(dialog, true),
+                    child: const Text('Enable legacy messaging'))
+              ],
+            ));
+    if (!mounted || Supa.currentUser?.id != owner || accept != true)
+      return false;
     setState(() => LegacyMessaging.allow(owner));
     unawaited(_restorePendingMessages());
     return true;
@@ -449,8 +463,13 @@ class _ChatScreenState extends State<ChatScreen> {
     final draft = _ctrl.text;
     final content = draft.trim();
     final senderId = Supa.currentUser?.id;
-    if (senderId == null || content.isEmpty || _sendingMessage || !await _allowLegacyMessaging() ||
-        !mounted || Supa.currentUser?.id != senderId || _sendingMessage) return;
+    if (senderId == null ||
+        content.isEmpty ||
+        _sendingMessage ||
+        !await _allowLegacyMessaging() ||
+        !mounted ||
+        Supa.currentUser?.id != senderId ||
+        _sendingMessage) return;
 
     setState(() => _sendingMessage = true);
     _typingTimer?.cancel();
@@ -680,8 +699,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           return ListTile(
                             contentPadding: EdgeInsets.zero,
                             title: Text(item.content,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis),
+                                maxLines: 2, overflow: TextOverflow.ellipsis),
                             subtitle: Text(
                               'Sends ${DateFormat.yMMMd().add_jm().format(item.scheduledAt.toLocal())}',
                             ),
@@ -1063,7 +1081,11 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     ).then((emoji) async {
       if (mounted && emoji is String && await _allowLegacyMessaging()) {
-        try { await Supa.addReaction(message.id, emoji); } catch (_) { if (mounted) _unsupported('Could not add reaction.'); }
+        try {
+          await Supa.addReaction(message.id, emoji);
+        } catch (_) {
+          if (mounted) _unsupported('Could not add reaction.');
+        }
       }
     });
   }
@@ -1078,7 +1100,8 @@ class _ChatScreenState extends State<ChatScreen> {
     if (hasReacted) {
       await Supa.removeReaction(messageId, emoji);
     } else {
-      if (mounted && await _allowLegacyMessaging()) await Supa.addReaction(messageId, emoji);
+      if (mounted && await _allowLegacyMessaging())
+        await Supa.addReaction(messageId, emoji);
     }
   }
 
@@ -1322,7 +1345,8 @@ class _ChatScreenState extends State<ChatScreen> {
         if (updated != null &&
             updated.isNotEmpty &&
             updated != message.content) {
-          if (await _allowLegacyMessaging()) await Supa.updateMessage(message.id, updated);
+          if (await _allowLegacyMessaging())
+            await Supa.updateMessage(message.id, updated);
         }
       }
       if (action == 'delete_for_everyone' && mounted) {
@@ -1679,8 +1703,12 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendAttachment(
       Uint8List bytes, String name, String mimeType) async {
     final senderId = Supa.currentUser?.id;
-    if (senderId == null || _sendingMessage || !await _allowLegacyMessaging() || !mounted ||
-        Supa.currentUser?.id != senderId || _sendingMessage) return;
+    if (senderId == null ||
+        _sendingMessage ||
+        !await _allowLegacyMessaging() ||
+        !mounted ||
+        Supa.currentUser?.id != senderId ||
+        _sendingMessage) return;
     if (bytes.length > 20 * 1024 * 1024) {
       _unsupported('Files must be 20 MB or smaller.');
       return;
@@ -1862,10 +1890,17 @@ class _ChatScreenState extends State<ChatScreen> {
               ? 'Legacy messaging enabled for this session.'
               : 'You can read history. Sending requires opting in.'),
           trailing: LegacyMessaging.allowed(Supa.currentUser?.id)
-              ? null : TextButton(onPressed: _allowLegacyMessaging, child: const Text('Review')),
+              ? null
+              : TextButton(
+                  onPressed: _allowLegacyMessaging,
+                  child: const Text('Review')),
         ),
-        Expanded(child: LayoutBuilder(builder: (context, constraints) =>
-            constraints.maxWidth > _adaptiveBreakpoint ? _buildLargeScreenChat(context) : _buildSmallScreenChat(context))),
+        Expanded(
+            child: LayoutBuilder(
+                builder: (context, constraints) =>
+                    constraints.maxWidth > _adaptiveBreakpoint
+                        ? _buildLargeScreenChat(context)
+                        : _buildSmallScreenChat(context))),
       ]),
     );
   }
@@ -1943,7 +1978,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   if (snapshot.hasError) {
                     return _ErrorState(
                         message: "Couldn't load this chat",
-                        detail: 'A quick retry usually does the trick.',
+                        detail: kLoadFailedDetail,
                         onRetry: () => setState(() {}));
                   }
                   if (display.isEmpty) {
@@ -2131,7 +2166,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         if (snapshot.hasError) {
                           return _ErrorState(
                               message: "Couldn't load this chat",
-                              detail: 'A quick retry usually does the trick.',
+                              detail: kLoadFailedDetail,
                               onRetry: _onRetry);
                         }
                         if (messages.isEmpty) {

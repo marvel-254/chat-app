@@ -78,8 +78,7 @@ class _StatusScreenState extends State<StatusScreen> {
           return AppErrorState(
             title: "Statuses didn't load",
             detail: friendlyErrorMessage(snapshot.error,
-                fallback:
-                    'Give it another try - updates usually come right back.'),
+                fallback: kLoadFailedDetail),
             onRetry: () => setState(() => _token++),
           );
         }

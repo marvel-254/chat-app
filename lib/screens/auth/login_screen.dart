@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_colors.dart' as app_colors;
 import '../../services/supabase.dart';
+import '../../services/connection_monitor.dart';
 import '../../ui/errors.dart';
 import '../../ui/motion.dart';
 import '../../ui/auth_backdrop.dart';
@@ -75,6 +76,13 @@ class _LoginScreenState extends State<LoginScreen> {
       final validation = _validateForm();
       if (validation != null) {
         return; // inline errors already set; no banner needed
+      }
+      if (!ConnectionMonitor.isOnline.value) {
+        if (mounted) {
+          setState(() =>
+              _error = "You're offline. Check your connection and try again.");
+        }
+        return;
       }
       final email = _email.text.trim();
       final password = _password.text;
@@ -224,13 +232,25 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           const SizedBox(height: 24),
 
+          ValueListenableBuilder<bool>(
+            valueListenable: ConnectionMonitor.isOnline,
+            builder: (context, online, _) {
+              if (online) return const SizedBox.shrink();
+              return const Padding(
+                padding: EdgeInsets.only(bottom: 12),
+                child: AuthNoticeBanner(
+                    message: "You're offline. Signing in needs a connection."),
+              );
+            },
+          ),
           if (_error != null)
             Semantics(
               liveRegion: true,
               child: SoftErrorBanner(message: _error!),
             ),
           if (_notice != null)
-            Semantics(liveRegion: true, child: AuthNoticeBanner(message: _notice!)),
+            Semantics(
+                liveRegion: true, child: AuthNoticeBanner(message: _notice!)),
 
           // Fields
           if (_isSignUp) ...[
@@ -261,8 +281,9 @@ class _LoginScreenState extends State<LoginScreen> {
             keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.next,
             isGuideTarget: _guideTarget == 'email',
-            autofillHints:
-                isSignIn ? const [AutofillHints.email] : const [AutofillHints.newUsername, AutofillHints.email],
+            autofillHints: isSignIn
+                ? const [AutofillHints.email]
+                : const [AutofillHints.newUsername, AutofillHints.email],
             autocorrect: false,
             errorText: _fieldErrors['email'],
             onFocus: () {
@@ -322,9 +343,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           const SizedBox(height: 16),
           TextButton(
-            onPressed: _loading
-                ? null
-                : () => _switchMode(!_isSignUp),
+            onPressed: _loading ? null : () => _switchMode(!_isSignUp),
             child: Text.rich(
               TextSpan(
                 style: const TextStyle(fontSize: 14, color: app_colors.P.muted),
@@ -349,8 +368,7 @@ class _LoginScreenState extends State<LoginScreen> {
               style: AppText.caption),
           if (buildNumber.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text('BRO · build $buildNumber',
-                style: AppText.caption),
+            Text('BRO · build $buildNumber', style: AppText.caption),
           ],
         ],
       ),
@@ -413,12 +431,11 @@ class _LoginScreenState extends State<LoginScreen> {
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              keyboardDismissBehavior:
-                  ScrollViewKeyboardDismissBehavior.onDrag,
-              padding: EdgeInsets.fromLTRB(
-                  24, keyboardOpen ? 12 : 20, 24, 24),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: EdgeInsets.fromLTRB(24, keyboardOpen ? 12 : 20, 24, 24),
               child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: wide && showHero ? 940 : 460),
+                constraints:
+                    BoxConstraints(maxWidth: wide && showHero ? 940 : 460),
                 child: content,
               ),
             ),

@@ -8,6 +8,7 @@ import '../models/call_record.dart';
 import '../models/profile.dart';
 import '../services/calls.dart';
 import '../services/connection_monitor.dart';
+import '../ui/errors.dart';
 import '../services/supabase.dart';
 import '../widgets/responsive_app_shell.dart';
 
@@ -154,8 +155,7 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
     } catch (_) {
       if (_current)
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(
-                'Could not remove history. Check your connection and try again.')));
+            content: Text('Could not remove history. $kRetryDetail')));
     } finally {
       _syncing = false;
     }
@@ -287,7 +287,8 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
             subtitle:
                 const Text('Only history saved on this device is available.'),
             trailing: TextButton(
-                onPressed: online ? _load : null, child: const Text('Retry')),
+                onPressed: online ? _load : null,
+                child: const Text('Try again')),
           ),
         Expanded(
             child: _loading && visible.isEmpty

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import '../../ui/errors.dart';
 import '../../theme/app_colors.dart' as app_colors;
 import '../../services/search_safety.dart';
 import '../../services/supabase.dart';
@@ -210,8 +211,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
         debugPrint('Search failed: $e');
         if (!mounted || requestId != _searchRequestId) return;
         setState(() {
-          _searchError =
-              "We couldn't search just now. Check your connection and try again.";
+          _searchError = kLoadFailedDetail;
           _searchLoading = false;
           _searchCompleted = true;
         });
@@ -633,8 +633,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                 if (snapshot.hasError) {
                   return _ErrorState(
                       message: "Your chats didn't load",
-                      detail:
-                          'Give it another try — they usually come right back.',
+                      detail: kLoadFailedDetail,
                       onRetry: _reloadConversations);
                 }
                 final allConversations = snapshot.data ?? [];

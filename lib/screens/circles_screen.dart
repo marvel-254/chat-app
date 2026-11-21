@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../ui/states.dart';
+import '../ui/errors.dart';
 import '../ui/motion.dart';
 import '../models/circle.dart';
 import '../services/circles.dart';
@@ -225,7 +226,8 @@ class _CirclesScreenState extends State<CirclesScreen> {
                 : _error != null
                     ? AppErrorState(
                         title: "We couldn't load your circles",
-                        detail: _error,
+                        detail: friendlyErrorMessage(_error,
+                            fallback: kLoadFailedDetail),
                         onRetry: _loadCircles,
                       )
                     : _circles.isEmpty

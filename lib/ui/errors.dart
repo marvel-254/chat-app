@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+const String kRetryDetail = 'Check your connection and try again.';
+const String kLoadFailedDetail =
+    "We couldn't load this right now. Check your connection and try again.";
+
 /// Maps thrown errors to short, calm copy. Never returns stack traces,
 /// PostgREST guts, or `Exception: ...` prefixes.
 String friendlyErrorMessage(
