@@ -8,11 +8,9 @@
 ///  * no primitive owns a repeating [AnimationController] — a scene drives one
 ///    loop controller and feeds its value in, so the whole composition stays on
 ///    a single timeline (and tests can settle);
-///  * poses are pure functions of a `0..1` phase, so the choreography can be
-///    asserted without pumping a single frame.
+///  * the props themselves stay still in composition terms — one object per
+///    screen — so the motion only ever supports it, never competes with it.
 library;
-
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -106,75 +104,6 @@ class _HeroParallaxState extends State<HeroParallax> {
       },
     );
   }
-}
-
-/// A resolved position on the hero's elliptical orbit.
-///
-/// [depth] is `-1` when the prop is at the far side of the loop and `1` at the
-/// near side, so callers can split props into "behind the mascot" and "in front
-/// of the mascot" without recomputing the trigonometry.
-@immutable
-class HeroOrbitPose {
-  const HeroOrbitPose({
-    required this.offset,
-    required this.depth,
-    required this.scale,
-    required this.yaw,
-    required this.roll,
-  });
-
-  /// Displacement from the orbit centre, in logical pixels.
-  final Offset offset;
-
-  /// `-1` (far) … `1` (near).
-  final double depth;
-
-  /// Depth-based scale between the configured minimum and maximum.
-  final double scale;
-
-  /// Y-axis rotation in radians — the fake-3D tumble.
-  final double yaw;
-
-  /// Z-axis rotation in radians — the lean into the loop.
-  final double roll;
-
-  /// Resolves a pose for [phase] (`0..1`, one full loop per unit).
-  ///
-  /// [turns] lets a prop orbit faster than the hero loop, [angleOffset] staggers
-  /// props around the same path, and the radius pair shapes the ellipse.
-  static HeroOrbitPose at({
-    required double phase,
-    double angleOffset = 0,
-    double turns = 1,
-    double radiusX = 30,
-    double radiusY = 10,
-    double minScale = 0.84,
-    double maxScale = 1.06,
-    double yawAmplitude = 0.22,
-    double rollAmplitude = 0.1,
-  }) {
-    final angle = phase * math.pi * 2 * turns + angleOffset;
-    final depth = math.sin(angle);
-    final nearness = (depth + 1) / 2;
-    return HeroOrbitPose(
-      offset: Offset(math.cos(angle) * radiusX, depth * radiusY),
-      depth: depth,
-      scale: minScale + (maxScale - minScale) * nearness,
-      yaw: math.cos(angle) * yawAmplitude,
-      roll: math.sin(angle * 0.5) * rollAmplitude,
-    );
-  }
-
-  /// True when the prop should paint behind the mascot.
-  bool get isBehind => depth < 0;
-
-  /// Paint order key: far props first.
-  double get sortKey => depth;
-
-  @override
-  String toString() =>
-      'HeroOrbitPose(offset: $offset, depth: ${depth.toStringAsFixed(2)}, '
-      'scale: ${scale.toStringAsFixed(2)})';
 }
 
 /// Staggered fade + rise + settle entrance driven by a parent animation.

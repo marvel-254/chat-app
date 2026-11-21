@@ -383,7 +383,6 @@ class _LoginScreenState extends State<LoginScreen> {
     final wide = size.width >= app_colors.adaptiveBreakpoint;
     final reduce = reduceMotionOf(context);
     final showHero = !keyboardOpen && !compactHeight;
-    final showFeatureCards = size.height >= 760;
 
     final form = ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 420),
@@ -400,7 +399,6 @@ class _LoginScreenState extends State<LoginScreen> {
             child: WelcomeHero(
               isSignUp: _isSignUp,
               animate: !reduce,
-              showFeatureCards: showFeatureCards,
             ),
           ),
           const SizedBox(width: 48),
@@ -415,7 +413,6 @@ class _LoginScreenState extends State<LoginScreen> {
             WelcomeHero(
               isSignUp: _isSignUp,
               animate: !reduce,
-              showFeatureCards: showFeatureCards,
             ),
             const SizedBox(height: 28),
           ] else if (!keyboardOpen) ...[

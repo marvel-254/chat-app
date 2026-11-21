@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:bro_chat/screens/auth/widgets/auth_prop.dart';
 import 'package:bro_chat/screens/auth/widgets/welcome_hero.dart';
 import 'package:bro_chat/theme/app_colors.dart' as app_colors;
 
@@ -15,7 +16,6 @@ Finder _image(String asset) => find.byWidgetPredicate(
 Widget _host({
   bool disableAnimations = false,
   bool isSignUp = false,
-  bool showFeatureCards = true,
 }) {
   return MaterialApp(
     theme: ThemeData.dark(useMaterial3: true),
@@ -28,10 +28,7 @@ Widget _host({
       body: Center(
         child: SizedBox(
           width: 620,
-          child: WelcomeHero(
-            isSignUp: isSignUp,
-            showFeatureCards: showFeatureCards,
-          ),
+          child: WelcomeHero(isSignUp: isSignUp),
         ),
       ),
     ),
@@ -39,7 +36,7 @@ Widget _host({
 }
 
 void main() {
-  testWidgets('renders the four regenerated hero props and the copy',
+  testWidgets('the login hero is one prop plus the welcome copy',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(900, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -50,17 +47,13 @@ void main() {
     expect(find.text('Good to see you, Bro.'), findsOneWidget);
     expect(find.text('All your conversations, right here.'), findsOneWidget);
     expect(find.text('BRO  ·  YOUR PEOPLE, CLOSER'), findsOneWidget);
-    expect(find.text('Private by design'), findsOneWidget);
-    expect(find.text('Always in sync'), findsOneWidget);
 
-    for (final asset in const [
-      HeroArt.mascot,
-      HeroArt.ball,
-      HeroArt.gamepad,
-      HeroArt.supercar,
-    ]) {
-      expect(_image(asset), findsOneWidget, reason: 'missing $asset');
-    }
+    // Exactly one prop, and only the mascot.
+    expect(find.byType(AuthProp), findsOneWidget);
+    expect(_image(AuthArt.mascot), findsOneWidget);
+    expect(_image(AuthArt.chat), findsNothing);
+    expect(_image(AuthArt.circle), findsNothing);
+    expect(_image(AuthArt.bolt), findsNothing);
   });
 
   testWidgets('sign-up variant swaps the hero copy', (tester) async {
@@ -75,46 +68,32 @@ void main() {
       find.text('Make room for the conversations that matter.'),
       findsOneWidget,
     );
+    expect(_image(AuthArt.mascot), findsOneWidget);
   });
 
-  testWidgets('feature cards can be switched off for short screens',
-      (tester) async {
-    await tester.binding.setSurfaceSize(const Size(900, 900));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
-    await tester.pumpWidget(_host(showFeatureCards: false));
-    await tester.pump();
-
-    expect(find.text('Private by design'), findsNothing);
-    expect(find.text('Always in sync'), findsNothing);
-    expect(_image(HeroArt.mascot), findsOneWidget);
-  });
-
-  testWidgets('reduce motion settles on a static rest pose', (tester) async {
+  testWidgets('reduce motion settles on a still prop', (tester) async {
     await tester.binding.setSurfaceSize(const Size(900, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     await tester.pumpWidget(_host(disableAnimations: true));
-    // If any loop kept running this would time out — the whole point of the
-    // reduce-motion rest pose.
+    // If the idle float kept running this would time out.
     await tester.pumpAndSettle();
 
     expect(find.text('Good to see you, Bro.'), findsOneWidget);
-    expect(_image(HeroArt.mascot), findsOneWidget);
+    expect(_image(AuthArt.mascot), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('the expressive loop keeps running without errors',
-      (tester) async {
+  testWidgets('the idle float runs without errors', (tester) async {
     await tester.binding.setSurfaceSize(const Size(900, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     await tester.pumpWidget(_host());
     await tester.pump(const Duration(milliseconds: 650));
-    await tester.pump(const Duration(seconds: 3));
+    await tester.pump(const Duration(seconds: 4));
 
     expect(find.text('Good to see you, Bro.'), findsOneWidget);
-    expect(_image(HeroArt.supercar), findsOneWidget);
+    expect(_image(AuthArt.mascot), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
