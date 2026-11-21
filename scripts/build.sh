@@ -67,7 +67,7 @@ case "$TARGET" in
     ;;
   web)
     # Build Flutter web app with base-href for the PWA subdirectory
-    flutter build web --release --base-href "$BASE_HREF" "${DEFINES[@]}"
+    flutter build web --release --source-maps --base-href "$BASE_HREF" "${DEFINES[@]}"
     # Move compiled Flutter app into build/web/app/ (PWA lives under /app/)
     mkdir -p build/web/app
     for entry in $(ls build/web); do

@@ -46,6 +46,28 @@ jobs:
           test -n "$SUPABASE_ANON_KEY"
           ./scripts/build.sh web
 
+      - name: Upload source maps to Sentry
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: omix-systems
+          SENTRY_PROJECT: bro
+        run: |
+          set -euo pipefail
+          if [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
+            echo "::notice::SENTRY_AUTH_TOKEN is not set; skipping source map upload"
+            exit 0
+          fi
+          VERSION="$(awk '/^version:/{print $2; exit}' pubspec.yaml)"
+          RELEASE="bro@${VERSION:-dev}"
+          DIST="${VERSION##*+}"
+          test -s build/web/app/main.dart.js.map
+          npx --yes @sentry/cli@3.8.2 sourcemaps upload \
+            --org "$SENTRY_ORG" \
+            --project "$SENTRY_PROJECT" \
+            --release "$RELEASE" \
+            --dist "$DIST" \
+            build/web/app
+
       - name: Add SPA fallback for client-side routing at /app/
         # Flutter uses hash-free routing (e.g. /chat-app/app/chat/<id>). GitHub Pages serves
         # a custom 404.html for unknown paths. Copy the PWA index.html to 404.html
