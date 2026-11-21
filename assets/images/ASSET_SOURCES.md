@@ -21,8 +21,10 @@ Total: ~191 KB of WebP.
 - **Lighting:** one studio key from the upper left with a lime rim light. No
   baked floor, no glow spill into the background — the app adds its own halo
   and contact shadow so the prop sits on the backdrop instead of on a card.
-- **Composition:** one object, centred, nothing orbiting it and nothing staged
-  around it. Props read as objects in a room, not as a set of easter eggs.
+- **Composition:** one object, nothing orbiting it and nothing staged around
+  it. Props read as objects in a room, not as a set of easter eggs. The login
+  prop is cropped at the hip because she is used at full-page scale, where a
+  full-body cut would make her read as a sticker rather than the scene.
 - **Pose:** asymmetric and candid — weight on one hip, head tilted, one hand in
   a pocket. Props are never shot as a symmetrical, front-on asset sheet: a
   dead-straight stance reads as a stock model next to a live headline.
