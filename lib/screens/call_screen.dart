@@ -143,10 +143,11 @@ class _CallScreenState extends State<CallScreen> {
           _signals = _signals.then((_) => _onSignal(payload)).catchError((
             Object _,
           ) {
-            if (!_finished)
+            if (!_finished) {
               unawaited(
                 _finish(action: 'fail', error: 'Call signaling failed.'),
               );
+            }
           });
         },
       )
@@ -349,7 +350,9 @@ class _CallScreenState extends State<CallScreen> {
     if (_finished ||
         pc == null ||
         payload['to'] != _myId ||
-        payload['from'] != _peerId) return;
+        payload['from'] != _peerId) {
+      return;
+    }
     final raw = payload['data'];
     if (raw is! Map) return;
     final kind = payload['kind'];
@@ -383,7 +386,9 @@ class _CallScreenState extends State<CallScreen> {
       final index = raw['sdpMLineIndex'];
       if (candidate is! String ||
           (mid != null && mid is! String) ||
-          (index != null && index is! int)) return;
+          (index != null && index is! int)) {
+        return;
+      }
       final ice = RTCIceCandidate(candidate, mid as String?, index as int?);
       if (_remoteDescriptionPending) {
         if (_pendingCandidates.length < 128) _pendingCandidates.add(ice);
@@ -398,8 +403,9 @@ class _CallScreenState extends State<CallScreen> {
   Future<void> _checkNetworkChange() async {
     try {
       final state = await _peerConnection?.getConnectionState();
-      if (state != RTCPeerConnectionState.RTCPeerConnectionStateConnected)
+      if (state != RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
         _beginRecovery();
+      }
     } catch (_) {}
   }
 
@@ -462,8 +468,9 @@ class _CallScreenState extends State<CallScreen> {
           await Calls.advance(widget.callId, 'connected');
         } catch (_) {}
       }
-      if (Supa.currentUser?.id == _myId)
+      if (Supa.currentUser?.id == _myId) {
         await Calls.advance(widget.callId, action);
+      }
     } catch (_) {}
   }
 
@@ -477,19 +484,23 @@ class _CallScreenState extends State<CallScreen> {
       if (_finished) return;
       final selected = <Object?>{};
       for (final report in reports) {
-        if (report.type == 'transport')
+        if (report.type == 'transport') {
           selected.add(report.values['selectedCandidatePairId']);
+        }
       }
       for (final pair
           in reports.where((report) => report.type == 'candidate-pair')) {
         if (!selected.contains(pair.id) &&
             !(pair.values['nominated'] == true &&
-                pair.values['state'] == 'succeeded')) continue;
+                pair.values['state'] == 'succeeded')) {
+          continue;
+        }
         for (final local in reports
             .where((report) => report.id == pair.values['localCandidateId'])) {
           final type = local.values['candidateType'];
-          if (const {'host', 'srflx', 'prflx', 'relay'}.contains(type))
+          if (const {'host', 'srflx', 'prflx', 'relay'}.contains(type)) {
             _diagnostic('candidate_$type');
+          }
         }
       }
     } catch (_) {/* Unsupported or closing connections do not expose stats. */}
@@ -603,8 +614,9 @@ class _CallScreenState extends State<CallScreen> {
     if (_finished) return;
     _finished = true;
     _clock.stop();
-    if (_everConnected)
+    if (_everConnected) {
       _diagnostic('connected_seconds_${_clock.elapsed.inSeconds}');
+    }
     _deadline?.cancel();
     _poll?.cancel();
     _ticker?.cancel();
@@ -624,20 +636,22 @@ class _CallScreenState extends State<CallScreen> {
       unawaited(_advanceQuietly(action));
     }
     final channel = _channel;
-    if (channel != null)
+    if (channel != null) {
       unawaited(
         _release(() async {
           await _client.removeChannel(channel);
         }),
       );
+    }
     final pc = _peerConnection;
-    if (pc != null)
+    if (pc != null) {
       unawaited(
         _release(() async {
           await pc.close();
           await pc.dispose();
         }),
       );
+    }
     final local = _localStream;
     if (local != null) unawaited(_releaseStream(local));
     unawaited(
@@ -882,8 +896,9 @@ class _CallScreenState extends State<CallScreen> {
                                       } else {
                                         await Helper.setSpeakerphoneOn(false);
                                       }
-                                      if (mounted && !_finished)
+                                      if (mounted && !_finished) {
                                         setState(() => _speaker = next);
+                                      }
                                     } catch (_) {}
                                   },
                           ),

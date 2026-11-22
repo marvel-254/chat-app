@@ -132,10 +132,12 @@ class _CirclesScreenState extends State<CirclesScreen> {
         setState(() {
           _circles.removeWhere((c) => c.id == circleId);
         });
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Circle deleted')),
         );
       } catch (e) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to delete circle: $e')),
         );

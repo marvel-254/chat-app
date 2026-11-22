@@ -31,8 +31,9 @@ class LegacyMessageCodec {
       String content, String format, Uint8List? historicalKey) {
     if (format == plaintext) return content;
     if (format != unversioned) return 'Unsupported message format';
-    if (historicalKey == null || content.length < 38 || content.length > 100000)
+    if (historicalKey == null || content.length < 38 || content.length > 100000) {
       return content;
+    }
     try {
       final packed = base64Decode(content);
       if (packed.length < 28) return content;

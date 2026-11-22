@@ -179,8 +179,9 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   }
 
   void _reloadSuggestions() {
-    if (mounted)
+    if (mounted) {
       setState(() => _suggestions = Supa.getFriendSuggestions(limit: 8));
+    }
   }
 
   void _onSearchChanged(String value, {bool immediate = false}) {
@@ -400,7 +401,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
       return ListView(
         shrinkWrap: true,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        children: [_SearchSkeleton()],
+        children: [_searchSkeleton()],
       );
     }
     if (_searchError != null) {
@@ -408,7 +409,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
         shrinkWrap: true,
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
         children: [
-          _SearchError(
+          _searchErrorWidget(
             message: _searchError!,
             onRetry: () => _onSearchChanged(_search.text),
           ),
@@ -419,7 +420,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
       return ListView(
         shrinkWrap: true,
         children: [
-          _SearchEmptyState(query: _search.text.trim(), onClear: _clearSearch),
+          _searchEmptyState(query: _search.text.trim(), onClear: _clearSearch),
         ],
       );
     }
@@ -447,7 +448,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
         return FadeSlideIn(
           key: ValueKey(user.id),
           index: (index - 1).clamp(0, 7),
-          child: _SearchResultTile(
+          child: _searchResultTile(
             user: user,
             query: sanitizeSearchTerm(_search.text),
             isOnline: Presence.isOnline(user.id),
@@ -582,7 +583,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                             FadeSlideIn(
                               index: idx,
                               offset: const Offset(0.08, 0),
-                              child: _SuggestionTile(
+                              child: _suggestionTile(
                                 user: people[idx],
                                 onTap: () => _startDM(people[idx].userId),
                                 onLongPress: () => context
@@ -933,7 +934,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   // ===== Search UI Components =====
 
   /// Skeleton loader for search results.
-  Widget _SearchSkeleton() {
+  Widget _searchSkeleton() {
     final scheme = Theme.of(context).colorScheme;
     final block = scheme.onSurface.withValues(alpha: 0.08);
     return Column(
@@ -983,7 +984,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   }
 
   /// Error state for search.
-  Widget _SearchError(
+  Widget _searchErrorWidget(
       {required String message, required VoidCallback onRetry}) {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1017,7 +1018,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   }
 
   /// Empty state for search results.
-  Widget _SearchEmptyState(
+  Widget _searchEmptyState(
       {required String query, required VoidCallback onClear}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 32),
@@ -1070,7 +1071,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   }
 
   /// Individual search result tile.
-  Widget _SearchResultTile({
+  Widget _searchResultTile({
     required Profile user,
     required String query,
     required bool isOnline,
@@ -1211,7 +1212,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   }
 
   /// Suggestion tile for 'People you may know' section.
-  Widget _SuggestionTile({
+  Widget _suggestionTile({
     required FriendSuggestion user,
     required VoidCallback onTap,
     required VoidCallback onLongPress,

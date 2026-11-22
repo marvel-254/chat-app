@@ -1,9 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
@@ -804,8 +802,9 @@ class Supa {
     final uid = currentUser?.id;
     if (uid == null) throw StateError('Sign in to change your profile photo.');
     final format = await validateAvatarImage(bytes);
-    if (currentUser?.id != uid)
+    if (currentUser?.id != uid) {
       throw StateError('Your session changed. Try again.');
+    }
 
     // profiles has no SELECT grant (privacy masking lives in visible_profiles).
     final profile = await client
@@ -813,8 +812,9 @@ class Supa {
         .select('avatar_url')
         .eq('id', uid)
         .single();
-    if (currentUser?.id != uid)
+    if (currentUser?.id != uid) {
       throw StateError('Your session changed. Try again.');
+    }
     final bucket = client.storage.from('avatars');
     final previous = managedAvatarPath(
       profile['avatar_url'] as String?,
@@ -830,8 +830,9 @@ class Supa {
     );
     final url = bucket.getPublicUrl(objectPath);
     try {
-      if (currentUser?.id != uid)
+      if (currentUser?.id != uid) {
         throw StateError('Your session changed. Try again.');
+      }
       // Returning the row confirms the update wasn't silently filtered by RLS.
       await client
           .from('profiles')

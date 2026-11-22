@@ -58,7 +58,9 @@ class _ConversationListPlaceholder extends StatelessWidget {
   const _ConversationListPlaceholder();
   @override
   Widget build(BuildContext context) {
-    context.go('/conversations');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.go('/conversations');
+    });
     return const Scaffold();
   }
 }

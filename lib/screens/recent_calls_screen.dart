@@ -35,17 +35,19 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
     super.initState();
     _owner = Supa.currentUser!.id;
     _auth = Supa.authStateChanges.listen((_) {
-      if (mounted && !_current)
+      if (mounted && !_current) {
         setState(() {
           _records = [];
           _peers.clear();
         });
+      }
     });
     unawaited(_initialize());
     ConnectionMonitor.isOnline.addListener(_networkChanged);
     _refresh = Timer.periodic(const Duration(seconds: 12), (_) {
-      if (_current && ModalRoute.of(context)?.isCurrent == true)
+      if (_current && ModalRoute.of(context)?.isCurrent == true) {
         unawaited(_load());
+      }
     });
   }
 
@@ -95,7 +97,7 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
               .inFilter('id', ids.toList())
               .timeout(Calls.timeout);
           profilesFresh = true;
-          if (_current)
+          if (_current) {
             setState(() {
               _peers.clear();
               for (final row in profiles) {
@@ -103,6 +105,7 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
                 _peers[profile.id] = profile;
               }
             });
+          }
         } catch (_) {
           // History remains useful if profile lookup is unavailable.
         }
@@ -117,8 +120,9 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
       await Calls.cache(_owner, enriched);
       if (_current && !_opened && highlight != null) {
         _opened = true;
-        if (target != null && target.status.terminal)
+        if (target != null && target.status.terminal) {
           unawaited(_details(target));
+        }
       }
     } catch (_) {
       if (_current) setState(() => _unavailable = true);
@@ -149,13 +153,16 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
     _syncing = true;
     try {
       await Calls.hide(_owner, id);
-      if (_current)
+      if (_current) {
         setState(() => _records =
             _records.where((record) => id != null && record.id != id).toList());
+      }
     } catch (_) {
-      if (_current)
+      if (!mounted) return;
+      if (_current) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Could not remove history. $kRetryDetail')));
+      }
     } finally {
       _syncing = false;
     }
@@ -228,6 +235,7 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
     if (!_current) return;
     if (choice == 'remove') return _remove(record.id);
     if (peer == null) return;
+    if (!mounted) return;
     if (choice == 'profile') {
       unawaited(context.push('/profile/${peer.id}'));
     } else if (choice == 'voice' || choice == 'video') {

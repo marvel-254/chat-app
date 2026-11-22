@@ -124,12 +124,11 @@ class _CircleDetailScreenState extends State<CircleDetailScreen> {
     if (result != null && result.isNotEmpty) {
       // Search for user by username
       if (!mounted) return;
-      final ctx = context;
       final profiles = await Supa.searchUsers(result);
       if (!mounted) return;
       if (profiles.isEmpty) {
         if (!mounted) return;
-        ScaffoldMessenger.of(ctx).showSnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('User not found')),
         );
         return;
@@ -300,6 +299,7 @@ class _CircleDetailScreenState extends State<CircleDetailScreen> {
     if (confirmed == true && _circle != null) {
       try {
         await Circles.deleteCircle(_circle!.id);
+        if (!mounted) return;
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Circle deleted')),

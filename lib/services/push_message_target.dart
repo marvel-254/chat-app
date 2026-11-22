@@ -37,7 +37,9 @@ class PushMessageTarget {
       'incoming_call',
       'missed_call',
       'friendship_reminder',
-    }.contains(kind)) return null;
+    }.contains(kind)) {
+      return null;
+    }
     final call = data['call_id'];
     final isCall = kind == 'incoming_call' || kind == 'missed_call';
     if (isCall && (!isId(call) || !isId(recipient))) return null;

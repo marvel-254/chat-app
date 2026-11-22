@@ -87,6 +87,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _showJumpToBottom = false;
   String? _unreadDividerId;
   bool _unreadDividerResolved = false;
+  // ignore: prefer_function_declarations_over_variables
   late final VoidCallback _chatBackgroundListener = () => _loadChatBackground();
   late final VoidCallback _outboxConnectivityListener = _onConnectivityChanged;
   StreamSubscription<AuthState>? _outboxAuthSubscription;
@@ -128,7 +129,9 @@ class _ChatScreenState extends State<ChatScreen> {
     final senderId = Supa.currentUser?.id;
     if (!LegacyMessaging.allowed(senderId) ||
         senderId == null ||
-        !ConnectionMonitor.isOnline.value) return;
+        !ConnectionMonitor.isOnline.value) {
+      return;
+    }
     bool isSenderActive() => Supa.currentUser?.id == senderId;
     await MessageOutbox.flush(
       (item) async {
@@ -455,8 +458,9 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: const Text('Enable legacy messaging'))
               ],
             ));
-    if (!mounted || Supa.currentUser?.id != owner || accept != true)
+    if (!mounted || Supa.currentUser?.id != owner || accept != true) {
       return false;
+    }
     setState(() => LegacyMessaging.allow(owner));
     unawaited(_restorePendingMessages());
     return true;
@@ -472,7 +476,9 @@ class _ChatScreenState extends State<ChatScreen> {
         !await _allowLegacyMessaging() ||
         !mounted ||
         Supa.currentUser?.id != senderId ||
-        _sendingMessage) return;
+        _sendingMessage) {
+      return;
+    }
 
     setState(() => _sendingMessage = true);
     _typingTimer?.cancel();
@@ -1111,8 +1117,9 @@ class _ChatScreenState extends State<ChatScreen> {
     if (hasReacted) {
       await Supa.removeReaction(messageId, emoji);
     } else {
-      if (mounted && await _allowLegacyMessaging())
+      if (mounted && await _allowLegacyMessaging()) {
         await Supa.addReaction(messageId, emoji);
+      }
     }
   }
 
@@ -1356,8 +1363,9 @@ class _ChatScreenState extends State<ChatScreen> {
         if (updated != null &&
             updated.isNotEmpty &&
             updated != message.content) {
-          if (await _allowLegacyMessaging())
+          if (await _allowLegacyMessaging()) {
             await Supa.updateMessage(message.id, updated);
+          }
         }
       }
       if (action == 'delete_for_everyone' && mounted) {
@@ -1719,7 +1727,9 @@ class _ChatScreenState extends State<ChatScreen> {
         !await _allowLegacyMessaging() ||
         !mounted ||
         Supa.currentUser?.id != senderId ||
-        _sendingMessage) return;
+        _sendingMessage) {
+      return;
+    }
     if (bytes.length > 20 * 1024 * 1024) {
       _unsupported('Files must be 20 MB or smaller.');
       return;

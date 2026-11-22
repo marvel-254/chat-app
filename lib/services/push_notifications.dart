@@ -41,6 +41,7 @@ class PushNotifications {
   static bool _initialized = false;
   static Future<void> _work = Future.value();
   static DateTime? _lastRefresh;
+  static StreamSubscription<AuthState>? _authSub;
 
   static bool get configured => kIsWeb
       ? [
@@ -54,6 +55,7 @@ class PushNotifications {
           defaultTargetPlatform == TargetPlatform.iOS;
 
   static Future<void> initialize({Uri? launchUri}) async {
+    _authSub?.cancel();
     if (_initialized || !configured) return;
     if (kIsWeb) {
       await Firebase.initializeApp(
@@ -85,7 +87,8 @@ class PushNotifications {
       // ignore: deprecated_member_use
       messaging.onTokenRefresh.listen((_) => refresh(force: true));
     }
-    Supa.authStateChanges.listen((state) {
+    // Store subscription to prevent memory leaks
+    _authSub = Supa.authStateChanges.listen((state) {
       if (state.event == AuthChangeEvent.signedOut) {
         _pending = null;
         _suspendedUserId = null;
@@ -122,8 +125,9 @@ class PushNotifications {
   /// Permission must be requested directly from a user gesture on browsers.
   static Future<void> enable() async {
     final owner = _activeUserId;
-    if (!_initialized || owner == null)
+    if (!_initialized || owner == null) {
       throw StateError('Notifications unavailable');
+    }
     final permission = await FirebaseMessaging.instance.requestPermission(
       alert: true,
       badge: true,
@@ -142,8 +146,9 @@ class PushNotifications {
     if (!_initialized || owner == null) return;
     if (!force &&
         _lastRefresh != null &&
-        DateTime.now().difference(_lastRefresh!) < const Duration(minutes: 2))
+        DateTime.now().difference(_lastRefresh!) < const Duration(minutes: 2)) {
       return;
+    }
     _lastRefresh = DateTime.now();
     unawaited(
       _serialize(() => _sync(owner)).catchError((Object _) {
@@ -169,8 +174,8 @@ class PushNotifications {
     if (_activeUserId != owner) return;
     final worker =
         kIsWeb ? Uri.base.resolve('service-worker.js').toString() : null;
-    // ignore: deprecated_member_use
     final token = await messaging
+        // ignore: deprecated_member_use
         .getToken(
           vapidKey: kIsWeb ? webVapidKey : null,
           serviceWorkerScriptPath: worker,
@@ -206,13 +211,14 @@ class PushNotifications {
   static Future<void> unregisterCurrentToken() async {
     final owner = Supa.currentUser?.id;
     if (owner == null || !_initialized) return;
+    _authSub?.cancel();
     _suspendedUserId = owner;
     _pending = null;
     await _serialize(() async {
       await Future.wait([
         _deleteRegistration(owner).catchError((Object _) {}),
-        // ignore: deprecated_member_use
         FirebaseMessaging.instance
+            // ignore: deprecated_member_use
             .deleteToken()
             .timeout(_timeout)
             .catchError((Object _) {}),
@@ -240,7 +246,9 @@ class PushNotifications {
     _pending = null;
     if (await _canShow(target, owner) &&
         _activeUserId == owner &&
-        _once(_opened, target.eventId)) handler(target);
+        _once(_opened, target.eventId)) {
+      handler(target);
+    }
   }
 
   static bool _once(Set<String> seen, String? id) {
@@ -251,8 +259,9 @@ class PushNotifications {
   }
 
   static Future<bool> _canShow(PushMessageTarget target, String owner) async {
-    if (target.recipientUserId != null && target.recipientUserId != owner)
+    if (target.recipientUserId != null && target.recipientUserId != owner) {
       return false;
+    }
     try {
       final member = await Supa.client
           .from('conversation_participants')
@@ -284,7 +293,9 @@ class PushNotifications {
         target == null ||
         !await _canShow(target, owner) ||
         _activeUserId != owner ||
-        !_once(_shown, target.eventId)) return;
+        !_once(_shown, target.eventId)) {
+      return;
+    }
     // Foreground ringing is presented by the call coordinator, not a second notice.
     if (target.incoming) return;
     final messenger = appScaffoldMessengerKey.currentState;

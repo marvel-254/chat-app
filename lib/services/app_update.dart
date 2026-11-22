@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -37,7 +36,9 @@ class AppUpdate {
       numbers.add(int.tryParse(match.group(0)!) ?? -1);
     }
     if (numbers.any((value) => value < 0)) return null;
-    while (numbers.length < 3) numbers.add(0);
+    while (numbers.length < 3) {
+      numbers.add(0);
+    }
     return numbers;
   }
 

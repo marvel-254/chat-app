@@ -41,8 +41,9 @@ class _NotificationSettingsScreenState
   }
 
   void _notice(String text) {
-    if (_current)
+    if (_current) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    }
   }
 
   Future<void> _update(String key, bool enabled) async {

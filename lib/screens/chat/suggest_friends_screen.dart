@@ -517,7 +517,7 @@ class _SuggestFriendsScreenState extends State<SuggestFriendsScreen> {
     if (_searchCompleted && _searchResults.isEmpty) {
       return ListView(
         children: [
-          _SearchEmptyState(query: _search.text.trim(), onClear: _clearSearch),
+          _searchEmptyState(query: _search.text.trim(), onClear: _clearSearch),
         ],
       );
     }
@@ -773,7 +773,7 @@ class _SuggestFriendsScreenState extends State<SuggestFriendsScreen> {
     );
   }
 
-  Widget _SearchEmptyState({required String query, required VoidCallback onClear}) {
+  Widget _searchEmptyState({required String query, required VoidCallback onClear}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 32),
       child: Column(

@@ -288,8 +288,9 @@ final _router = GoRouter(
         loggingIn ||
         (location.startsWith('/call/') &&
             (state.extra is! Profile ||
-                !PushMessageTarget.isId(state.uri.queryParameters['id']))))
+                !PushMessageTarget.isId(state.uri.queryParameters['id'])))) {
       return '/conversations';
+    }
     return null;
   },
 );
@@ -328,7 +329,9 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
     if (owner == null ||
         navigator == null ||
         location.startsWith('/call/') ||
-        !ConnectionMonitor.isOnline.value) return;
+        !ConnectionMonitor.isOnline.value) {
+      return;
+    }
     _checkingIncoming = true;
     try {
       final current = _promptedCall;
@@ -338,7 +341,9 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
         } else {
           final fresh = await Calls.get(current.id);
           if (_promptedCall?.id == current.id &&
-              fresh?.status != CallStatus.ringing) _closeIncoming();
+              fresh?.status != CallStatus.ringing) {
+            _closeIncoming();
+          }
         }
         return;
       }
@@ -354,7 +359,9 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
           !_foreground ||
           _appLocked ||
           !record.expiresAt.isAfter(DateTime.now()) ||
-          _activeLocation.startsWith('/call/')) return;
+          _activeLocation.startsWith('/call/')) {
+          return;
+        }
       final dialog = DialogRoute<bool>(
         context: navigator.context,
         barrierDismissible: false,
@@ -391,7 +398,9 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
               !_foreground ||
               _appLocked ||
               answer == null ||
-              !record.expiresAt.isAfter(DateTime.now())) return;
+              !record.expiresAt.isAfter(DateTime.now())) {
+            return;
+          }
           if (answer) {
             if (!_activeLocation.startsWith(
               '/call/',
