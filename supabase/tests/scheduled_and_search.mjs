@@ -50,7 +50,7 @@ try {
 
   await run(read('../migrations/20261120120000_call_sessions.sql'));
   await run(read('../migrations/20261120130000_push_delivery.sql'));
-  await run(read('../migrations/20261120140000_legacy_message_format.sql'));
+  await run(read('../migrations/20261120140001_legacy_message_format.sql'));
   await run(read('../migrations/20261120150000_calls_push_cutover_compat.sql'));
   await run(read('../migrations/20261120160000_scheduled_message_dispatch.sql'));
   await run(read('../migrations/20261120170000_connection_search.sql'));

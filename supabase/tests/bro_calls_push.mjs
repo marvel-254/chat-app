@@ -18,7 +18,7 @@ try {
   await run(read('./bro_fixture.sql'));
   await run(read('../migrations/20261120120000_call_sessions.sql'));
   await run(read('../migrations/20261120130000_push_delivery.sql'));
-  await run(read('../migrations/20261120140000_legacy_message_format.sql'));
+  await run(read('../migrations/20261120140001_legacy_message_format.sql'));
   await run(`insert into auth.users values ('${a}'),('${b}'),('${c}');
     insert into conversations values ('${dm}');
     insert into conversation_participants values ('${dm}','${a}'),('${dm}','${b}');`);
