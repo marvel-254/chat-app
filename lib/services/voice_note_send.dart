@@ -20,7 +20,8 @@ class VoiceNoteOutcome {
   String? get content =>
       objectPath == null ? null : encodeVoiceNoteContent(objectPath!);
 
-  String? get message => failure == null ? null : voiceNoteFailureMessage(failure!);
+  String? get message =>
+      failure == null ? null : voiceNoteFailureMessage(failure!);
 }
 
 /// Voice notes enter the same durable queue as text. The send callback in

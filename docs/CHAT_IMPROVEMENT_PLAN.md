@@ -1,6 +1,6 @@
 # Chat improvement plan
 
-Status: proposed, not started. Scope: `lib/screens/chat/`, `lib/services/voice_note.dart`, `lib/services/supabase.dart`, `test/`, and timestamped Supabase migrations if a phase needs them. No route changes, no brand refresh, no E2EE protocol work, no other projects.
+Status: Phase A implemented and gate-verified; release pending. Phases B-E proposed. Scope: `lib/screens/chat/`, `lib/services/voice_note.dart`, `lib/services/supabase.dart`, `test/`, and timestamped Supabase migrations if a phase needs them. No route changes, no brand refresh, no E2EE protocol work, no other projects.
 
 ## Diagnosis
 
@@ -41,7 +41,7 @@ ICE = impact x confidence / effort.
 | D | Desktop two-pane chat | 4 | 4 | 5 | 3.2 |
 | E | In-chat message search | 3 | 3 | 3 | 3.0 |
 
-## Phase A: voice notes that work (recommended first move)
+## Phase A: voice notes that work (implemented)
 
 Independently shippable. No schema change needed.
 

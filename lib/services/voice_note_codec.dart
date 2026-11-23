@@ -13,6 +13,7 @@ enum VoiceNoteFailure {
   tooLong,
   uploadFailed,
   sessionChanged,
+  legacyDisabled,
   unsupportedPlatform,
 }
 
@@ -42,12 +43,13 @@ String voiceNoteFailureMessage(VoiceNoteFailure failure) => switch (failure) {
         'The microphone could not be started on this device.',
       VoiceNoteFailure.tooLarge =>
         'That voice note is too large. Try a shorter recording.',
-      VoiceNoteFailure.tooLong =>
-        'Voice notes are limited to 60 seconds.',
+      VoiceNoteFailure.tooLong => 'Voice notes are limited to 60 seconds.',
       VoiceNoteFailure.uploadFailed =>
         'Could not send that voice note. Check your connection and try again.',
       VoiceNoteFailure.sessionChanged =>
         'Your session changed while recording. Try again.',
+      VoiceNoteFailure.legacyDisabled =>
+        'Enable legacy messaging in the chat before sending a voice note.',
       VoiceNoteFailure.unsupportedPlatform =>
         'Voice note recording is not available on web yet.',
     };

@@ -3,6 +3,7 @@ import '../../services/calls.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -20,6 +21,8 @@ import '../../services/connection_monitor.dart';
 import '../../services/message_outbox.dart';
 import '../../chat/widgets.dart';
 import '../../services/voice_note.dart';
+import '../../services/voice_note_codec.dart';
+import '../../services/voice_note_send.dart';
 import '../../services/scheduled_messages.dart' as scheduled;
 import '../../services/secure_screen.dart';
 import '../../models/profile.dart';
@@ -428,15 +431,29 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _openVoiceNote() async {
+    if (kIsWeb) return;
     if (!await _allowLegacyMessaging() || !mounted) return;
-    final result = await showDialog<String>(
+    final outcome = await showDialog<VoiceNoteOutcome>(
       context: context,
       builder: (dialogContext) =>
           _VoiceNoteDialog(conversationId: widget.conversationId),
     );
-    if (result != null && result.isNotEmpty) {
-      // The dialog already played a short confirmation; nothing further needed.
-    }
+    if (outcome == null || !outcome.isSuccess || !mounted) return;
+    final senderId = Supa.currentUser?.id;
+    if (senderId == null || Supa.currentUser?.id != senderId) return;
+    final now = DateTime.now();
+    final pending = voiceNotePendingMessage(
+      outcome: outcome,
+      conversationId: widget.conversationId,
+      senderId: senderId,
+      localId: const Uuid().v4(),
+      now: now,
+      expiry: _messageExpiry,
+    );
+    await _addPending(pending);
+    if (!mounted) return;
+    setState(() {});
+    unawaited(_flushOutbox());
   }
 
   Future<bool> _allowLegacyMessaging() async {
@@ -2782,8 +2799,10 @@ class _VoiceMessage extends StatefulWidget {
 }
 
 class _VoiceMessageState extends State<_VoiceMessage> {
-  final _player = AudioPlayer();
+  final AudioPlayer _player = AudioPlayer();
   String? _path;
+  String? _url;
+  String? _error;
   bool _ready = false;
   bool _playing = false;
 
@@ -2793,30 +2812,47 @@ class _VoiceMessageState extends State<_VoiceMessage> {
     _parse();
   }
 
-  /// Extracts the object path from the `voice:<json>` message content.
+  /// The message carries a private bucket object path, not a playable URL.
   Future<void> _parse() async {
+    final path = decodeVoiceNotePath(widget.content);
+    if (path == null) {
+      setState(() => _error = 'This voice note is unavailable.');
+      return;
+    }
     try {
-      final meta =
-          jsonDecode(widget.content.substring(6)) as Map<String, dynamic>;
-      if (meta['path'] != null) {
-        setState(() {
-          _path = meta['path'] as String;
-          _ready = true;
-        });
-      }
+      final url = await Supa.attachmentUrl(path);
+      if (!mounted) return;
+      setState(() {
+        _path = path;
+        _url = url;
+        _ready = true;
+      });
     } catch (_) {
-      // Malformed voice note content; fall back to a placeholder bubble.
+      if (mounted) setState(() => _error = 'Could not load voice note.');
     }
   }
 
-  void _toggle() {
-    if (_path == null) return;
-    if (_playing) {
-      _player.pause();
-    } else {
-      _player.play(UrlSource(_path!));
+  Future<void> _toggle() async {
+    if (_url == null) {
+      await _parse();
+      if (_url == null) return;
     }
-    setState(() => _playing = !_playing);
+    try {
+      if (_playing) {
+        await _player.pause();
+        if (mounted) setState(() => _playing = false);
+      } else {
+        await _player.play(UrlSource(_url!));
+        if (mounted) setState(() => _playing = true);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _playing = false;
+          _error = 'Could not play voice note.';
+        });
+      }
+    }
   }
 
   @override
@@ -2826,14 +2862,9 @@ class _VoiceMessageState extends State<_VoiceMessage> {
   }
 
   String _filename() {
-    try {
-      final raw = widget.content.substring(6);
-      final parts = raw.split('/');
-      final last = parts.last.split('}').first;
-      return '$last.m4a';
-    } catch (_) {
-      return 'voice note';
-    }
+    final path = _path ?? decodeVoiceNotePath(widget.content) ?? '';
+    final last = path.split('/').last;
+    return last.isEmpty ? 'voice note' : last;
   }
 
   @override
@@ -2898,24 +2929,27 @@ class _VoiceMessageState extends State<_VoiceMessage> {
               ),
             ],
           ),
-          if (_path != null)
+          if (_error != null)
             Padding(
               padding: const EdgeInsets.only(top: 6),
-              child: _ready
-                  ? SizedBox(
-                      height: 40,
-                      child: _playing
-                          ? const Center(
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: _P.darkOnAccent))
-                          : Icon(
-                              _playing
-                                  ? Icons.pause_circle_filled
-                                  : Icons.play_circle_fill,
-                              color: widget.mine ? _P.darkOnAccent : _P.text,
-                              size: 32),
-                    )
-                  : const SizedBox.shrink(),
+              child: Text(
+                _error!,
+                style: const TextStyle(color: Colors.redAccent, fontSize: 11),
+              ),
+            )
+          else if (_ready)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: SizedBox(
+                height: 40,
+                child: _playing
+                    ? Center(
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: _P.darkOnAccent))
+                    : Icon(Icons.play_circle_fill,
+                        color: widget.mine ? _P.darkOnAccent : _P.text,
+                        size: 32),
+              ),
             ),
         ],
       ),
@@ -2935,43 +2969,66 @@ class _VoiceNoteDialogState extends State<_VoiceNoteDialog> {
   bool _recording = false;
   bool _sending = false;
   String? _error;
+  Timer? _timer;
+  int _elapsed = 0;
+
+  void _stopTimer() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  Future<void> _finishRecording() async {
+    if (!_recording) return;
+    _stopTimer();
+    setState(() {
+      _recording = false;
+      _error = null;
+      _sending = true;
+    });
+    final outcome = await VoiceNoteService.stopAndUpload(widget.conversationId);
+    if (!mounted) return;
+    setState(() => _sending = false);
+    if (outcome.isSuccess) {
+      Navigator.of(context).pop(outcome);
+      return;
+    }
+    setState(() {
+      _error = outcome.message ?? 'Could not send that voice note.';
+    });
+  }
 
   Future<void> _toggleRecord() async {
     if (_recording) {
-      setState(() {
-        _recording = false;
-        _error = null;
-        _sending = true;
-      });
-      final messageId =
-          await VoiceNoteService.stopAndUpload(widget.conversationId);
-      if (!mounted) return;
-      setState(() => _sending = false);
-      if (messageId.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Voice note sent.'),
-              behavior: SnackBarBehavior.floating),
-        );
-        Navigator.of(context).pop(messageId);
-      } else {
-        setState(() {
-          _recording = true;
-          _error =
-              'Could not send that voice note. Check your connection and try again.';
-        });
-      }
-    } else {
-      final ok = await VoiceNoteService.start();
-      if (!mounted) return;
-      if (ok) {
-        setState(() => _recording = true);
-      } else {
-        setState(() {
-          _error = 'Microphone permission is needed for voice notes.';
-        });
-      }
+      await _finishRecording();
+      return;
     }
+    final failure = await VoiceNoteService.start();
+    if (!mounted) return;
+    if (failure != null) {
+      setState(() => _error = voiceNoteFailureMessage(failure));
+      return;
+    }
+    setState(() {
+      _recording = true;
+      _error = null;
+      _elapsed = 0;
+    });
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      final next = _elapsed + 1;
+      if (isVoiceNoteTooLong(Duration(seconds: next))) {
+        unawaited(_finishRecording());
+        return;
+      }
+      setState(() => _elapsed = next);
+    });
+  }
+
+  @override
+  void dispose() {
+    _stopTimer();
+    if (_recording) unawaited(VoiceNoteService.cancel());
+    super.dispose();
   }
 
   @override
@@ -2987,14 +3044,14 @@ class _VoiceNoteDialogState extends State<_VoiceNoteDialog> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  _recording ? 'Recording…' : 'Voice note',
+                  _recording ? 'Recording $_elapsed / 60 s' : 'Voice note',
                   style: const TextStyle(fontSize: 20, color: _P.text),
                 ),
                 const SizedBox(height: 6),
                 Text(
                   _recording
-                      ? 'Hold to record, tap stop when done.'
-                      : 'Tap and hold to record a voice note.',
+                      ? 'Tap to stop recording.'
+                      : 'Tap to start recording, tap again to stop.',
                   style: TextStyle(color: _P.muted, height: 1.4),
                 ),
                 if (_error != null) ...[
@@ -3002,7 +3059,7 @@ class _VoiceNoteDialogState extends State<_VoiceNoteDialog> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
-                      _error ?? '',
+                      _error!,
                       style: const TextStyle(color: Colors.redAccent),
                     ),
                   ),
@@ -3010,11 +3067,12 @@ class _VoiceNoteDialogState extends State<_VoiceNoteDialog> {
               ],
             ),
           ),
-          SizedBox(
-            height: 120,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: GestureDetector(
-              onTap: _toggleRecord,
+              onTap: _sending ? null : _toggleRecord,
               child: Container(
+                height: 120,
                 width: double.infinity,
                 decoration: BoxDecoration(
                   color: _recording
@@ -3050,8 +3108,8 @@ class _VoiceNoteDialogState extends State<_VoiceNoteDialog> {
                       )
                     : Center(
                         child: Icon(
-                          _recording ? Icons.stop_rounded : Icons.mic_outlined,
-                          color: _recording ? _P.darkOnAccent : _P.text,
+                          Icons.mic_outlined,
+                          color: _P.text,
                           size: 44,
                         ),
                       ),
@@ -3505,29 +3563,31 @@ class _Composer extends StatelessWidget {
                               ),
                             ),
                           )
-                        : PressScale(
-                            key: const ValueKey('mic-btn'),
-                            scaleFactor: 0.88,
-                            onTap: onVoice,
-                            child: Container(
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                color: _P.surfaceHigh,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: _P.border.withValues(alpha: 0.35),
+                        : kIsWeb
+                            ? const SizedBox(width: 36)
+                            : PressScale(
+                                key: const ValueKey('mic-btn'),
+                                scaleFactor: 0.88,
+                                onTap: onVoice,
+                                child: Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    color: _P.surfaceHigh,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: _P.border.withValues(alpha: 0.35),
+                                    ),
+                                  ),
+                                  child: const Center(
+                                    child: Icon(
+                                      Icons.mic_none_rounded,
+                                      color: _P.primary,
+                                      size: 20,
+                                    ),
+                                  ),
                                 ),
                               ),
-                              child: const Center(
-                                child: Icon(
-                                  Icons.mic_none_rounded,
-                                  color: _P.primary,
-                                  size: 20,
-                                ),
-                              ),
-                            ),
-                          ),
                   ),
                 );
               },
