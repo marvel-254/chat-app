@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:bro_chat/models/pending_message.dart';
+import 'package:bro_chat/services/voice_note_codec.dart';
 import 'package:bro_chat/services/voice_note_send.dart';
 
 void main() {
