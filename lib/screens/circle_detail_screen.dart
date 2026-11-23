@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
@@ -27,11 +29,21 @@ class _CircleDetailScreenState extends State<CircleDetailScreen> {
   bool _isLoading = true;
   bool _isAdmin = false;
   String? _error;
+  StreamSubscription<void>? _changesSub;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _changesSub = Circles.watchCircleChanges(widget.circleId).listen((_) {
+      if (mounted) unawaited(_load());
+    });
+  }
+
+  @override
+  void dispose() {
+    _changesSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {

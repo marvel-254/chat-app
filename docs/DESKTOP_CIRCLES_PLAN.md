@@ -1,6 +1,6 @@
 # BRO desktop + circles improvement plan
 
-Status: proposed, not started. Scope: `lib/` UI and services plus timestamped Supabase migrations. No route changes, no brand refresh, no other projects.
+Status: Phase A shipped in v1.5.5, Phase B shipped in v1.5.6. Phase C and D pending. Scope: `lib/` UI and services plus timestamped Supabase migrations. No route changes, no brand refresh, no other projects.
 
 ## 1. Diagnosis (from the current tree)
 
@@ -45,7 +45,7 @@ Status: proposed, not started. Scope: `lib/` UI and services plus timestamped Su
 
 ## 4. Implementation phases
 
-### Phase A: P0 circles correctness (ship as one patch release)
+### Phase A: P0 circles correctness (shipped in v1.5.5)
 
 1. Migration `supabase/migrations/<timestamp>_circle_invites.sql`
    - `circle_invites` table: `circle_id`, `invitee_id`, `inviter_id`, `status` (`pending`/`accepted`/`declined`), timestamps, unique `(circle_id, invitee_id)`, RLS limited to the invitee, the inviter and circle admins.
@@ -57,11 +57,11 @@ Status: proposed, not started. Scope: `lib/` UI and services plus timestamped Su
 4. `lib/screens/circles_screen.dart`: card colors to `app_colors`; add an invitations section with counts; keep `AppLoader`, `AppErrorState`, `AppEmptyState` states.
 5. Verify: `flutter analyze --no-fatal-infos`, `flutter test`, PGlite suites, then tag and confirm the release carries all three APKs.
 
-### Phase B: Realtime circles
+### Phase B: Realtime circles (shipped in v1.5.6)
 
-1. Add a `Circles.watchCirclesRealtime()` stream using `client.channel('bro-circles:<uid>')` with `postgres_changes` on `circle_participants` and `circles`, filtered to the user's circle ids. Follow the existing channel usage in `lib/services/presence.dart:215` and `lib/services/supabase.dart:1465`. Cancel subscriptions on dispose and guard `if (!mounted) return;` callbacks.
-2. Merge realtime events with the existing 60s poll. Keep the poll as a safety net, not the primary source. Deduplicate by circle id.
-3. Add a widget test with a fake broadcast stream, one controller per stream instance (see the skill pitfall), and keys on list tiles.
+1. Implemented as `Circles._watch()` in `lib/services/circles.dart`: a broadcast stream per surface using `client.channel(...)` with `postgres_changes` on `circles`, `circle_participants` and `circle_invites`. `watchMyCircles`, `watchPendingInvites` and `watchCircleChanges` share it. Channels and the 60s fallback poll are cancelled in `onCancel`, and screen callbacks guard `if (!mounted) return;`.
+2. Bursts collapse through `lib/services/circle_realtime.dart` (`CircleRealtime.schedule`), with unit tests for coalescing and cancellation. The 60s poll remains as a safety net.
+3. `test/circle_invite_tile_test.dart` covers the keyed join and decline tile; `test/circle_realtime_test.dart` covers the debouncer. The full-stream widget test remains outstanding.
 
 ### Phase C: Desktop workspace
 

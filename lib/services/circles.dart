@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:developer' as dev;
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/circle.dart';
+import 'circle_realtime.dart';
 
 class Circles {
   static final client = Supabase.instance.client;
@@ -49,12 +51,87 @@ class Circles {
     }
   }
 
-  /// Watch circles for the current user via periodic polling.
-  static Stream<List<Circle>> watchMyCircles() async* {
-    yield await getAllCircles();
-    yield* Stream.periodic(const Duration(seconds: 60))
-        .asyncMap((_) => getAllCircles());
+  /// Shared Realtime + polling stream. Realtime is primary; the 60s poll stays
+  /// as a fallback when the publication or socket is unavailable.
+  static Stream<T> _watch<T>(
+    String topic,
+    Future<T> Function() fetch, {
+    required List<String> tables,
+    bool emitInitial = true,
+  }) {
+    final controller = StreamController<T>.broadcast();
+    final debouncer = CircleRealtime();
+    StreamSubscription<void>? poll;
+    RealtimeChannel? channel;
+
+    Future<void> refresh() async {
+      if (controller.isClosed) return;
+      try {
+        final value = await fetch();
+        if (!controller.isClosed) controller.add(value);
+      } catch (e) {
+        if (!controller.isClosed) controller.addError(e);
+      }
+    }
+
+    void schedule() => debouncer.schedule(() => unawaited(refresh()));
+
+    controller.onListen = () {
+      if (emitInitial) unawaited(refresh());
+      final uid = client.auth.currentUser?.id;
+      if (uid != null) {
+        try {
+          RealtimeChannel built = client.channel(topic);
+          for (final table in tables) {
+            built = built.onPostgresChanges(
+              event: PostgresChangeEvent.all,
+              schema: 'public',
+              table: table,
+              callback: (_) => schedule(),
+            );
+          }
+          channel = built..subscribe();
+        } catch (e) {
+          dev.log('Circle realtime setup failed: $e', error: e);
+        }
+      }
+      poll = Stream<void>.periodic(const Duration(seconds: 60))
+          .listen((_) => unawaited(refresh()));
+    };
+
+    controller.onCancel = () {
+      debouncer.cancel();
+      poll?.cancel();
+      final active = channel;
+      channel = null;
+      if (active != null) unawaited(client.removeChannel(active));
+    };
+    return controller.stream;
   }
+
+  /// Circles for the current user, refreshed on any circle or membership change.
+  static Stream<List<Circle>> watchMyCircles() => _watch<List<Circle>>(
+        'bro-circles:${client.auth.currentUser?.id ?? 'anon'}',
+        getAllCircles,
+        tables: const ['circles', 'circle_participants', 'circle_invites'],
+      );
+
+  /// Invitations addressed to the current user.
+  static Stream<List<CircleInvite>> watchPendingInvites() =>
+      _watch<List<CircleInvite>>(
+        'bro-circle-invites:${client.auth.currentUser?.id ?? 'anon'}',
+        pendingInvites,
+        tables: const ['circle_invites'],
+      );
+
+  /// Emits whenever anything affecting one circle changes. The value is not
+  /// used; subscribers refetch their own detail view.
+  static Stream<void> watchCircleChanges(String circleId) => _watch<int>(
+        'bro-circle-detail:$circleId',
+        () async => 0,
+        tables: const ['circles', 'circle_participants', 'circle_invites'],
+        emitInitial: false,
+      );
 
   static Circle _mapCircleRow(Map<String, dynamic> row) {
     return Circle(

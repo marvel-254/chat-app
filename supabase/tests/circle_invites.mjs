@@ -20,7 +20,15 @@ try {
   `);
   await run(read('../migrations/20261114010000_circles_basic.sql'));
   await run(read('../migrations/20261123090000_circle_invites.sql'));
+  await run(read('../migrations/20261123100000_circle_realtime.sql'));
   await run(`grant select on public.circles, public.circle_participants to authenticated;`);
+  const published = (await rows(`
+    select tablename from pg_publication_tables
+    where pubname='supabase_realtime' and schemaname='public'
+  `)).map((row) => row.tablename);
+  for (const table of ['circles', 'circle_participants', 'circle_invites']) {
+    assert.ok(published.includes(table), `${table} missing from realtime publication`);
+  }
   await run(`
     insert into auth.users(id) values ('${a}'),('${b}'),('${c}');
     insert into public.profiles(id, username, display_name) values

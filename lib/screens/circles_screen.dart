@@ -7,6 +7,7 @@ import '../ui/motion.dart';
 import '../models/circle.dart';
 import '../services/circles.dart';
 import '../theme/app_colors.dart' as app_colors;
+import '../widgets/circle_invite_tile.dart';
 import '../widgets/responsive_app_shell.dart';
 import 'circle_detail_screen.dart';
 
@@ -24,6 +25,7 @@ class _CirclesScreenState extends State<CirclesScreen> {
   final _addMemberController = TextEditingController();
 
   StreamSubscription<List<Circle>>? _circlesSub;
+  StreamSubscription<List<CircleInvite>>? _invitesSub;
 
   bool _isLoading = true;
   List<Circle> _circles = [];
@@ -34,7 +36,12 @@ class _CirclesScreenState extends State<CirclesScreen> {
   void initState() {
     super.initState();
     _loadCircles();
-    unawaited(_loadInvites());
+    _invitesSub = Circles.watchPendingInvites().listen((invites) {
+      if (!mounted) return;
+      setState(() => _invites = invites);
+    }, onError: (_) {
+      // The initial fetch and the 60s fallback still cover temporary failures.
+    });
     _circlesSub = Circles.watchMyCircles().listen((circles) {
       if (!mounted) return;
       setState(() {
@@ -232,6 +239,7 @@ class _CirclesScreenState extends State<CirclesScreen> {
   @override
   void dispose() {
     _circlesSub?.cancel();
+    _invitesSub?.cancel();
     _scrollController.dispose();
     _nameController.dispose();
     _descriptionController.dispose();
@@ -274,26 +282,12 @@ class _CirclesScreenState extends State<CirclesScreen> {
                           style: Theme.of(context).textTheme.titleSmall),
                       const SizedBox(height: 8),
                       for (final invite in _invites)
-                        ListTile(
-                          key: ValueKey(invite.id),
-                          leading: const Icon(Icons.mail_outline),
-                          title: Text(invite.circleName),
-                          subtitle: Text('From ${invite.inviterName}'),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              TextButton(
-                                onPressed: () =>
-                                    _respondToInvite(invite, accept: false),
-                                child: const Text('Decline'),
-                              ),
-                              FilledButton(
-                                onPressed: () =>
-                                    _respondToInvite(invite, accept: true),
-                                child: const Text('Join'),
-                              ),
-                            ],
-                          ),
+                        CircleInviteTile(
+                          invite: invite,
+                          onAccept: () =>
+                              _respondToInvite(invite, accept: true),
+                          onDecline: () =>
+                              _respondToInvite(invite, accept: false),
                         ),
                     ],
                   ),
