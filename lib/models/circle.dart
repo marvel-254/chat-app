@@ -137,3 +137,33 @@ class CircleMember {
     );
   }
 }
+
+/// An invitation issued by a circle creator or admin.
+class CircleInvite {
+  final String id;
+  final String circleId;
+  final String circleName;
+  final String? avatarPath;
+  final String inviterName;
+  final DateTime createdAt;
+
+  const CircleInvite({
+    required this.id,
+    required this.circleId,
+    required this.circleName,
+    this.avatarPath,
+    required this.inviterName,
+    required this.createdAt,
+  });
+
+  factory CircleInvite.fromJson(Map<String, dynamic> json) {
+    return CircleInvite(
+      id: json['invite_id'] as String? ?? '',
+      circleId: json['circle_id'] as String? ?? '',
+      circleName: json['circle_name'] as String? ?? '',
+      avatarPath: json['avatar_path'] as String?,
+      inviterName: json['inviter_name'] as String? ?? 'Someone',
+      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now(),
+    );
+  }
+}

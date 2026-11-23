@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+
 import '../models/circle.dart';
+import '../models/profile.dart';
 import '../services/circles.dart';
 import '../services/supabase.dart';
+import '../theme/app_colors.dart' as app_colors;
+import '../ui/errors.dart';
+import '../ui/states.dart';
+import '../widgets/responsive_app_shell.dart';
 
 class CircleDetailScreen extends StatefulWidget {
   final String circleId;
@@ -17,38 +23,40 @@ class CircleDetailScreen extends StatefulWidget {
 class _CircleDetailScreenState extends State<CircleDetailScreen> {
   Circle? _circle;
   List<CircleMember> _members = [];
+  List<Map<String, dynamic>> _invites = [];
   bool _isLoading = true;
-  String? _error;
   bool _isAdmin = false;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _loadCircle();
+    _load();
   }
 
-  Future<void> _loadCircle() async {
+  Future<void> _load() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      // Fetch all circles and filter client-side since RPC doesn't support .eq() filtering
-      final circles = await Circles.getAllCircles();
-      final circle = circles.firstWhere(
-        (c) => c.id == widget.circleId,
-        orElse: () => throw 'Circle not found',
-      );
-
-      final members = await Circles.getCircleMembers(widget.circleId);
-      final isAdmin = await Circles.isAdmin(widget.circleId);
-
+      final results = await Future.wait([
+        Circles.getCircle(widget.circleId),
+        Circles.getCircleMembers(widget.circleId),
+        Circles.isAdmin(widget.circleId),
+        Circles.invitesForCircle(widget.circleId),
+      ]);
+      if (!mounted) return;
       setState(() {
-        _circle = circle;
-        _members = members;
-        _isAdmin = isAdmin;
+        _circle = results[0] as Circle?;
+        _members = (results[1] as List).cast<CircleMember>();
+        _isAdmin = results[2] as bool;
+        _invites = (results[3] as List).cast<Map<String, dynamic>>();
         _isLoading = false;
+        _error = null;
       });
     } catch (e, st) {
       debugPrint('Failed to load circle: $e');
-      Sentry.captureException(e, stackTrace: st);
+      await Sentry.captureException(e, stackTrace: st);
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _isLoading = false;
@@ -56,460 +64,430 @@ class _CircleDetailScreenState extends State<CircleDetailScreen> {
     }
   }
 
-  Future<void> _leaveCircle() async {
-    final confirmed = await showDialog<bool>(
+  Future<void> _inviteMember() async {
+    final profile = await showDialog<Profile>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Leave Circle'),
-        content: Text('Are you sure you want to leave "${_circle?.name}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.red,
-            ),
-            child: const Text('Leave'),
-          ),
-        ],
-      ),
+      builder: (_) => const _UserPickerDialog(),
     );
-
-    if (confirmed == true && _circle != null) {
-      try {
-        await Circles.leave(_circle!.id);
-        if (!mounted) return;
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Left circle')),
-        );
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to leave: $e')),
-        );
-      }
+    if (profile == null || !mounted) return;
+    try {
+      await Circles.invite(widget.circleId, profile.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Invitation sent to ${profile.label}')),
+      );
+      await _load();
+    } catch (e, st) {
+      debugPrint('Circle invite failed: $e');
+      await Sentry.captureException(e, stackTrace: st);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not invite: ${friendlyErrorMessage(e)}')),
+      );
     }
   }
 
-  Future<void> _inviteMember() async {
-    final controller = TextEditingController();
-    final result = await showDialog<String>(
+  Future<void> _respondToInvite(String inviteId, bool accept) async {
+    try {
+      if (accept) {
+        await Circles.acceptInvite(inviteId);
+      } else {
+        await Circles.declineInvite(inviteId);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(accept ? 'Joined circle' : 'Invitation declined')),
+      );
+      await _load();
+    } catch (e, st) {
+      debugPrint('Circle invite response failed: $e');
+      await Sentry.captureException(e, stackTrace: st);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not respond: ${friendlyErrorMessage(e)}')),
+      );
+    }
+  }
+
+  Future<void> _leaveCircle() async {
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Invite Member'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            labelText: 'Username',
-            hintText: 'Enter username to invite',
-            border: OutlineInputBorder(),
-          ),
-          autofocus: true,
-          textCapitalization: TextCapitalization.none,
-        ),
+      builder: (dialog) => AlertDialog(
+        title: const Text('Leave circle'),
+        content: Text('Leave ${_circle?.name ?? 'this circle'}?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Invite'),
-          ),
+              onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialog, true),
+              child: const Text('Leave')),
         ],
       ),
     );
-
-    if (result != null && result.isNotEmpty) {
-      // Search for user by username
+    if (confirmed != true || _circle == null) return;
+    try {
+      await Circles.leave(_circle!.id);
       if (!mounted) return;
-      final profiles = await Supa.searchUsers(result);
+      context.go('/circles');
+    } catch (e, st) {
+      debugPrint('Leave circle failed: $e');
+      await Sentry.captureException(e, stackTrace: st);
       if (!mounted) return;
-      if (profiles.isEmpty) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('User not found')),
-        );
-        return;
-      }
-
-      final user = profiles.first;
-      try {
-        // Note: join_circle uses auth.uid() server-side, so it only joins
-        // the current user. To invite another user, the server would need
-        // a separate invite function. For now, just show a message.
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  'User "$user.username" found — direct messaging them instead')),
-        );
-        if (!mounted) return;
-        final conv = await Supa.getOrCreateDM(user.id);
-        if (!mounted) return;
-        context.go('/chat/${conv.id}', extra: user);
-        return;
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e')),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not leave: ${friendlyErrorMessage(e)}')),
+      );
     }
   }
 
   Future<void> _removeMember(String userId) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Remove Member'),
-        content: const Text('Are you sure you want to remove this member?'),
+      builder: (dialog) => AlertDialog(
+        title: const Text('Remove member'),
+        content: const Text('Remove this member from the circle?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.red,
-            ),
-            child: const Text('Remove'),
-          ),
+              onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialog, true),
+              child: const Text('Remove')),
         ],
       ),
     );
-
-    if (confirmed == true) {
-      try {
-        await Supa.client
-            .from('circle_participants')
-            .delete()
-            .eq('circle_id', widget.circleId)
-            .eq('user_id', userId);
-        setState(() => _loadCircle());
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Member removed')),
-        );
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to remove: $e')),
-        );
-      }
+    if (confirmed != true) return;
+    try {
+      await Circles.removeMember(widget.circleId, userId);
+      await _load();
+    } catch (e, st) {
+      debugPrint('Remove member failed: $e');
+      await Sentry.captureException(e, stackTrace: st);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not remove: ${friendlyErrorMessage(e)}')),
+      );
     }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF121318),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E1F25),
-        title: Text(_circle?.name ?? 'Circle'),
-        actions: [
-          if (_isAdmin)
-            IconButton(
-              icon: const Icon(Icons.person_add),
-              onPressed: _inviteMember,
-              tooltip: 'Invite Member',
-            ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'leave') _leaveCircle();
-              if (value == 'delete') _deleteCircle();
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'leave',
-                child: Text('Leave Circle'),
-              ),
-              if (_isAdmin)
-                const PopupMenuItem(
-                  value: 'delete',
-                  child: Text('Delete Circle',
-                      style: TextStyle(color: Colors.red)),
-                ),
-            ],
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.error, color: Colors.red, size: 48),
-                      const SizedBox(height: 16),
-                      Text(_error ?? 'Unknown error'),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadCircle,
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                )
-              : _circle == null
-                  ? const Center(child: Text('Circle not found'))
-                  : Column(
-                      children: [
-                        _CircleHeader(circle: _circle!),
-                        const Divider(height: 1, color: Color(0xFF444932)),
-                        Expanded(
-                          child: _MembersList(
-                            members: _members,
-                            isAdmin: _isAdmin,
-                            currentUserId: Supa.client.auth.currentUser?.id,
-                            onRemove: _removeMember,
-                          ),
-                        ),
-                      ],
-                    ),
-    );
   }
 
   Future<void> _deleteCircle() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Circle'),
-        content: Text(
-            'This will delete "${_circle?.name}" and all its data. This cannot be undone.'),
+      builder: (dialog) => AlertDialog(
+        title: const Text('Delete circle'),
+        content: Text('Delete ${_circle?.name ?? 'this circle'} and its data?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.red,
-            ),
-            child: const Text('Delete'),
-          ),
+              onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialog, true),
+              child: const Text('Delete')),
         ],
       ),
     );
-
-    if (confirmed == true && _circle != null) {
-      try {
-        await Circles.deleteCircle(_circle!.id);
-        if (!mounted) return;
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Circle deleted')),
-        );
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete: $e')),
-        );
-      }
+    if (confirmed != true || _circle == null) return;
+    try {
+      await Circles.deleteCircle(_circle!.id);
+      if (!mounted) return;
+      context.go('/circles');
+    } catch (e, st) {
+      debugPrint('Delete circle failed: $e');
+      await Sentry.captureException(e, stackTrace: st);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not delete: ${friendlyErrorMessage(e)}')),
+      );
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ResponsiveAppShell(
+      title: _circle?.name ?? 'Circle',
+      subtitle: _isAdmin ? 'You manage this circle' : null,
+      navIndex: 2,
+      actions: [
+        if (_isAdmin)
+          IconButton(
+            tooltip: 'Invite member',
+            icon: const Icon(Icons.person_add_outlined),
+            onPressed: _inviteMember,
+          ),
+        PopupMenuButton<String>(
+          tooltip: 'Circle actions',
+          onSelected: (value) {
+            if (value == 'leave') _leaveCircle();
+            if (value == 'delete') _deleteCircle();
+          },
+          itemBuilder: (_) => [
+            const PopupMenuItem(value: 'leave', child: Text('Leave circle')),
+            if (_isAdmin)
+              const PopupMenuItem(value: 'delete', child: Text('Delete circle')),
+          ],
+        ),
+      ],
+      body: _isLoading
+          ? const AppLoader()
+          : _error != null
+              ? AppErrorState(
+                  title: "We couldn't load this circle",
+                  detail: friendlyErrorMessage(_error, fallback: kLoadFailedDetail),
+                  onRetry: _load,
+                )
+              : _circle == null
+                  ? const Center(child: Text('Circle not found'))
+                  : ListView(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      children: [
+                        _CircleHeader(circle: _circle!),
+                        if (_invites.isNotEmpty) ...[
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                            child: Text('Pending invitations',
+                                style: Theme.of(context).textTheme.titleSmall),
+                          ),
+                          for (final invite in _invites)
+                            ListTile(
+                              leading: const Icon(Icons.mail_outline),
+                              title: Text(invite['invitee_name'] as String? ?? 'Invitee'),
+                              trailing: TextButton(
+                                onPressed: () =>
+                                    _respondToInvite(invite['invite_id'] as String, false),
+                                child: const Text('Cancel invite'),
+                              ),
+                            ),
+                        ],
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                          child: Text('Members (${_members.length})',
+                              style: Theme.of(context).textTheme.titleSmall),
+                        ),
+                        if (_members.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.all(20),
+                            child: Text('No members yet'),
+                          )
+                        else
+                          for (final member in _members)
+                            _MemberTile(
+                              member: member,
+                              isAdmin: _isAdmin,
+                              onRemove: () => _removeMember(member.userId),
+                            ),
+                      ],
+                    ),
+    );
   }
 }
 
 class _CircleHeader extends StatelessWidget {
   final Circle circle;
-
   const _CircleHeader({required this.circle});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(24),
-      child: Column(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: app_colors.P.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: app_colors.P.border.withValues(alpha: 0.4)),
+      ),
+      child: Row(
         children: [
           Container(
-            width: 80,
-            height: 80,
+            width: 56,
+            height: 56,
             decoration: BoxDecoration(
-              color: const Color(0xFF2A2B30),
-              borderRadius: BorderRadius.circular(20),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  const Color(0xFF363740),
-                  const Color(0xFF292A2F),
-                ],
-              ),
+              color: app_colors.P.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(14),
             ),
             child: Center(
               child: Text(
-                _getInitials(circle.name),
+                _initials(circle.name),
                 style: const TextStyle(
-                  color: Color(0xFFE3E1E9),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 32,
+                  color: app_colors.P.primary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 20,
                 ),
               ),
             ),
           ),
-          const SizedBox(height: 16),
-          Text(
-            circle.name,
-            style: const TextStyle(
-              color: Color(0xFFE3E1E9),
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          if (circle.description?.isNotEmpty == true) ...[
-            const SizedBox(height: 8),
-            Text(
-              circle.description ?? '',
-              style: const TextStyle(
-                color: Color(0xFFC5C9AC),
-                fontSize: 16,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.people,
-                size: 16,
-                color: Colors.grey[600],
-              ),
-              const SizedBox(width: 4),
-              Text(
-                '${circle.memberCount} members',
-                style: const TextStyle(
-                  color: Color(0xFF6B7280),
-                  fontSize: 14,
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(circle.name,
+                    style: const TextStyle(
+                        color: app_colors.P.text,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700)),
+                if (circle.description?.isNotEmpty == true) ...[
+                  const SizedBox(height: 4),
+                  Text(circle.description!,
+                      style: const TextStyle(color: app_colors.P.muted, fontSize: 13)),
+                ],
+                const SizedBox(height: 8),
+                Text(
+                  '${circle.memberCount} members  |  ${circle.isPrivate ? 'Private' : 'Public'}',
+                  style: const TextStyle(color: app_colors.P.muted, fontSize: 12),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Icon(
-                circle.isPrivate ? Icons.lock : Icons.public,
-                size: 16,
-                color: Colors.grey[600],
-              ),
-              const SizedBox(width: 4),
-              Text(
-                circle.isPrivate ? 'Private' : 'Public',
-                style: const TextStyle(
-                  color: Color(0xFF6B7280),
-                  fontSize: 14,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
     );
   }
-
-  String _getInitials(String name) {
-    final parts = name.trim().split(' ');
-    if (parts.isEmpty) return '?';
-    if (parts.length == 1) return parts[0].substring(0, 2).toUpperCase();
-    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-  }
 }
 
-class _MembersList extends StatelessWidget {
-  final List<CircleMember> members;
+class _MemberTile extends StatelessWidget {
+  final CircleMember member;
   final bool isAdmin;
-  final String? currentUserId;
-  final Function(String) onRemove;
+  final VoidCallback onRemove;
 
-  const _MembersList({
-    required this.members,
+  const _MemberTile({
+    required this.member,
     required this.isAdmin,
-    required this.currentUserId,
     required this.onRemove,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (members.isEmpty) {
-      return const Center(
-        child: Text(
-          'No members yet',
-          style: TextStyle(color: Color(0xFF6B7280)),
-        ),
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: members.length,
-      separatorBuilder: (_, __) => const Divider(
-        height: 1,
-        color: Color(0xFF444932),
+    final me = Supa.currentUser?.id == member.userId;
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: app_colors.P.surfaceHigh,
+        foregroundColor: app_colors.P.primary,
+        child: Text(_initials(member.displayName)),
       ),
-      itemBuilder: (context, index) {
-        final member = members[index];
-        final userId = member.userId;
-        final isCurrentUser = userId == currentUserId;
-        final isMemberAdmin = member.isAdmin;
-
-        return ListTile(
-          leading: CircleAvatar(
-            backgroundColor: const Color(0xFF2A2B30),
-            child: Text(
-              _getInitials(member.displayName),
-              style: const TextStyle(
-                color: Color(0xFFE3E1E9),
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          title: Text(
-            member.displayName,
-            style: const TextStyle(
-              color: Color(0xFFE3E1E9),
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          subtitle: Text(
-            '@${member.username}',
-            style: const TextStyle(
-              color: Color(0xFF6B7280),
-              fontSize: 13,
-            ),
-          ),
-          trailing: isCurrentUser
-              ? const Text(
-                  'You',
-                  style: TextStyle(
-                    color: Color(0xFFD4FF00),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                  ),
+      title: Text(member.displayName,
+          style: const TextStyle(color: app_colors.P.text)),
+      subtitle: Text('@${member.username}',
+          style: const TextStyle(color: app_colors.P.muted, fontSize: 12)),
+      trailing: me
+          ? const Text('You',
+              style: TextStyle(color: app_colors.P.primary, fontSize: 12))
+          : isAdmin && !member.isAdmin
+              ? IconButton(
+                  tooltip: 'Remove member',
+                  icon: const Icon(Icons.person_remove_outlined,
+                      color: Colors.redAccent),
+                  onPressed: onRemove,
                 )
-              : isAdmin && !isMemberAdmin
-                  ? IconButton(
-                      icon: const Icon(
-                        Icons.person_remove,
-                        color: Colors.red,
-                      ),
-                      onPressed: () => onRemove(userId),
-                      tooltip: 'Remove member',
-                    )
+              : member.isAdmin
+                  ? const Icon(Icons.shield_outlined,
+                      size: 18, color: app_colors.P.muted)
                   : null,
-        );
-      },
     );
   }
+}
 
-  String _getInitials(String name) {
-    final parts = name.trim().split(' ');
-    if (parts.isEmpty) return '?';
-    if (parts.length == 1) return parts[0].substring(0, 2).toUpperCase();
-    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+class _UserPickerDialog extends StatefulWidget {
+  const _UserPickerDialog();
+
+  @override
+  State<_UserPickerDialog> createState() => _UserPickerDialogState();
+}
+
+class _UserPickerDialogState extends State<_UserPickerDialog> {
+  final _controller = TextEditingController();
+  List<Profile> _results = [];
+  bool _searching = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
+
+  Future<void> _search() async {
+    final term = _controller.text.trim();
+    if (term.isEmpty) return;
+    setState(() => _searching = true);
+    try {
+      final rows = await Supa.searchUsers(term, limit: 6);
+      if (mounted) setState(() => _results = rows);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Search failed: ${friendlyErrorMessage(e)}')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Invite member'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Username or name',
+                hintText: 'Search for a person',
+              ),
+              onSubmitted: (_) => _search(),
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                onPressed: _searching ? null : _search,
+                icon: const Icon(Icons.search, size: 18),
+                label: const Text('Search'),
+              ),
+            ),
+            if (_searching)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: LinearProgressIndicator(),
+              )
+            else
+              SizedBox(
+                height: 220,
+                child: ListView.builder(
+                  itemCount: _results.length,
+                  itemBuilder: (_, i) {
+                    final profile = _results[i];
+                    return ListTile(
+                      key: ValueKey(profile.id),
+                      leading: CircleAvatar(
+                        backgroundColor: app_colors.P.surfaceHigh,
+                        child: Text(_initials(profile.label)),
+                      ),
+                      title: Text(profile.label),
+                      onTap: () => Navigator.pop(context, profile),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
+}
+
+String _initials(String name) {
+  final parts = name.trim().split(' ');
+  if (parts.isEmpty || parts.first.isEmpty) return '?';
+  if (parts.length == 1) return parts.first.substring(0, parts.first.length.clamp(0, 2)).toUpperCase();
+  return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
 }

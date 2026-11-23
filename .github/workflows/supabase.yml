@@ -23,6 +23,7 @@ jobs:
       - run: npm install --no-save --ignore-scripts @electric-sql/pglite@0.5.17
       - run: node supabase/tests/bro_calls_push.mjs
       - run: node supabase/tests/scheduled_and_search.mjs
+      - run: node supabase/tests/circle_invites.mjs
       - run: node --test supabase/tests/web_push_worker.test.mjs
       - run: node --test cloudflare/storage/src/index.test.mjs
       - run: deno check supabase/functions/*/index.ts

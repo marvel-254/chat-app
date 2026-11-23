@@ -163,4 +163,50 @@ class Circles {
           params: {'p_conversation_id': convId});
     }
   }
+
+  /// Read a single circle without fetching every visible circle first.
+  static Future<Circle?> getCircle(String circleId) async {
+    final result = await client.rpc('get_circle', params: {'p_circle_id': circleId});
+    if (result is! List || result.isEmpty) return null;
+    return _mapCircleRow(result.first as Map<String, dynamic>);
+  }
+
+  /// Invite a user by id. Authorization is enforced by the RPC, not the client.
+  static Future<String> invite(String circleId, String userId) async {
+    final result = await client.rpc('invite_to_circle', params: {
+      'p_circle_id': circleId,
+      'p_user_id': userId,
+    });
+    return result as String;
+  }
+
+  /// Invitations addressed to the signed-in user.
+  static Future<List<CircleInvite>> pendingInvites() async {
+    final result = await client.rpc('circle_pending_invites');
+    if (result is! List) return const [];
+    return result
+        .map((row) => CircleInvite.fromJson(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Pending invitations for a circle, visible to its creator and admins.
+  static Future<List<Map<String, dynamic>>> invitesForCircle(String circleId) async {
+    final result = await client
+        .rpc('circle_invites_for_circle', params: {'p_circle_id': circleId});
+    if (result is! List) return const [];
+    return result.cast<Map<String, dynamic>>();
+  }
+
+  static Future<void> acceptInvite(String inviteId) =>
+      client.rpc('accept_circle_invite', params: {'p_invite_id': inviteId});
+
+  static Future<void> declineInvite(String inviteId) =>
+      client.rpc('decline_circle_invite', params: {'p_invite_id': inviteId});
+
+  /// Admin-only removal. The creator cannot be removed from their own circle.
+  static Future<void> removeMember(String circleId, String userId) =>
+      client.rpc('remove_circle_member', params: {
+        'p_circle_id': circleId,
+        'p_user_id': userId,
+      });
 }

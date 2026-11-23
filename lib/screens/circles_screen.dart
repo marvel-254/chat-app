@@ -6,6 +6,7 @@ import '../ui/errors.dart';
 import '../ui/motion.dart';
 import '../models/circle.dart';
 import '../services/circles.dart';
+import '../theme/app_colors.dart' as app_colors;
 import '../widgets/responsive_app_shell.dart';
 import 'circle_detail_screen.dart';
 
@@ -26,12 +27,14 @@ class _CirclesScreenState extends State<CirclesScreen> {
 
   bool _isLoading = true;
   List<Circle> _circles = [];
+  List<CircleInvite> _invites = [];
   String? _error;
 
   @override
   void initState() {
     super.initState();
     _loadCircles();
+    unawaited(_loadInvites());
     _circlesSub = Circles.watchMyCircles().listen((circles) {
       if (!mounted) return;
       setState(() {
@@ -62,6 +65,36 @@ class _CirclesScreenState extends State<CirclesScreen> {
         _error = e.toString();
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _loadInvites() async {
+    try {
+      final invites = await Circles.pendingInvites();
+      if (!mounted) return;
+      setState(() => _invites = invites);
+    } catch (_) {
+      // Invitations are optional; the circle list stays usable without them.
+    }
+  }
+
+  Future<void> _respondToInvite(CircleInvite invite, {required bool accept}) async {
+    try {
+      if (accept) {
+        await Circles.acceptInvite(invite.id);
+      } else {
+        await Circles.declineInvite(invite.id);
+      }
+      await Future.wait([_loadInvites(), _loadCircles()]);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(accept ? 'Joined ${invite.circleName}' : 'Invitation declined')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not respond: ${friendlyErrorMessage(e)}')),
+      );
     }
   }
 
@@ -222,6 +255,51 @@ class _CirclesScreenState extends State<CirclesScreen> {
       body: CustomScrollView(
         controller: _scrollController,
         slivers: [
+          if (_invites.isNotEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: app_colors.P.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: app_colors.P.border.withValues(alpha: 0.4)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Invitations (${_invites.length})',
+                          style: Theme.of(context).textTheme.titleSmall),
+                      const SizedBox(height: 8),
+                      for (final invite in _invites)
+                        ListTile(
+                          key: ValueKey(invite.id),
+                          leading: const Icon(Icons.mail_outline),
+                          title: Text(invite.circleName),
+                          subtitle: Text('From ${invite.inviterName}'),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              TextButton(
+                                onPressed: () =>
+                                    _respondToInvite(invite, accept: false),
+                                child: const Text('Decline'),
+                              ),
+                              FilledButton(
+                                onPressed: () =>
+                                    _respondToInvite(invite, accept: true),
+                                child: const Text('Join'),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           SliverToBoxAdapter(
             child: _isLoading
                 ? const AppLoader()
@@ -379,12 +457,9 @@ class _CirclesCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFF1E1F25),
+          color: app_colors.P.surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: const Color(0xFF444932),
-            width: 1,
-          ),
+          border: Border.all(color: app_colors.P.border.withValues(alpha: 0.4)),
         ),
         child: Row(
           children: [
@@ -392,23 +467,15 @@ class _CirclesCard extends StatelessWidget {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: const Color(0xFF2A2B30),
+                color: app_colors.P.primary.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF363740),
-                    Color(0xFF292A2F),
-                  ],
-                ),
               ),
               child: Center(
                 child: Text(
                   getInitials(circle.name),
                   style: const TextStyle(
-                    color: Color(0xFFE3E1E9),
-                    fontWeight: FontWeight.bold,
+                    color: app_colors.P.primary,
+                    fontWeight: FontWeight.w700,
                     fontSize: 18,
                   ),
                 ),
@@ -422,7 +489,7 @@ class _CirclesCard extends StatelessWidget {
                   Text(
                     circle.name,
                     style: const TextStyle(
-                      color: Color(0xFFE3E1E9),
+                      color: app_colors.P.text,
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
@@ -433,43 +500,34 @@ class _CirclesCard extends StatelessWidget {
                     Text(
                       circle.description ?? '',
                       style: const TextStyle(
-                        color: Color(0xFFC5C9AC),
-                        fontSize: 13,
-                      ),
+                          color: app_colors.P.muted, fontSize: 13),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      Icon(
-                        Icons.people,
-                        size: 12,
-                        color: Colors.grey[600],
-                      ),
+                      const Icon(Icons.people,
+                          size: 12, color: app_colors.P.muted),
                       const SizedBox(width: 4),
                       Text(
                         '${circle.memberCount} members',
                         style: const TextStyle(
-                          color: Color(0xFF6B7280),
-                          fontSize: 12,
-                        ),
+                            color: app_colors.P.muted, fontSize: 12),
                       ),
                       const SizedBox(width: 8),
                       if (circle.isMember == false)
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
+                              horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFD4FF00),
-                            borderRadius: BorderRadius.circular(4),
+                            color: app_colors.P.primary.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(6),
                           ),
                           child: const Text(
-                            'Request Sent',
+                            'Not a member',
                             style: TextStyle(
-                              color: Color(0xFF0C0D12),
+                              color: app_colors.P.primary,
                               fontSize: 10,
                               fontWeight: FontWeight.w600,
                             ),
@@ -486,15 +544,9 @@ class _CirclesCard extends StatelessWidget {
                 if (value == 'edit') onEdit?.call();
                 if (value == 'delete') onDelete?.call();
               },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'edit',
-                  child: Text('Edit'),
-                ),
-                const PopupMenuItem(
-                  value: 'delete',
-                  child: Text('Delete'),
-                ),
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 'edit', child: Text('Edit')),
+                PopupMenuItem(value: 'delete', child: Text('Delete')),
               ],
             ),
           ],
@@ -505,8 +557,10 @@ class _CirclesCard extends StatelessWidget {
 
   String getInitials(String name) {
     final parts = name.trim().split(' ');
-    if (parts.isEmpty) return '?';
-    if (parts.length == 1) return parts[0].substring(0, 2).toUpperCase();
-    return parts[0][0].toUpperCase() + parts[1][0].toUpperCase();
+    if (parts.isEmpty || parts.first.isEmpty) return '?';
+    if (parts.length == 1) {
+      return parts.first.substring(0, parts.first.length.clamp(0, 2)).toUpperCase();
+    }
+    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
   }
 }
