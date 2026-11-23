@@ -57,28 +57,32 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // App shell and assets: cache-first, except the Dart bundle and bootstrap,
-  // which go network-first so new releases reach users without a version bump.
+  // App shell and assets: cache-first, except the Dart bundle and bootstrap.
+  // Those use stale-while-revalidate: a returning user gets the cached copy
+  // immediately instead of blocking on a multi-megabyte re-download, while the
+  // fresh bundle is fetched in the background and used on the next launch.
   if (
     url.pathname.endsWith('main.dart.js') ||
     url.pathname.endsWith('flutter_bootstrap.js') ||
     url.pathname.endsWith('flutter.js')
   ) {
-    event.respondWith(
-      fetch(event.request)
+    event.respondWith((async () => {
+      const cache = await caches.open(VERSION);
+      const cached = await cache.match(event.request);
+      const network = fetch(event.request)
         .then((response) => {
           if (response && response.status === 200) {
-            const copy = response.clone();
-            caches.open(VERSION).then((cache) => {
-              cache.put(event.request, copy).catch(() => {});
-            });
+            cache.put(event.request, response.clone()).catch(() => {});
           }
           return response;
         })
-        .catch(() =>
-          caches.match(event.request).then((cached) => cached || Response.error())
-        )
-    );
+        .catch(() => null);
+      if (cached) {
+        event.waitUntil(network);
+        return cached;
+      }
+      return (await network) || Response.error();
+    })());
     return;
   }
 

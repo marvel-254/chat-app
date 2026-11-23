@@ -54,6 +54,10 @@
   <title>BRO — Talk like you mean it</title>
   <link rel="manifest" href="manifest.json">
 
+  <!-- Start the Dart bundle download before the JS bootstrap parses.
+       The CanvasKit WASM variant is chosen at runtime, so it is not preloaded. -->
+  <link rel="preload" href="main.dart.js" as="script">
+
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body, #app-root { height: 100%; width: 100%; overflow: hidden; }

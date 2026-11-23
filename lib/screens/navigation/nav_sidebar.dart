@@ -12,46 +12,54 @@ class NavSidebar extends StatelessWidget {
     final location = GoRouterState.of(context).matchedLocation;
 
     return Container(
-      width: 250,
+      width: 240,
       decoration: const BoxDecoration(
         color: app_colors.P.surface,
         border: Border(
-          right: BorderSide(color: Color(0xFF292A2F), width: 1),
+          right: BorderSide(color: app_colors.P.border, width: 1),
         ),
       ),
       child: SafeArea(
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 18),
               child: Row(
                 children: [
-                  Image.asset(
-                    'assets/images/bro_logo.png',
-                    width: 38,
-                    height: 38,
-                    gaplessPlayback: true,
-                    errorBuilder: (_, __, ___) => const Icon(
-                      Icons.flash_on,
-                      color: app_colors.P.primary,
-                      size: 32,
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: app_colors.P.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Image.asset(
+                      'assets/images/bro_logo.png',
+                      width: 28,
+                      height: 28,
+                      gaplessPlayback: true,
+                      errorBuilder: (_, __, ___) => const Icon(
+                        Icons.flash_on,
+                        color: app_colors.P.primary,
+                        size: 22,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   const Text(
                     'BRO',
                     style: TextStyle(
                       color: app_colors.P.text,
-                      fontSize: 20,
+                      fontSize: 18,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
+                      letterSpacing: 0.8,
                     ),
                   ),
                 ],
               ),
             ),
-            const Divider(color: Color(0xFF292A2F), height: 1),
-            const SizedBox(height: 12),
+            const Divider(color: app_colors.P.border, height: 1),
+            const SizedBox(height: 8),
             NavItem(
               icon: Icons.chat_bubble_outline_rounded,
               selectedIcon: Icons.chat_bubble_rounded,
@@ -60,21 +68,19 @@ class NavSidebar extends StatelessWidget {
               onTap: () => context.go('/conversations'),
             ),
             NavItem(
-              icon: Icons.call_outlined,
-              selectedIcon: Icons.call_rounded,
-              label: 'Calls',
-              selected: location.startsWith('/calls'),
-              onTap: () => context.go('/calls'),
-            ),
-            NavItem(
               icon: Icons.groups_outlined,
               selectedIcon: Icons.groups_rounded,
               label: 'Circles',
               selected: location.startsWith('/circles'),
               onTap: () => context.go('/circles'),
             ),
-            NavItem(icon: Icons.call_outlined, selectedIcon: Icons.call, label: 'Calls',
-              selected: location.startsWith('/recent-calls'), onTap: () => context.go('/recent-calls')),
+            NavItem(
+              icon: Icons.call_outlined,
+              selectedIcon: Icons.call_rounded,
+              label: 'Calls',
+              selected: location.startsWith('/recent-calls'),
+              onTap: () => context.go('/recent-calls'),
+            ),
             NavItem(
               icon: Icons.slow_motion_video_outlined,
               selectedIcon: Icons.slow_motion_video_rounded,
@@ -90,43 +96,57 @@ class NavSidebar extends StatelessWidget {
               onTap: () => context.go('/settings'),
             ),
             const Spacer(),
-            const Divider(color: Color(0xFF292A2F), height: 1),
+            const Divider(color: app_colors.P.border, height: 1),
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
                   color: app_colors.P.surfaceHigh,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: app_colors.P.border.withValues(alpha: 0.2)),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: app_colors.P.border.withValues(alpha: 0.2),
+                  ),
                 ),
                 child: Row(
                   children: [
-                    CircleAvatar(
-                      radius: 14,
-                      backgroundColor: app_colors.P.primary,
-                      child: Text(
-                        (Supa.currentUser?.email?.isNotEmpty ?? false)
-                            ? Supa.currentUser!.email![0].toUpperCase()
-                            : '?',
-                        style: const TextStyle(
-                          color: app_colors.P.darkOnAccent,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: app_colors.P.primary.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: Text(
+                          (Supa.currentUser?.email?.isNotEmpty ?? false)
+                              ? Supa.currentUser!.email![0].toUpperCase()
+                              : '?',
+                          style: const TextStyle(
+                            color: app_colors.P.primary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                        Supa.currentUser?.email ?? '',
-                        style: const TextStyle(
-                          color: app_colors.P.text,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            Supa.currentUser?.email ?? '',
+                            style: const TextStyle(
+                              color: app_colors.P.text,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              height: 1.2,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -159,20 +179,20 @@ class NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       child: PressScale(
         onTap: onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
             color: selected
-                ? app_colors.P.primary.withValues(alpha: 0.14)
+                ? app_colors.P.primary.withValues(alpha: 0.12)
                 : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color: selected
-                  ? app_colors.P.primary.withValues(alpha: 0.3)
+                  ? app_colors.P.primary.withValues(alpha: 0.25)
                   : Colors.transparent,
               width: 1,
             ),
@@ -181,16 +201,16 @@ class NavItem extends StatelessWidget {
             children: [
               Icon(
                 selected ? selectedIcon : icon,
-                size: 20,
+                size: 18,
                 color: selected ? app_colors.P.primary : app_colors.P.muted,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Text(
                 label,
                 style: TextStyle(
                   color: selected ? app_colors.P.primary : app_colors.P.muted,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  fontSize: 14,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  fontSize: 13,
                 ),
               ),
             ],

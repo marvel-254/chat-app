@@ -1,6 +1,8 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/call_record.dart';
@@ -23,8 +25,9 @@ class Calls {
     String conversation,
     String peer,
     bool video,
-  ) async =>
-      _record(
+  ) async {
+    try {
+      return _record(
         await Supa.client.rpc(
           'start_bro_call',
           params: {
@@ -35,38 +38,78 @@ class Calls {
           },
         ).timeout(timeout),
       );
+    } catch (e) {
+      debugPrint('Calls.start failed: $e');
+      await Sentry.captureException(e);
+      rethrow;
+    }
+  }
 
-  static Future<CallRecord> advance(String id, String action) async => _record(
+  static Future<CallRecord> advance(String id, String action) async {
+    try {
+      return _record(
         await Supa.client.rpc('advance_bro_call',
             params: {'p_id': id, 'p_action': action}).timeout(timeout),
       );
+    } catch (e) {
+      debugPrint('Calls.advance failed: $e');
+      await Sentry.captureException(e);
+      rethrow;
+    }
+  }
 
   static Future<CallRecord?> incoming(String owner) async {
-    final rows = await Supa.client
-        .from('call_sessions')
-        .select()
-        .eq('callee_id', owner)
-        .eq('status', 'ringing')
-        .gt('expires_at', DateTime.now().toUtc().toIso8601String())
-        .order('started_at', ascending: false)
-        .limit(1)
-        .timeout(timeout);
-    return rows.isEmpty ? null : _record(rows.first);
+    try {
+      final rows = await Supa.client
+          .from('call_sessions')
+          .select()
+          .eq('callee_id', owner)
+          .eq('status', 'ringing')
+          .gt('expires_at', DateTime.now().toUtc().toIso8601String())
+          .order('started_at', ascending: false)
+          .limit(1)
+          .timeout(timeout);
+      return rows.isEmpty ? null : _record(rows.first);
+    } catch (e) {
+      debugPrint('Calls.incoming failed: $e');
+      await Sentry.captureException(e);
+      rethrow;
+    }
   }
 
   static Future<CallRecord?> get(String id) async {
-    final row = await Supa.client
-        .from('call_sessions')
-        .select()
-        .eq('id', id)
-        .maybeSingle()
-        .timeout(timeout);
-    return row == null ? null : _record(row);
+    try {
+      final row = await Supa.client
+          .from('call_sessions')
+          .select()
+          .eq('id', id)
+          .maybeSingle()
+          .timeout(timeout);
+      return row == null ? null : _record(row);
+    } catch (e) {
+      debugPrint('Calls.get failed: $e');
+      await Sentry.captureException(e);
+      rethrow;
+    }
   }
 
-  static String _key(String owner) => 'recent_calls_v1_$owner';
+  static const _cacheKeyPrefix = 'recent_calls_v2_';
+  static const _timestampKeyPrefix = 'recent_calls_ts_v2_';
+  static String _key(String owner) => '$_cacheKeyPrefix$owner';
+  static String _tsKey(String owner) => '$_timestampKeyPrefix$owner';
+  static const Duration _cacheTtl = Duration(minutes: 5);
+
   static Future<List<CallRecord>> cached(String owner) async {
     try {
+      // Check TTL — only return cached data if it's less than 5 minutes old
+      final tsRaw = await _storage.read(key: _tsKey(owner));
+      if (tsRaw != null) {
+        final cachedAt = DateTime.fromMillisecondsSinceEpoch(int.parse(tsRaw));
+        if (DateTime.now().difference(cachedAt) > _cacheTtl) {
+          debugPrint('Calls.cached: cache expired for $owner, skipping');
+          return [];
+        }
+      }
       final raw = await _storage.read(key: _key(owner));
       if (raw == null) return [];
       final cutoff = DateTime.now().subtract(const Duration(days: 90));
@@ -78,24 +121,32 @@ class Calls {
                 (record.callerId == owner || record.calleeId == owner),
           )
           .toList();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Calls.cached failed: $e');
+      await Sentry.captureException(e);
       return [];
     }
   }
 
   static Future<List<CallRecord>> recent(String owner) async {
     _requireOwner(owner);
-    final rows = await Supa.client
-        .from('call_sessions')
-        .select()
-        .or('caller_id.eq.$owner,callee_id.eq.$owner')
-        .not('ended_at', 'is', null)
-        .order('started_at', ascending: false)
-        .order('id')
-        .limit(100)
-        .timeout(timeout);
-    _requireOwner(owner);
-    return rows.map(_record).toList();
+    try {
+      final rows = await Supa.client
+          .from('call_sessions')
+          .select()
+          .or(
+              'and(caller_id.eq.$owner,ended_at.not.is.null),and(callee_id.eq.$owner,ended_at.not.is.null)')
+          .order('started_at', ascending: false)
+          .order('id')
+          .limit(100)
+          .timeout(timeout);
+      _requireOwner(owner);
+      return rows.map(_record).toList();
+    } catch (e) {
+      debugPrint('Calls.recent failed: $e');
+      await Sentry.captureException(e);
+      rethrow;
+    }
   }
 
   static Future<void> hide(String owner, String? id) async {
@@ -118,7 +169,13 @@ class Calls {
         key: _key(owner),
         value: jsonEncode(records.map((r) => r.json).toList()),
       );
-    } catch (_) {
+      // Store timestamp for TTL check
+      await _storage.write(
+        key: _tsKey(owner),
+        value: DateTime.now().millisecondsSinceEpoch.toString(),
+      );
+    } catch (e) {
+      debugPrint('Calls._cache failed: $e');
       // Storage may be unavailable in restricted browsing contexts.
     }
   }

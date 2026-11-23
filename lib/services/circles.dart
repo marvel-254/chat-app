@@ -58,14 +58,14 @@ class Circles {
 
   static Circle _mapCircleRow(Map<String, dynamic> row) {
     return Circle(
-      id: row['circle_id'] as String,
-      name: row['name'] as String,
+      id: row['circle_id'] as String? ?? '',
+      name: row['name'] as String? ?? '',
       description: row['description'] as String?,
       avatarPath: row['avatar_path'] as String?,
       isPrivate: row['is_private'] as bool? ?? false,
-      creatorId: row['creator_id'] as String,
-      createdAt: DateTime.parse(row['created_at'] as String),
-      updatedAt: DateTime.parse(row['updated_at'] as String),
+      creatorId: row['creator_id'] as String? ?? '',
+      createdAt: DateTime.tryParse(row['created_at'] as String? ?? '') ?? DateTime.now(),
+      updatedAt: DateTime.tryParse(row['updated_at'] as String? ?? '') ?? DateTime.now(),
       memberCount: row['member_count'] as int? ?? 0,
       isMember: row['is_member'] as bool? ?? false,
     );
@@ -85,11 +85,11 @@ class Circles {
 
   static CircleMember _mapCircleMemberRow(Map<String, dynamic> row) {
     return CircleMember(
-      userId: row['user_id'] as String,
+      userId: row['user_id'] as String? ?? '',
       displayName: row['display_name'] as String? ?? '',
-      username: row['username'] as String,
+      username: row['username'] as String? ?? '',
       avatarUrl: row['avatar_url'] as String?,
-      joinedAt: DateTime.parse(row['joined_at'] as String),
+      joinedAt: DateTime.tryParse(row['joined_at'] as String? ?? '') ?? DateTime.now(),
       isAdmin: row['is_admin'] as bool? ?? false,
     );
   }

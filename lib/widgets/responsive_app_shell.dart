@@ -67,13 +67,12 @@ class ResponsiveAppShell extends StatelessWidget {
                       actions: actions,
                     ),
                     Expanded(
-                      child: Align(
-                        alignment: Alignment.topCenter,
+                      child: Center(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 1180),
                           child: SizedBox.expand(
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
                               child: body,
                             ),
                           ),
@@ -106,8 +105,8 @@ class _WorkspaceHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 82,
-      padding: const EdgeInsets.fromLTRB(24, 14, 20, 12),
+      height: 72,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       decoration: BoxDecoration(
         color: app_colors.bg,
         border: Border(
@@ -127,19 +126,22 @@ class _WorkspaceHeader extends StatelessWidget {
                   title,
                   style: const TextStyle(
                     color: app_colors.text,
-                    fontSize: 22,
+                    fontSize: 20,
                     fontWeight: FontWeight.w700,
-                    letterSpacing: -0.2,
+                    letterSpacing: -0.1,
                   ),
                 ),
                 if (subtitle != null) ...[
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
                     subtitle!,
                     style: const TextStyle(
                       color: app_colors.muted,
                       fontSize: 12,
+                      height: 1.3,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ],

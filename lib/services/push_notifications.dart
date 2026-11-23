@@ -57,18 +57,23 @@ class PushNotifications {
   static Future<void> initialize({Uri? launchUri}) async {
     _authSub?.cancel();
     if (_initialized || !configured) return;
-    if (kIsWeb) {
-      await Firebase.initializeApp(
-        options: const FirebaseOptions(
-          apiKey: webApiKey,
-          appId: webAppId,
-          messagingSenderId: webSender,
-          projectId: webProject,
-        ),
-      );
-    } else {
-      await Firebase.initializeApp();
-      FirebaseMessaging.onBackgroundMessage(firebaseBackgroundMessageHandler);
+    try {
+      if (kIsWeb) {
+        await Firebase.initializeApp(
+          options: const FirebaseOptions(
+            apiKey: webApiKey,
+            appId: webAppId,
+            messagingSenderId: webSender,
+            projectId: webProject,
+          ),
+        );
+      } else {
+        await Firebase.initializeApp();
+        FirebaseMessaging.onBackgroundMessage(firebaseBackgroundMessageHandler);
+      }
+    } catch (e) {
+      debugPrint('Firebase initialization failed: $e. Push notifications disabled.');
+      return;
     }
     final messaging = FirebaseMessaging.instance;
     if (!await messaging.isSupported()) return;

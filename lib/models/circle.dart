@@ -66,14 +66,14 @@ class Circle {
 
   factory Circle.fromJson(Map<String, dynamic> json) {
     return Circle(
-      id: json['id'] as String,
-      name: json['name'] as String,
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
       description: json['description'] as String?,
       avatarPath: json['avatar_path'] as String?,
       isPrivate: json['is_private'] as bool? ?? false,
-      creatorId: json['creator_id'] as String,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      creatorId: json['creator_id'] as String? ?? '',
+      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now(),
+      updatedAt: DateTime.tryParse(json['updated_at'] as String? ?? '') ?? DateTime.now(),
       memberCount: json['member_count'] as int? ?? 0,
       isMember: json['is_member'] as bool? ?? false,
     );
@@ -128,11 +128,11 @@ class CircleMember {
 
   factory CircleMember.fromJson(Map<String, dynamic> json) {
     return CircleMember(
-      userId: json['user_id'] as String,
+      userId: json['user_id'] as String? ?? '',
       displayName: json['display_name'] as String? ?? '',
-      username: json['username'] as String,
+      username: json['username'] as String? ?? '',
       avatarUrl: json['avatar_url'] as String?,
-      joinedAt: DateTime.parse(json['joined_at'] as String),
+      joinedAt: DateTime.tryParse(json['joined_at'] as String? ?? '') ?? DateTime.now(),
       isAdmin: json['is_admin'] as bool? ?? false,
     );
   }

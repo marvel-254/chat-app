@@ -54,43 +54,50 @@ void _setupAuthGateCallback() {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await SentryFlutter.init(
-    (options) {
-      options.dsn =
-          'https://fd8f1fbe2d70d8f8dcd5d5434a361ab5@o4510827799707648.ingest.de.sentry.io/4512197248745552';
-      options.environment = kReleaseMode ? 'production' : 'development';
-      options.release = const String.fromEnvironment(
-        'APP_RELEASE',
-        defaultValue: 'bro@dev',
-      );
-      options.dist = buildNumber.isEmpty ? null : buildNumber;
-      options.sendDefaultPii = false;
-      options.tracesSampleRate = kReleaseMode ? 0.1 : 1.0;
-      options.debug = false;
-    },
-    appRunner: () async {
-      const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
-      const supabaseKey = String.fromEnvironment('SUPABASE_ANON_KEY');
-      final uri = Uri.tryParse(supabaseUrl);
-      if (uri == null ||
-          !uri.hasAuthority ||
-          uri.host.isEmpty ||
-          uri.host ==
-              'your-project.supabase.co' || // stale placeholder build (#48)
-          !const {'https', 'http'}.contains(uri.scheme) ||
-          supabaseKey.isEmpty) {
-        runApp(const BackendConfigurationApp());
-        return;
-      }
+  const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+  const supabaseKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+  final uri = Uri.tryParse(supabaseUrl);
+  if (uri == null ||
+      !uri.hasAuthority ||
+      uri.host.isEmpty ||
+      uri.host == 'your-project.supabase.co' ||
+      !const {'https', 'http'}.contains(uri.scheme) ||
+      supabaseKey.isEmpty) {
+    runApp(const BackendConfigurationApp());
+    return;
+  }
 
-      await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
-      await onboarding.loadOnboardingStatus();
-      _setupAuthGateCallback();
-      final launchUri = Uri.base;
-      runApp(const BroApp());
-      unawaited(_initializePush(launchUri));
-    },
-  );
+  await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
+  await onboarding.loadOnboardingStatus();
+  _setupAuthGateCallback();
+  final launchUri = Uri.base;
+  runApp(const BroApp());
+
+  // Neither service is required for the first frame; start them after paint.
+  unawaited(_initializeSentry());
+  unawaited(_initializePush(launchUri));
+}
+
+Future<void> _initializeSentry() async {
+  try {
+    await SentryFlutter.init(
+      (options) {
+        options.dsn =
+            'https://fd8f1fbe2d70d8f8dcd5d5434a361ab5@o4510827799707648.ingest.de.sentry.io/4512197248745552';
+        options.environment = kReleaseMode ? 'production' : 'development';
+        options.release = const String.fromEnvironment(
+          'APP_RELEASE',
+          defaultValue: 'bro@dev',
+        );
+        options.dist = buildNumber.isEmpty ? null : buildNumber;
+        options.sendDefaultPii = false;
+        options.tracesSampleRate = kReleaseMode ? 0.1 : 1.0;
+        options.debug = false;
+      },
+    );
+  } catch (e) {
+    debugPrint('Sentry could not start: $e');
+  }
 }
 
 Future<void> _initializePush(Uri launchUri) async {
@@ -130,14 +137,22 @@ class BackendConfigurationApp extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
-                    Icons.settings_ethernet,
-                    color: _P.primary,
-                    size: 48,
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: _P.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: const Icon(
+                      Icons.settings_ethernet_rounded,
+                      color: _P.primary,
+                      size: 36,
+                    ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 24),
                   const Text(
-                    'BRO needs backend configuration',
+                    'Backend Not Configured',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: _P.text,
@@ -145,18 +160,46 @@ class BackendConfigurationApp extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   const Text(
-                    'Set SUPABASE_URL and SUPABASE_ANON_KEY for this build, then restart the app.',
+                    'This APK was built without Supabase credentials. Use the build script to include them:',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: _P.muted, height: 1.5),
+                    style: TextStyle(color: _P.muted, height: 1.6),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: _P.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _P.border.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: const Text(
+                      './scripts/build.sh apk',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: _P.primary,
+                        fontFamily: 'monospace',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Make sure .env.local contains SUPABASE_URL and SUPABASE_ANON_KEY.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: _P.muted, fontSize: 12, height: 1.5),
                   ),
                   if (buildNumber.isNotEmpty) ...[
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     Text(
                       'build $buildNumber',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: _P.muted, fontSize: 12),
+                      style: const TextStyle(color: _P.muted, fontSize: 11),
                     ),
                   ],
                 ],

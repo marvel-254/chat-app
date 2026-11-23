@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:async';
@@ -200,11 +201,13 @@ class Supa {
 
   static Future<void> updateProfile(
       {required String username, required String displayName}) async {
+    final me = currentUser;
+    if (me == null) throw StateError('Not authenticated');
     await client.from('profiles').update({
       'username': username.trim(),
       'display_name': displayName.trim().isEmpty ? null : displayName.trim(),
       'updated_at': DateTime.now().toIso8601String(),
-    }).eq('id', currentUser!.id);
+    }).eq('id', me.id);
     await client.auth
         .updateUser(UserAttributes(data: {'username': username.trim()}));
   }
@@ -255,14 +258,16 @@ class Supa {
     if (gameVisibility != null) {
       updates['game_visibility'] = gameVisibility;
     }
+    final me = currentUser;
+    if (me == null) throw StateError('Not authenticated');
     try {
-      await client.from('profiles').update(updates).eq('id', currentUser!.id);
+      await client.from('profiles').update(updates).eq('id', me.id);
     } on PostgrestException catch (e) {
       // Handle case where auto_lock_timer column doesn't exist yet (pre-migration)
       if (e.code == '42703' && updates.containsKey('auto_lock_timer')) {
         // Column doesn't exist - retry without it
         updates.remove('auto_lock_timer');
-        await client.from('profiles').update(updates).eq('id', currentUser!.id);
+        await client.from('profiles').update(updates).eq('id', me.id);
       } else {
         rethrow;
       }
@@ -292,11 +297,13 @@ class Supa {
   }
 
   static Future<void> updateProfileTheme(ProfileTheme theme) async {
+    final me = currentUser;
+    if (me == null) throw StateError('Not authenticated');
     final updates = <String, dynamic>{
       ...theme.toJson(),
       'updated_at': DateTime.now().toUtc().toIso8601String(),
     };
-    await client.from('profiles').update(updates).eq('id', currentUser!.id);
+    await client.from('profiles').update(updates).eq('id', me.id);
   }
 
   // Digital avatar (issue #74)
@@ -334,8 +341,10 @@ class Supa {
       '.webp' => 'image/webp',
       _ => throw ArgumentError('Choose a JPEG, PNG, or WebP cover image.'),
     };
+    final me = currentUser;
+    if (me == null) throw StateError('Not authenticated');
     final objectPath =
-        '${currentUser!.id}/cover${extension.isEmpty ? '.jpg' : extension}';
+        '${me.id}/cover${extension.isEmpty ? '.jpg' : extension}';
     await client.storage.from('profile-media').uploadBinary(
           objectPath,
           bytes,
@@ -364,8 +373,10 @@ class Supa {
       _ => throw ArgumentError(
           'Choose an MP3, M4A, AAC, WAV, OGG, or WebM audio file.'),
     };
+    final me = currentUser;
+    if (me == null) throw StateError('Not authenticated');
     final objectPath =
-        '${currentUser!.id}/profile-music${extension.isEmpty ? '.mp3' : extension}';
+        '${me.id}/profile-music${extension.isEmpty ? '.mp3' : extension}';
     await client.storage.from('profile-media').uploadBinary(
           objectPath,
           bytes,
@@ -387,8 +398,10 @@ class Supa {
     if (extension != '.gif') {
       throw ArgumentError('Animated avatars must be GIF files.');
     }
+    final me = currentUser;
+    if (me == null) throw StateError('Not authenticated');
     const objectPathSuffix = '/animated-avatar.gif';
-    final objectPath = '${currentUser!.id}$objectPathSuffix';
+    final objectPath = '${me.id}$objectPathSuffix';
     await client.storage.from('profile-media').uploadBinary(
           objectPath,
           bytes,
@@ -408,10 +421,12 @@ class Supa {
   }
 
   static Future<bool> isFollowing(String userId) async {
+    final me = currentUser;
+    if (me == null) return false;
     final row = await client
         .from('user_follows')
         .select('followed_id')
-        .eq('follower_id', currentUser!.id)
+        .eq('follower_id', me.id)
         .eq('followed_id', userId)
         .maybeSingle();
     return row != null;
@@ -429,15 +444,17 @@ class Supa {
   }
 
   static Future<void> setFollowing(String userId, bool follow) async {
+    final me = currentUser;
+    if (me == null) throw StateError('Not authenticated');
     if (follow) {
       await client.from('user_follows').upsert(
-          {'follower_id': currentUser!.id, 'followed_id': userId},
+          {'follower_id': me.id, 'followed_id': userId},
           onConflict: 'follower_id,followed_id', ignoreDuplicates: true);
     } else {
       await client
           .from('user_follows')
           .delete()
-          .eq('follower_id', currentUser!.id)
+          .eq('follower_id', me.id)
           .eq('followed_id', userId);
     }
   }
@@ -528,8 +545,10 @@ class Supa {
     String? mood,
     String privacy = 'contacts',
   }) async {
+    final me = currentUser;
+    if (me == null) throw StateError('Not authenticated');
     await client.from('statuses').insert({
-      'user_id': currentUser!.id,
+      'user_id': me.id,
       if (content != null && content.trim().isNotEmpty)
         'content': content.trim(),
       if (mediaPath != null) 'media_path': mediaPath,
@@ -626,11 +645,13 @@ class Supa {
 
   /// Record a view for a status (upsert to handle duplicate views gracefully)
   static Future<void> recordStatusView(String statusId) async {
+    final me = currentUser;
+    if (me == null) return;
     try {
       await client.from('status_views').upsert(
         {
           'status_id': statusId,
-          'viewer_id': currentUser!.id,
+          'viewer_id': me.id,
           'viewed_at': DateTime.now().toUtc().toIso8601String(),
         },
         onConflict: 'status_id,viewer_id',
@@ -680,7 +701,9 @@ class Supa {
     if (bytes.length > 5 * 1024 * 1024) {
       throw ArgumentError('Status photos must be 5 MB or smaller.');
     }
-    final uid = currentUser!.id;
+    final me = currentUser;
+    if (me == null) throw StateError('Not authenticated');
+    final uid = me.id;
     final extension = path.extension(filename).toLowerCase();
     final safeExt = switch (extension) {
       '.png' => '.png',
@@ -748,11 +771,13 @@ class Supa {
 
   static Future<void> updateChatBackground(String background,
       {String? imagePath}) async {
+    final me = currentUser;
+    if (me == null) throw StateError('Not authenticated');
     await client.from('profiles').update({
       'chat_background': background,
       'chat_background_image_path': imagePath,
       'updated_at': DateTime.now().toIso8601String(),
-    }).eq('id', currentUser!.id);
+    }).eq('id', me.id);
   }
 
   static Future<List<Conversation>> refreshConversations() =>
@@ -771,8 +796,10 @@ class Supa {
       '.gif' => 'image/gif',
       _ => throw ArgumentError('Choose a JPEG, PNG, WebP, or GIF image.'),
     };
+    final me = currentUser;
+    if (me == null) throw StateError('Not authenticated');
     final objectPath =
-        '${currentUser!.id}/background${extension.isEmpty ? '.jpg' : extension}';
+        '${me.id}/background${extension.isEmpty ? '.jpg' : extension}';
     if (_cloudStorageUrl.isNotEmpty) {
       final uploaded = await _storagePost('/upload/background',
           bytes: bytes, contentType: contentType);
@@ -869,7 +896,9 @@ class Supa {
 
   static Future<Map<String, dynamic>> uploadAttachment(String conversationId,
       Uint8List bytes, String filename, String mimeType) async {
-    final uid = currentUser!.id;
+    final me = currentUser;
+    if (me == null) throw StateError('Not authenticated');
+    final uid = me.id;
     LegacyMessaging.requireAllowed(uid);
     final id = const Uuid().v4();
     final safeName =
@@ -938,15 +967,47 @@ class Supa {
 
   // Conversations
   static Future<List<dynamic>> fetchConversationsWithCircles() async {
-    final dynamic result = await client.rpc('get_all_conversations_for_user');
-    if (result is List) {
-      return result.cast<dynamic>();
+    try {
+      final dynamic result = await client.rpc('get_all_conversations_for_user');
+      if (result is List) {
+        return result.cast<dynamic>();
+      }
+      return [];
+    } on PostgrestException catch (e) {
+      // Fallback: the circles-enhanced RPC may not exist on production yet.
+      // PGRST202 = function not found.
+      final msg = e.message.toLowerCase();
+      if (msg.contains('not found') || msg.contains('pgrst202')) {
+        debugPrint(
+            'get_all_conversations_for_user RPC not found, falling back to get_conversations_for_user');
+        Sentry.captureException(
+          Exception('RPC get_all_conversations_for_user not found: ${e.message}'),
+        );
+        try {
+          final fallback = await client.rpc('get_conversations_for_user');
+          if (fallback is List) {
+            return fallback.cast<dynamic>();
+          }
+          return [];
+        } catch (fb) {
+          debugPrint('Fallback RPC also failed: $fb');
+          Sentry.captureException(
+              Exception('Fallback RPC get_conversations_for_user also failed: $fb'));
+          return [];
+        }
+      }
+      rethrow;
+    } catch (e) {
+      debugPrint('fetchConversationsWithCircles failed: $e');
+      Sentry.captureException(
+          Exception('fetchConversationsWithCircles failed: $e'));
+      return [];
     }
-    return [];
   }
 
   static Future<Conversation> getOrCreateDM(String otherUid) async {
-    final me = currentUser!.id;
+    final me = currentUser?.id;
+    if (me == null) throw StateError('Not authenticated');
     final existing = await client
         .rpc('get_or_create_dm', params: {'my_id': me, 'other_id': otherUid});
     final convId = existing as String;
@@ -1001,7 +1062,8 @@ class Supa {
   }
 
   static Future<List<Map<String, dynamic>>> _messageRequests() async {
-    final me = currentUser!.id;
+    final me = currentUser?.id;
+    if (me == null) return [];
     final rows = await fetchConversationRows();
     final requests = <Map<String, dynamic>>[];
     for (final r in rows) {
@@ -1025,7 +1087,8 @@ class Supa {
   }
 
   static Future<void> declineMessageRequest(String conversationId) async {
-    final me = currentUser!.id;
+    final me = currentUser?.id;
+    if (me == null) return;
     await client
         .from('conversation_participants')
         .delete()
@@ -1138,12 +1201,13 @@ class Supa {
           final reactionsMap = <String, List<Map<String, dynamic>>>{};
           final hiddenIds = <String>{};
           if (messageIds.isNotEmpty && currentUser != null) {
+            final me = currentUser!;
             try {
               final reads = await client
                   .from('message_reads')
                   .select('message_id')
                   .filter('message_id', 'in', messageIds)
-                  .neq('user_id', currentUser!.id);
+                  .neq('user_id', me.id);
               for (final row in reads as List) {
                 readByPeerSet.add(row['message_id'] as String);
               }
@@ -1159,7 +1223,7 @@ class Supa {
               final hides = await client
                   .from('message_hides')
                   .select('message_id')
-                  .eq('user_id', currentUser!.id)
+                  .eq('user_id', me.id)
                   .filter('message_id', 'in', messageIds);
               for (final row in hides as List) {
                 hiddenIds.add(row['message_id'] as String);

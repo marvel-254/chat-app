@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import '../models/circle.dart';
 import '../services/circles.dart';
 import '../services/supabase.dart';
@@ -45,7 +46,9 @@ class _CircleDetailScreenState extends State<CircleDetailScreen> {
         _isAdmin = isAdmin;
         _isLoading = false;
       });
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('Failed to load circle: $e');
+      Sentry.captureException(e, stackTrace: st);
       setState(() {
         _error = e.toString();
         _isLoading = false;
@@ -245,7 +248,7 @@ class _CircleDetailScreenState extends State<CircleDetailScreen> {
                     children: [
                       const Icon(Icons.error, color: Colors.red, size: 48),
                       const SizedBox(height: 16),
-                      Text(_error!),
+                      Text(_error ?? 'Unknown error'),
                       const SizedBox(height: 16),
                       ElevatedButton(
                         onPressed: _loadCircle,

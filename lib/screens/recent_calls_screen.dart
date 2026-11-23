@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show AuthState;
 
 import '../models/call_record.dart';
@@ -54,7 +55,11 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
   Future<void> _initialize() async {
     final cached = await Calls.cached(_owner);
     if (!_current) return;
-    setState(() => _records = cached);
+    // If cached data is available, show it immediately. If the cache was
+    // skipped (expired TTL), the list is empty and we show loading state.
+    if (cached.isNotEmpty) {
+      setState(() => _records = cached);
+    }
     await _load();
   }
 
@@ -65,9 +70,11 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
 
   Future<void> _load() async {
     if (!_current || _syncing) return;
+    debugPrint('Loading call history for $_owner');
     _syncing = true;
     try {
       final records = await Calls.recent(_owner);
+      debugPrint('Fetched ${records.length} call records');
       final cachedNames = {
         for (final record in _records)
           record.peerId(_owner): record.cachedContact
@@ -93,7 +100,7 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
         try {
           final profiles = await Supa.client
               .from('visible_profiles')
-              .select()
+              .select('id,name,avatar_url')
               .inFilter('id', ids.toList())
               .timeout(Calls.timeout);
           profilesFresh = true;
@@ -106,7 +113,8 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
               }
             });
           }
-        } catch (_) {
+        } catch (e) {
+          debugPrint('Profile lookup failed: $e');
           // History remains useful if profile lookup is unavailable.
         }
       }
@@ -124,7 +132,9 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
           unawaited(_details(target));
         }
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Failed to load call history: $e');
+      await Sentry.captureException(e);
       if (_current) setState(() => _unavailable = true);
     } finally {
       _syncing = false;
@@ -157,7 +167,9 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
         setState(() => _records =
             _records.where((record) => id != null && record.id != id).toList());
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Failed to remove call history: $e');
+      await Sentry.captureException(e);
       if (!mounted) return;
       if (_current) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(

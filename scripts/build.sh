@@ -68,13 +68,18 @@ case "$TARGET" in
   web)
     # Build Flutter web app with base-href for the PWA subdirectory
     flutter build web --release --source-maps --base-href "$BASE_HREF" "${DEFINES[@]}"
-    # Move compiled Flutter app into build/web/app/ (PWA lives under /app/)
+    # Move compiled Flutter app into build/web/app/ (PWA lives under /app/).
+    # Remove any previous /app directory first: mv into an existing directory
+    # nests the source (assets/assets) and breaks repeat local builds.
+    rm -rf build/web/app
     mkdir -p build/web/app
-    for entry in $(ls build/web); do
-      if [ "$entry" != "app" ]; then
-        mv "build/web/$entry" "build/web/app/$entry"
-      fi
+    shopt -s dotglob nullglob
+    for entry in build/web/*; do
+      name="$(basename "$entry")"
+      [ "$name" = "app" ] && continue
+      mv "$entry" "build/web/app/$name"
     done
+    shopt -u dotglob nullglob
     # Copy landing page and assets to build/web/ root
     mkdir -p build/web/css build/web/icons build/web/assets build/web/legal
     cp web/index-landing.html build/web/index.html
