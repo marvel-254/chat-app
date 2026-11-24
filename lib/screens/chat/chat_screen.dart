@@ -20,6 +20,7 @@ import '../../services/presence.dart';
 import '../../services/connection_monitor.dart';
 import '../../services/message_outbox.dart';
 import '../../chat/widgets.dart';
+import '../../models/avatar_config.dart';
 import '../../services/voice_note.dart';
 import '../../services/voice_note_codec.dart';
 import '../../services/voice_note_send.dart';
@@ -2059,6 +2060,10 @@ class _ChatScreenState extends State<ChatScreen> {
                                 next: i + 1 < display.length
                                     ? display[i + 1]
                                     : null,
+                                peerId: _peer?.id,
+                                peerAvatarUrl: _peer?.avatarUrl,
+                                peerName: _peer?.peerInitial ?? '?',
+                                peerDigitalConfig: _peer?.avatarConfig,
                                 me: Supa.currentUser!.id,
                                 onLongPress: _showMessageActions,
                                 onReactionTap: _toggleReaction,
@@ -2264,6 +2269,10 @@ class _ChatScreenState extends State<ChatScreen> {
                                       next: i + 1 < display.length
                                           ? display[i + 1]
                                           : null,
+                                      peerId: _peer?.id,
+                                      peerAvatarUrl: _peer?.avatarUrl,
+                                      peerName: _peer?.peerInitial ?? '?',
+                                      peerDigitalConfig: _peer?.avatarConfig,
                                       me: Supa.currentUser!.id,
                                       onLongPress: _showMessageActions,
                                       onReactionTap: _toggleReaction,
@@ -2601,6 +2610,10 @@ class _MessageRow extends StatelessWidget {
       {required this.msg,
       this.prev,
       this.next,
+      this.peerId,
+      this.peerAvatarUrl,
+      this.peerName = '?',
+      this.peerDigitalConfig,
       required this.me,
       required this.onLongPress,
       this.onReactionTap,
@@ -2609,6 +2622,10 @@ class _MessageRow extends StatelessWidget {
   final Message msg;
   final Message? prev;
   final Message? next;
+  final String? peerId;
+  final String? peerAvatarUrl;
+  final String peerName;
+  final AvatarConfig? peerDigitalConfig;
   final String me;
   final ValueChanged<Message> onLongPress;
   final void Function(String messageId, String emoji)? onReactionTap;
@@ -2630,6 +2647,38 @@ class _MessageRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showAvatar = showMessageBubbleAvatar(
+      mine: mine,
+      groupedNext: _groupNext,
+      peerId: peerId,
+      senderId: msg.senderId,
+    );
+    final bubble = _Bubble(
+      msg: msg,
+      groupedTop: _groupPrev,
+      groupedBottom: _groupNext,
+      mine: mine,
+      onLongPress: () => onLongPress(msg),
+      onReactionTap: onReactionTap,
+      pendingStatus: pendingStatus,
+      replyTarget: msg.replyToId != null && messages != null
+          ? messages!.where((m) => m.id == msg.replyToId).firstOrNull
+          : null,
+    );
+    final bubbleChild = showAvatar
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              MessageBubbleAvatar(
+                name: peerName,
+                url: peerAvatarUrl,
+                digitalConfig: peerDigitalConfig,
+              ),
+              Flexible(child: bubble),
+            ],
+          )
+        : bubble;
     return Column(
       crossAxisAlignment:
           mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -2649,18 +2698,7 @@ class _MessageRow extends StatelessWidget {
               child: child,
             ),
           ),
-          child: _Bubble(
-            msg: msg,
-            groupedTop: _groupPrev,
-            groupedBottom: _groupNext,
-            mine: mine,
-            onLongPress: () => onLongPress(msg),
-            onReactionTap: onReactionTap,
-            pendingStatus: pendingStatus,
-            replyTarget: msg.replyToId != null && messages != null
-                ? messages!.where((m) => m.id == msg.replyToId).firstOrNull
-                : null,
-          ),
+          child: bubbleChild,
         ),
       ],
     );

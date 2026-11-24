@@ -1,6 +1,6 @@
 # Chat improvement plan
 
-Status: Phase A implemented and gate-verified; release pending. Phases B-E proposed. Scope: `lib/screens/chat/`, `lib/services/voice_note.dart`, `lib/services/supabase.dart`, `test/`, and timestamped Supabase migrations if a phase needs them. No route changes, no brand refresh, no E2EE protocol work, no other projects.
+Status: Phase A shipped in v1.5.7; Phase B implemented and gate-verified; Phases C-E proposed. Scope: `lib/screens/chat/`, `lib/services/voice_note.dart`, `lib/services/supabase.dart`, `test/`, and timestamped Supabase migrations if a phase needs them. No route changes, no brand refresh, no E2EE protocol work, no other projects.
 
 ## Diagnosis
 
@@ -52,7 +52,9 @@ Independently shippable. No schema change needed.
 5. On web, keep playback and hide the mic action when recording is unsupported instead of letting `dart:io.File` fail at runtime. Add a clear tooltip explaining the platform limit.
 6. Tests: unit tests for the voice content codec and signed-URL resolution, plus a widget test for idle, recording, sending, and failed states of the voice dialog.
 
-## Phase B: peer photos in the chat surface
+## Phase B: peer photos in the chat surface (implemented)
+
+Implemented through `MessageBubbleAvatar` and `showMessageBubbleAvatar` in `lib/chat/widgets.dart`. `_MessageRow` renders the existing `Avatar` widget beside only the last inbound bubble from the resolved peer. Own messages, grouped bubbles, and senders that do not match the peer id stay unchanged, so a multi-participant conversation never shows an arbitrary photo. `test/message_bubble_avatar_test.dart` covers visibility rules, photo rendering and the initials fallback. Two-account device verification is still outstanding.
 
 1. Add an avatar slot to `_MessageRow` and `_Bubble`, driven by the conversation's `peerAvatarUrl` (`Conversation.peerAvatarUrl`, mapped at `supabase.dart:1114`). Show it only on the last bubble in an incoming group so grouped messages stay clean.
 2. Keep `Avatar` as the single rendering path so digital avatars and initials fallback continue to work (`avatar.dart:32-61`).
