@@ -10,6 +10,7 @@ permissions:
   contents: read
   pages: write      # to upload a website
   id-token: write   # to verify the deployment originates from this source
+  actions: write    # to remove stale same-named Pages artifacts before upload
 
 # Allow one concurrent deployment; skip queued runs when a newer one starts.
 concurrency:
