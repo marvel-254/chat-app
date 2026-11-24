@@ -1,12 +1,12 @@
 # BRO next feature plan
 
-Status: Phase A implemented and gate-verified on 2026-11-24; device matrix pending. All GitHub issues are closed as of 2026-11-24; v1.5.7 shipped with voice-note fixes. Scope: `lib/`, `docs/`, tests, and timestamped Supabase migrations only when a phase needs them. No route changes, no brand refresh, no E2EE protocol rewrite, no other projects.
+Status: Phase A implemented, gate-verified and shipped in v1.5.9 on 2026-11-24; device matrix pending. All GitHub issues are closed as of 2026-11-24; v1.5.7 shipped with voice-note fixes. Scope: `lib/`, `docs/`, tests, and timestamped Supabase migrations only when a phase needs them. No route changes, no brand refresh, no E2EE protocol rewrite, no other projects.
 
 ## 1. Current state
 
 - GitHub: 0 open issues; 15 most-recent closed issues include E2EE, calls, rich media, notifications-related hardening, friend suggestions and the Supabase service outage.
 - Release: `v1.5.7` at `c9a17e7`; CI Checks and Build APK green, three signed split APKs attached, Supabase CI green.
-- Pages: two v1.5.7 deploys failed with `Found 0 artifact(s)` from `actions/deploy-pages@v4`; stale same-named artifacts were deleted and clean run `45412663778` is green with the PWA returning 200.
+- Pages: `actions/deploy-pages@v4` repeatedly failed with `Found 0 artifact(s)` when stale same-named artifacts existed. `pages.yml` now removes stale `github-pages` artifacts before upload and waits for the new artifact metadata; run `45420164897` is green on `c861c55` and the PWA returns 200.
 - Earlier plans: `docs/CHAT_IMPROVEMENT_PLAN.md` Phase A (voice notes) is implemented and shipped in v1.5.7; `docs/DESKTOP_CIRCLES_PLAN.md` Phases A and B shipped in v1.5.5 and v1.5.6.
 
 ## 2. Diagnosis
