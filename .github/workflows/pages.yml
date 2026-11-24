@@ -84,6 +84,21 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
+      - name: Remove stale Pages artifacts
+        # deploy-pages@v4 can report "Found 0 artifact(s)" when older runs left
+        # another artifact with the same name. Keep only the current upload.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.name == "github-pages") | .id' |
+            while read -r id; do
+              [ -n "$id" ] || continue
+              gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/$id" >/dev/null
+              echo "Removed stale Pages artifact $id."
+            done
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
