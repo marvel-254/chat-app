@@ -1,6 +1,6 @@
 # BRO next feature plan
 
-Status: Phase A implemented, gate-verified and shipped in v1.5.9 on 2026-11-24; device matrix pending. All GitHub issues are closed as of 2026-11-24; v1.5.7 shipped with voice-note fixes. Scope: `lib/`, `docs/`, tests, and timestamped Supabase migrations only when a phase needs them. No route changes, no brand refresh, no E2EE protocol rewrite, no other projects.
+Status: Phase A shipped in v1.5.9 and Phase B shipped in v1.5.10 on 2026-11-24; device matrices pending. All GitHub issues are closed as of 2026-11-24; v1.5.7 shipped with voice-note fixes. Scope: `lib/`, `docs/`, tests, and timestamped Supabase migrations only when a phase needs them. No route changes, no brand refresh, no E2EE protocol rewrite, no other projects.
 
 ## 1. Current state
 
@@ -66,7 +66,7 @@ ICE = impact x confidence / effort.
 5. Scope out web push only: keep VAPID provisioning and `PushManager.subscribe` as a separate proposal. No browser notification opt-in until the server sender exists.
 6. Verification gate: analyzer clean, tests green, DB suites green if a migration changes, and an explicit device matrix in `docs/testing/` with pass/fail per case.
 
-## 6. Phase B: peer photos in chat bubbles
+## 6. Phase B: peer photos in chat bubbles (shipped in v1.5.10)
 
 Use `Conversation.peerAvatarUrl` and the existing `Avatar` widget. Show an avatar only on the last bubble of an incoming group; keep initials fallback and `photo_visibility` masking. Add widget tests for URL, grouped and fallback cases, then verify with two real accounts. This is the directly shippable follow-on to the voice-note work.
 
