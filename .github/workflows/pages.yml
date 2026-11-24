@@ -89,6 +89,26 @@ jobs:
         with:
           path: build/web
 
+      - name: Wait for Pages artifact metadata
+        # actions/deploy-pages@v4 sometimes sees 0 artifacts immediately after
+        # upload-pages-artifact succeeds. Poll the run API until the artifact is
+        # visible before handing over to the deploy step.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            if gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+                --jq '.artifacts[] | select(.name == "github-pages") | .id' | grep -q .; then
+              echo "Pages artifact visible after ${attempt} attempt(s)."
+              exit 0
+            fi
+            echo "Artifact metadata not visible yet (attempt ${attempt}); retrying in 10s."
+            sleep 10
+          done
+          echo "Pages artifact never became visible."
+          exit 1
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
