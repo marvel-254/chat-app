@@ -1,43 +1,41 @@
 # BRO push notification infrastructure
 
-## Android and iOS: corrected FCM registration
+Verified against the linked project on 2026-11-24. No secret values are stored here.
 
-The previous implementation registered a Firebase **Installation ID** and sent it to FCM HTTP v1 as `message.fid`. That is not a registration token and cannot deliver messages reliably.
+## Runtime path
 
-Current implementation:
+1. The client calls `FirebaseMessaging.instance.getToken()` (`lib/services/push_notifications.dart`). Token refresh re-registers automatically.
+2. `register_bro_push(p_owner, p_device, p_token, p_platform)` writes the token to `public.bro_push_devices`, keyed by `(user_id, device_id)`. The device id is a random per-install id in secure storage. The RPC rejects a caller who is not the owner.
+3. Logout and account switch delete only the current install's row and call `deleteToken()`.
+4. Message and call triggers write opaque events to `public.bro_push_events`; no message text, sender name, or ciphertext is stored in the push queue.
+5. `public.bro_eligible_push` applies notification preferences, blocks, sender exclusion, membership, call state and expiry.
+6. `public.claim_bro_push()` leases at most 32 due devices per invocation, one delivery per `(kind, source, day, device)`.
+7. The `push-new-message` Edge Function (ACTIVE, version 5) sends FCM HTTP v1 `message.token` and removes invalid tokens on `UNREGISTERED`. It requires `FIREBASE_SERVICE_ACCOUNT_B64`, `PUSH_WEBHOOK_SECRET`, `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, all present as Supabase secrets.
+8. `wake_bro_push` is scheduled every 10 seconds and invokes the function when work is queued. `bro-push-retention` prunes stale devices and expired events daily.
 
-- `FirebaseMessaging.instance.getToken()` obtains the real FCM registration token.
-- `onTokenRefresh` keeps the stored token current.
-- `Supa.savePushToken(token, platform)` stores it in `public.push_tokens` keyed by `(user_id, device_id)`, where `device_id` is a random install identifier in secure storage. This prevents duplicate registrations and account cross-talk.
-- Logout/account switch removes only the current install's token and calls `deleteToken()`.
-- The `push-new-message` Edge Function now selects `token` and sends FCM HTTP v1 `message.token`, removing invalid tokens on `UNREGISTERED`.
-- Notifications remain generic: no sender, message plaintext or ciphertext in the payload.
+`public.push_tokens` and the `dispatch_message_push` trigger from `20261102030000_message_push_tokens.sql` are legacy Firebase Installation ID code. They are superseded and must not be used for new sends. The authoritative trigger is `bro_queue_push` in `20261120130000_push_delivery.sql`.
 
-Deployed: migration `20261121000000_signal_identity_and_push.sql` and Edge Function `push-new-message` to the linked BRO project `dbfgyehzgrmsajpwydps`.
+## Native platforms
 
-## Web push: partial implementation
+Android and iOS use the committed `google-services.json` / `GoogleService-Info.plist`. `PushNotifications.configured` is true for those platforms, but `available` is true only after Firebase actually starts. Settings shows "Try again" when startup failed so the user is not invited to enable a push channel that cannot register.
 
-Implemented now:
+## Web
 
-- `web/service-worker.js` handles `push`, displays a generic notification and handles `notificationclick` by focusing an existing BRO tab and posting a `bro-navigate` message or opening `#/conversations`.
+`web/service-worker.js` registers Firebase Messaging compat when `push-config.js` contains a Firebase web config, displays a generic notification for background messages, and routes clicks only inside BRO's own scope. The Dart client then checks account, membership and call state before navigation.
 
-Outstanding before web push can be enabled in production:
+Web push is currently **disabled by configuration**: the `FIREBASE_WEB_*` and `FIREBASE_WEB_VAPID_KEY` GitHub Actions variables are not set, so `scripts/web-push-config.mjs` writes a null config and `PushNotifications.configured` is false on web. Settings states that push is not configured. To enable it, set those public web values as repository variables (the VAPID key comes from the Firebase console; no private key is needed for FCM web) and verify delivery in a browser. Until then, do not advertise web notifications.
 
-1. Add an explicit "Enable browser notifications" action in Settings that calls `Notification.requestPermission()` only after user interaction.
-2. Provision a VAPID key pair. The private key must remain server-side; only the public key may reach the browser.
-3. Implement subscription creation in Dart (`PushManager.subscribe`) and store `(user_id, endpoint, p256dh, auth)` in `public.web_push_subscriptions` via RLS-protected client writes.
-4. Add a server-side sender using Web Push encryption with the VAPID private key, with authorization, idempotency via `notification_deliveries`, expiry cleanup and invalid-subscription removal.
-5. Add navigation handling for `bro-navigate` in the Flutter app so notification clicks open the correct conversation after authentication and membership validation until then.
+## Production state on 2026-11-24
 
-Until these are complete, BRO web must not advertise push notifications.
+- `bro_push_devices`: 0 rows. `bro_push_events`, `bro_push_deliveries`: 0 rows.
+- Vault secrets `push_webhook_url` and `push_webhook_secret` exist.
+- Cron jobs `bro-push-drain` (10 seconds) and `bro-push-retention` (daily) are active.
+- `register_bro_push` is executable by `authenticated`; `claim_bro_push` and `wake_bro_push` only by `service_role`.
 
-## Infrastructure dependencies and blockers
+No device has registered, so FCM delivery has not been proven end to end in this project. Infrastructure and database rules are verified; platform delivery is not. See `docs/testing/phase-a-notifications.md` for the device matrix.
 
-- Firebase service account with FCM Admin permission must remain configured as `FIREBASE_SERVICE_ACCOUNT_B64` in Supabase Edge Function secrets. It was configured previously; no secret value is stored in the repository.
-- Web push VAPID key pair is not provisioned. This is the exact blocker for end-to-end browser push delivery.
-- Browser support varies: Safari/iOS web push requires a compatible browser version and a properly configured web app identity. Unsupported browsers fall back to in-app notifications only.
+## Automated coverage
 
-## Test coverage
-
-- All 92 project tests pass, including new fail-closed E2EE and call state-machine tests.
-- Platform delivery (FCM background/terminated/cold-start routing, permission denial, multiple devices, invalid tokens) requires physical devices and is documented as a manual test matrix, not claimed as executed here.
+- `supabase/tests/bro_calls_push.mjs`: token ownership, claim permissions, preferences, blocked users, deduplication, and call/message event gating.
+- `supabase/tests/web_push_worker.test.mjs`: service worker notification display, payload validation, expiry, and in-scope click routing.
+- Both run in `.github/workflows/supabase.yml`.

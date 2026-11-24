@@ -39,6 +39,7 @@ class PushNotifications {
   static String? _deviceId;
   static void Function(PushMessageTarget)? _openHandler;
   static bool _initialized = false;
+  static String? initializationError;
   static Future<void> _work = Future.value();
   static DateTime? _lastRefresh;
   static StreamSubscription<AuthState>? _authSub;
@@ -54,9 +55,20 @@ class PushNotifications {
       : defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS;
 
+  /// True only after Firebase and the messaging channel started successfully.
+  /// [configured] describes the build; this describes the live runtime.
+  static bool get available => configured && _initialized;
+
+  static Future<bool> retryInitialization() async {
+    initializationError = null;
+    await initialize();
+    return available;
+  }
+
   static Future<void> initialize({Uri? launchUri}) async {
     _authSub?.cancel();
     if (_initialized || !configured) return;
+    initializationError = null;
     try {
       if (kIsWeb) {
         await Firebase.initializeApp(
@@ -72,11 +84,15 @@ class PushNotifications {
         FirebaseMessaging.onBackgroundMessage(firebaseBackgroundMessageHandler);
       }
     } catch (e) {
+      initializationError = 'Push could not start on this device.';
       debugPrint('Firebase initialization failed: $e. Push notifications disabled.');
       return;
     }
     final messaging = FirebaseMessaging.instance;
-    if (!await messaging.isSupported()) return;
+    if (!await messaging.isSupported()) {
+      initializationError = 'Push is not supported by this browser.';
+      return;
+    }
     _deviceId = await _storage.read(key: _deviceKey) ?? const Uuid().v4();
     await _storage.write(key: _deviceKey, value: _deviceId);
     _lastOwner = await _storage.read(key: _ownerKey);

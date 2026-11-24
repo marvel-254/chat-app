@@ -62,6 +62,17 @@ class _NotificationSettingsScreenState
     }
   }
 
+  Future<void> _retry() async {
+    if (!_current) return;
+    setState(() => _busy = true);
+    final ready = await PushNotifications.retryInitialization();
+    if (_current) setState(() => _busy = false);
+    _notice(ready
+        ? 'Push is ready. Tap enable to finish.'
+        : PushNotifications.initializationError ??
+            'Push is still unavailable on this device.');
+  }
+
   Future<void> _enable() async {
     try {
       await PushNotifications.enable();
@@ -83,13 +94,21 @@ class _NotificationSettingsScreenState
               'Get alerts for new messages and calls even when BRO is not open. Alerts never include message text or the sender’s name.',
             ),
             const SizedBox(height: 12),
-            if (PushNotifications.configured)
+            if (PushNotifications.available)
               FilledButton(
-                onPressed: _enable,
+                onPressed: _busy ? null : _enable,
                 child: const Text('Enable notifications on this device'),
               )
             else
-              const Text('Push is not configured for this build or platform.'),
+              Text(PushNotifications.initializationError ??
+                  'Push is not configured for this build or platform.'),
+            if (PushNotifications.configured &&
+                !PushNotifications.available &&
+                PushNotifications.initializationError != null)
+              TextButton(
+                onPressed: _busy ? null : _retry,
+                child: const Text('Try again'),
+              ),
             const SizedBox(height: 12),
             if (_preferences == null)
               TextButton(

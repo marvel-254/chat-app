@@ -1,6 +1,6 @@
 # BRO next feature plan
 
-Status: proposed. All GitHub issues are closed as of 2026-11-24; v1.5.7 shipped with voice-note fixes. Scope: `lib/`, `docs/`, tests, and timestamped Supabase migrations only when a phase needs them. No route changes, no brand refresh, no E2EE protocol rewrite, no other projects.
+Status: Phase A implemented and gate-verified on 2026-11-24; device matrix pending. All GitHub issues are closed as of 2026-11-24; v1.5.7 shipped with voice-note fixes. Scope: `lib/`, `docs/`, tests, and timestamped Supabase migrations only when a phase needs them. No route changes, no brand refresh, no E2EE protocol rewrite, no other projects.
 
 ## 1. Current state
 
@@ -14,9 +14,10 @@ Status: proposed. All GitHub issues are closed as of 2026-11-24; v1.5.7 shipped 
 Observably broken or misleading:
 
 1. `Supa.watchConversations()` claims realtime at `lib/services/supabase.dart:1181-1186`, but `_conversationChanges()` at `lib/services/supabase.dart:1138-1151` is a manual trigger plus a 5-second poll. There is no `postgres_changes` stream for conversations. The shipped circle stream in `lib/services/circles.dart` is the working pattern to copy.
-2. `docs/PUSH.md` says tokens live in `public.push_tokens`, while the client writes `public.bro_push_devices` at `lib/services/push_notifications.dart:209`. Both tables exist in the linked project, so the documentation is stale, not necessarily the runtime.
-3. Web push is display-only. `web/service-worker.js` handles `push` and `notificationclick`, but there is no VAPID key pair, no `PushManager.subscribe` call, and no server-side web sender. Do not advertise browser notifications as working.
-4. `docs/PUSH.md` and `docs/OVERHAUL_CHECKLIST.md` still cite old test counts and unfinished verification; platform delivery has only been verified by code inspection, not a device round trip.
+2. `docs/PUSH.md` previously named the legacy `public.push_tokens` table while the client writes `public.bro_push_devices` through `register_bro_push` (`push_notifications.dart:195-203`). Corrected in Phase A.
+3. Web push uses FCM web, not a custom Web Push sender: `web/service-worker.js:170-185` registers Firebase Messaging compat. It is disabled because the `FIREBASE_WEB_*` and `FIREBASE_WEB_VAPID_KEY` GitHub variables are unset. Do not advertise browser notifications until they are configured and delivery is tested.
+4. Settings offered "Enable notifications" even when Firebase failed to start (`notification_settings_screen.dart:86`). Phase A gates that button on `PushNotifications.available` and adds a retry path.
+5. Production had zero push devices, events and deliveries on 2026-11-24; infrastructure is configured but no delivery has been proven. Device matrix: `docs/testing/phase-a-notifications.md`.
 
 Verified existing, not missing:
 
@@ -56,12 +57,12 @@ ICE = impact x confidence / effort.
 | F | Circle completeness | 3 | 3 | 3 | 3.0 |
 | G | Genuine E2EE completion | 5 | 3 | 5 | 3.0 |
 
-## 5. Phase A: prove and harden notifications
+## 5. Phase A: prove and harden notifications (implemented, device matrix pending)
 
 1. Confirm the runtime table: instrument or query `bro_push_devices` for a real account after `PushNotifications.enable()` and confirm a non-expired FCM token with a single device id. Do not trust `docs/PUSH.md`.
 2. Confirm the send path: send a message from account A to account B with B's app in background and terminated. Verify a generic notification arrives in both states, then tap it and confirm routing to the correct conversation. Record what was and was not tested; do not claim cold-start delivery without a device result.
 3. Confirm preferences: toggle each `bro_notification_preferences` switch in Settings and verify `claim_bro_push` respects it via a linked-DB query under the caller role.
-4. Fix `docs/PUSH.md` to name the tables and functions the code actually uses, and record the device results and remaining gaps.
+4. `docs/PUSH.md` now names the live tables, functions and secrets, and `docs/testing/phase-a-notifications.md` records the device matrix with all cases marked not run.
 5. Scope out web push only: keep VAPID provisioning and `PushManager.subscribe` as a separate proposal. No browser notification opt-in until the server sender exists.
 6. Verification gate: analyzer clean, tests green, DB suites green if a migration changes, and an explicit device matrix in `docs/testing/` with pass/fail per case.
 
