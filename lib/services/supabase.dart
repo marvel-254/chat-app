@@ -3,6 +3,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:async';
+import 'dart:developer' as dev;
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
@@ -11,6 +12,7 @@ import '../models/profile_theme.dart';
 import 'avatar_upload.dart';
 import '../models/avatar_config.dart';
 import 'search_safety.dart';
+import 'conversation_realtime.dart';
 import 'reactions.dart' as reactions;
 import 'message_safety.dart' as message_safety;
 import 'read_receipts.dart' as read_receipts;
@@ -1133,22 +1135,6 @@ class Supa {
     _convRefreshController.add(null);
   }
 
-  /// Internal: return a stream that emits a refetch event whenever
-  /// [triggerConversationRefresh] is called or every 5 seconds as a fallback.
-  static Stream<void> _conversationChanges() async* {
-    // Merge manual triggers with a periodic poll (5 seconds, down from 30).
-    final triggerStream = _convRefreshController.stream;
-    final pollStream = Stream.periodic(const Duration(seconds: 5));
-
-    // Simple merge using two subscriptions.
-    final merged = StreamController<void>.broadcast();
-    triggerStream.listen(merged.add);
-    pollStream.listen((_) => merged.add(null));
-
-    // Emit an initial event immediately so the first refetch happens right away.
-    merged.add(null);
-    yield* merged.stream;
-  }
 
   // For backward compatibility
   static Future<List<Conversation>> fetchConversations() async {
@@ -1178,12 +1164,74 @@ class Supa {
     return [];
   }
 
-  /// Watch conversations with realtime updates.
-  /// Yields immediately, then refetches whenever messages, conversations,
-  /// or conversation_participants change (via Supabase Realtime).
-  static Stream<List<Conversation>> watchConversations() async* {
-    yield await fetchConversations();
-    yield* _conversationChanges().asyncMap((_) => fetchConversations());
+  /// Watch conversations with Realtime updates.
+  /// Refetches when messages, conversations or conversation_participants
+  /// change, on manual triggers, and on a slow 60s fallback poll.
+  static Stream<List<Conversation>> watchConversations() {
+    final controller = StreamController<List<Conversation>>.broadcast();
+    final debouncer = ConversationRealtime();
+    StreamSubscription<void>? triggers;
+    StreamSubscription<void>? poll;
+    RealtimeChannel? channel;
+    var listeners = 0;
+
+    Future<void> refresh() async {
+      if (controller.isClosed) return;
+      try {
+        final value = await fetchConversations();
+        if (!controller.isClosed) controller.add(value);
+      } catch (e) {
+        if (!controller.isClosed) controller.addError(e);
+      }
+    }
+
+    void schedule() => debouncer.schedule(() => unawaited(refresh()));
+
+    controller.onListen = () {
+      listeners++;
+      if (listeners == 1) {
+        triggers = _convRefreshController.stream.listen((_) => schedule());
+        final uid = client.auth.currentUser?.id;
+        if (uid != null) {
+          try {
+            RealtimeChannel built =
+                client.channel('bro-conversations-$uid');
+            for (final table in const <String>[
+              'conversations',
+              'conversation_participants',
+              'messages',
+            ]) {
+              built = built.onPostgresChanges(
+                event: PostgresChangeEvent.all,
+                schema: 'public',
+                table: table,
+                callback: (_) => schedule(),
+              );
+            }
+            channel = built..subscribe();
+          } catch (e) {
+            dev.log('Conversation Realtime setup failed: $e', error: e);
+          }
+        }
+        poll = Stream<void>.periodic(const Duration(seconds: 60))
+            .listen((_) => unawaited(refresh()));
+      }
+      unawaited(refresh());
+    };
+
+    controller.onCancel = () {
+      listeners--;
+      if (listeners > 0) return;
+      listeners = 0;
+      debouncer.cancel();
+      triggers?.cancel();
+      poll?.cancel();
+      final active = channel;
+      channel = null;
+      if (active != null) unawaited(client.removeChannel(active));
+    };
+
+    return controller.stream;
   }
 
   // Messages

@@ -1,6 +1,6 @@
 # BRO next feature plan
 
-Status: Phase A shipped in v1.5.9 and Phase B shipped in v1.5.10 on 2026-11-24; device matrices pending. All GitHub issues are closed as of 2026-11-24; v1.5.7 shipped with voice-note fixes. Scope: `lib/`, `docs/`, tests, and timestamped Supabase migrations only when a phase needs them. No route changes, no brand refresh, no E2EE protocol rewrite, no other projects.
+Status: Phase A shipped in v1.5.9, Phase B shipped in v1.5.10, Phase C implemented and gate-verified; device matrices pending. All GitHub issues are closed as of 2026-11-24; v1.5.7 shipped with voice-note fixes. Scope: `lib/`, `docs/`, tests, and timestamped Supabase migrations only when a phase needs them. No route changes, no brand refresh, no E2EE protocol rewrite, no other projects.
 
 ## 1. Current state
 
@@ -70,7 +70,9 @@ ICE = impact x confidence / effort.
 
 Use `Conversation.peerAvatarUrl` and the existing `Avatar` widget. Show an avatar only on the last bubble of an incoming group; keep initials fallback and `photo_visibility` masking. Add widget tests for URL, grouped and fallback cases, then verify with two real accounts. This is the directly shippable follow-on to the voice-note work.
 
-## 7. Phase C: realtime conversation list
+## 7. Phase C: realtime conversation list (implemented)
+
+`Supa.watchConversations()` now uses a `postgres_changes` channel on `conversations`, `conversation_participants` and `messages`, with a 350ms debounce, manual refresh triggers, and a 60s fallback poll. `ConversationRealtime` is covered by `test/conversation_realtime_test.dart`. The stale 5s poll and its misleading comment are removed. Verified in an isolated worktree: analyzer clean, 155 tests passed.
 
 Mirror the v1.5.6 circle pattern: add `conversations`, `conversation_participants` and `messages` to the publication if absent; replace `_conversationChanges()`'s 5-second poll with a channel stream plus a slow fallback poll; cancel channels on stream cancellation. Update the misleading doc comment at `supabase.dart:1181`.
 
@@ -100,4 +102,4 @@ Add `DesktopWorkspaceShell` with a 320 px list pane and `Expanded` detail pane a
 
 ## 12. Recommended first move
 
-Phase A. Notifications are the only feature the user explicitly called out as unverified, the code already exists, and the work is mostly proof plus documentation correction. Approve Phase A to begin.
+Phase D desktop workspace. Phase C is implemented and gate-verified; the next independently shippable step is the 320 px list pane plus expanded detail pane above `ResponsiveAppShell`.
