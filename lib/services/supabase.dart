@@ -1103,9 +1103,23 @@ class Supa {
     return (res as List).cast<Map<String, dynamic>>();
   }
 
+  /// Orders conversations so the most recent message (or update) appears first.
+  static List<Conversation> sortConversationsByRecent(
+      List<Conversation> conversations) {
+    final sorted = List<Conversation>.from(conversations);
+    sorted.sort((a, b) {
+      final aTime = a.lastMessageAt ?? a.updatedAt;
+      final bTime = b.lastMessageAt ?? b.updatedAt;
+      final byRecent = bTime.compareTo(aTime);
+      if (byRecent != 0) return byRecent;
+      return b.createdAt.compareTo(a.createdAt);
+    });
+    return sorted;
+  }
+
   static List<Conversation> conversationsFromRows(
       List<Map<String, dynamic>> rows) {
-    return rows
+    return sortConversationsByRecent(rows
         .map((r) => Conversation(
               id: r['conversation_id'] as String,
               createdAt: DateTime.parse(r['created_at'] as String),
@@ -1121,7 +1135,7 @@ class Supa {
               unreadCount: (r['unread_count'] as num?)?.toInt() ?? 0,
               isLocked: (r['is_locked'] as bool?) ?? false,
             ))
-        .toList();
+        .toList());
   }
 
   /// Broadcast controller that triggers a conversation list refresh.
@@ -1141,7 +1155,7 @@ class Supa {
     // Parse the union result into separate lists
     final dynamic result = await fetchConversationsWithCircles();
     if (result is List) {
-      return result
+      return sortConversationsByRecent(result
           .whereType<Map<String, dynamic>>()
           .where((r) => !(r['is_circle'] as bool? ?? false))
           .map((r) => Conversation(
@@ -1159,7 +1173,7 @@ class Supa {
                 unreadCount: (r['unread_count'] as num?)?.toInt() ?? 0,
                 isLocked: (r['is_locked'] as bool?) ?? false,
               ))
-          .toList();
+          .toList());
     }
     return [];
   }

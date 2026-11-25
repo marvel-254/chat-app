@@ -46,7 +46,7 @@ class AuthPropBackdrop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final wide =
-        MediaQuery.sizeOf(context).width >= app_colors.adaptiveBreakpoint;
+        MediaQuery.sizeOf(context).width >= app_colors.desktopBreakpoint;
     return IgnorePointer(
       child: ExcludeSemantics(
         child: RepaintBoundary(

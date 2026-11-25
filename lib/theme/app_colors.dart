@@ -14,6 +14,17 @@ const volt = Color(0xFFD4FF00); // primary accent (lime)
 const darkOnVolt = Color(0xFF0C0D12); // text on lime accents
 
 const adaptiveBreakpoint = 600.0;
+const desktopBreakpoint = 960.0;
+
+/// Responsive layout tiers for Android/mobile, tablet, and desktop web views.
+enum ScreenSizeClass { compact, tablet, desktop }
+
+/// Returns the [ScreenSizeClass] for a given viewport or layout [width].
+ScreenSizeClass screenSizeClassForWidth(double width) {
+  if (width >= desktopBreakpoint) return ScreenSizeClass.desktop;
+  if (width >= adaptiveBreakpoint) return ScreenSizeClass.tablet;
+  return ScreenSizeClass.compact;
+}
 
 const chatBackgroundOptions = <(String, String, List<Color>)>[
   ('default', 'Night', [bg, surfaceLow]),

@@ -464,8 +464,11 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
   }
 
   Widget _buildSmallScreenLayout(BuildContext context) {
-    return Column(
-      children: [
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: Column(
+          children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: AnimatedContainer(
@@ -637,7 +640,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                       detail: kLoadFailedDetail,
                       onRetry: _reloadConversations);
                 }
-                final allConversations = snapshot.data ?? [];
+                final allConversations =
+                    Supa.sortConversationsByRecent(snapshot.data ?? []);
                 Presence.setListPeers(allConversations.map((c) => c.peerId));
                 final rawQuery = _search.text.trim();
                 final normalizedQuery = sanitizeSearchTerm(rawQuery);
@@ -734,7 +738,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                 }
                 return Center(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 600),
+                    constraints: const BoxConstraints(maxWidth: 720),
                     child: ListView.builder(
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       itemCount: conversations.length,
@@ -919,6 +923,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
           ),
         ),
       ],
+        ),
+      ),
     );
   }
 

@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../services/push_notifications.dart';
 import '../../services/supabase.dart';
+import '../../widgets/responsive_app_shell.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({super.key});
@@ -85,46 +87,63 @@ class _NotificationSettingsScreenState
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Notifications')),
-        body: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            const Text(
-              'Get alerts for new messages and calls even when BRO is not open. Alerts never include message text or the sender’s name.',
+  Widget build(BuildContext context) => ResponsiveAppShell(
+        title: 'Notifications',
+        navIndex: 0,
+        showBottomNavigation: false,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/settings');
+            }
+          },
+        ),
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                const Text(
+                  'Get alerts for new messages and calls even when BRO is not open. Alerts never include message text or the sender’s name.',
+                ),
+                const SizedBox(height: 12),
+                if (PushNotifications.available)
+                  FilledButton(
+                    onPressed: _busy ? null : _enable,
+                    child: const Text('Enable notifications on this device'),
+                  )
+                else
+                  Text(PushNotifications.initializationError ??
+                      'Push is not configured for this build or platform.'),
+                if (PushNotifications.configured &&
+                    !PushNotifications.available &&
+                    PushNotifications.initializationError != null)
+                  TextButton(
+                    onPressed: _busy ? null : _retry,
+                    child: const Text('Try again'),
+                  ),
+                const SizedBox(height: 12),
+                if (_preferences == null)
+                  TextButton(
+                      onPressed: _load, child: const Text('Reload preferences')),
+                for (final preference in {
+                  'messages': 'Messages and reminders',
+                  'calls': 'Incoming and missed calls',
+                }.entries)
+                  SwitchListTile(
+                    title: Text(preference.value),
+                    value: _preferences?[preference.key] as bool? ?? true,
+                    onChanged: _busy || _preferences == null
+                        ? null
+                        : (enabled) => _update(preference.key, enabled),
+                  ),
+              ],
             ),
-            const SizedBox(height: 12),
-            if (PushNotifications.available)
-              FilledButton(
-                onPressed: _busy ? null : _enable,
-                child: const Text('Enable notifications on this device'),
-              )
-            else
-              Text(PushNotifications.initializationError ??
-                  'Push is not configured for this build or platform.'),
-            if (PushNotifications.configured &&
-                !PushNotifications.available &&
-                PushNotifications.initializationError != null)
-              TextButton(
-                onPressed: _busy ? null : _retry,
-                child: const Text('Try again'),
-              ),
-            const SizedBox(height: 12),
-            if (_preferences == null)
-              TextButton(
-                  onPressed: _load, child: const Text('Reload preferences')),
-            for (final preference in {
-              'messages': 'Messages and reminders',
-              'calls': 'Incoming and missed calls',
-            }.entries)
-              SwitchListTile(
-                title: Text(preference.value),
-                value: _preferences?[preference.key] as bool? ?? true,
-                onChanged: _busy || _preferences == null
-                    ? null
-                    : (enabled) => _update(preference.key, enabled),
-              ),
-          ],
+          ),
         ),
       );
 }

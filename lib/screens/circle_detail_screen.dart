@@ -218,7 +218,7 @@ class _CircleDetailScreenState extends State<CircleDetailScreen> {
     return ResponsiveAppShell(
       title: _circle?.name ?? 'Circle',
       subtitle: _isAdmin ? 'You manage this circle' : null,
-      navIndex: 2,
+      navIndex: 1,
       actions: [
         if (_isAdmin)
           IconButton(

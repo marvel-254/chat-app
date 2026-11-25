@@ -381,7 +381,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final size = MediaQuery.sizeOf(context);
     final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
     final compactHeight = size.height < 700;
-    final wide = size.width >= app_colors.adaptiveBreakpoint;
+    final wide = size.width >= app_colors.desktopBreakpoint;
     final reduce = reduceMotionOf(context);
     final showHero = !keyboardOpen && !compactHeight;
 

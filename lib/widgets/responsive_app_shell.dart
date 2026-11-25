@@ -5,8 +5,9 @@ import '../screens/navigation/nav_sidebar.dart';
 
 /// Shared responsive frame for authenticated BRO surfaces.
 ///
-/// Android and narrow windows get a native app bar plus bottom dock. Wider
-/// windows get a persistent navigation rail and a compact workspace header.
+/// Android and narrow windows (< 600 px) get a native app bar plus bottom
+/// dock. Tablets (600–959 px) get a compact 76 px navigation rail, and desktop
+/// windows (>= 960 px) get the full 240 px sidebar and workspace header.
 class ResponsiveAppShell extends StatelessWidget {
   const ResponsiveAppShell({
     super.key,
@@ -31,14 +32,15 @@ class ResponsiveAppShell extends StatelessWidget {
   final bool showBottomNavigation;
   final Color backgroundColor;
 
-  static const desktopBreakpoint = 840.0;
+  static const tabletBreakpoint = app_colors.adaptiveBreakpoint;
+  static const desktopBreakpoint = app_colors.desktopBreakpoint;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final wide = constraints.maxWidth >= desktopBreakpoint;
-        if (!wide) {
+        final sizeClass = app_colors.screenSizeClassForWidth(constraints.maxWidth);
+        if (sizeClass == app_colors.ScreenSizeClass.compact) {
           return Scaffold(
             backgroundColor: backgroundColor,
             appBar: AppBar(
@@ -53,26 +55,34 @@ class ResponsiveAppShell extends StatelessWidget {
           );
         }
 
+        final isTablet = sizeClass == app_colors.ScreenSizeClass.tablet;
+        final contentMaxWidth = isTablet ? 860.0 : 1180.0;
+        final contentPadding = isTablet
+            ? const EdgeInsets.fromLTRB(16, 0, 16, 16)
+            : const EdgeInsets.fromLTRB(24, 0, 24, 24);
+
         return Scaffold(
           backgroundColor: backgroundColor,
           body: Row(
             children: [
-              const NavSidebar(),
+              NavSidebar(compact: isTablet),
               Expanded(
                 child: Column(
                   children: [
                     _WorkspaceHeader(
+                      leading: leading,
                       title: title,
                       subtitle: subtitle,
                       actions: actions,
+                      horizontalPadding: isTablet ? 16 : 24,
                     ),
                     Expanded(
                       child: Center(
                         child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 1180),
+                          constraints: BoxConstraints(maxWidth: contentMaxWidth),
                           child: SizedBox.expand(
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                              padding: contentPadding,
                               child: body,
                             ),
                           ),
@@ -96,17 +106,21 @@ class _WorkspaceHeader extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.actions,
+    this.leading,
+    this.horizontalPadding = 24,
   });
 
+  final Widget? leading;
   final String title;
   final String? subtitle;
   final List<Widget> actions;
+  final double horizontalPadding;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 72,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      constraints: const BoxConstraints(minHeight: 68),
+      padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 12),
       decoration: BoxDecoration(
         color: app_colors.bg,
         border: Border(
@@ -117,6 +131,10 @@ class _WorkspaceHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
+          if (leading != null) ...[
+            leading!,
+            const SizedBox(width: 8),
+          ],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -124,6 +142,8 @@ class _WorkspaceHeader extends StatelessWidget {
               children: [
                 Text(
                   title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: app_colors.text,
                     fontSize: 20,

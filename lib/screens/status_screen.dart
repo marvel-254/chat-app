@@ -164,7 +164,7 @@ class _StatusScreenState extends State<StatusScreen> {
     return ResponsiveAppShell(
       title: 'Status',
       subtitle: 'Share a moment with your people',
-      navIndex: 3,
+      navIndex: 2,
       body: content,
       floatingActionButton: FloatingActionButton(
         backgroundColor: _C.primary,

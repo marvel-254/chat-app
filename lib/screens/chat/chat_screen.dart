@@ -1938,7 +1938,11 @@ class _ChatScreenState extends State<ChatScreen> {
             child: LayoutBuilder(
                 builder: (context, constraints) =>
                     constraints.maxWidth > _adaptiveBreakpoint
-                        ? _buildLargeScreenChat(context)
+                        ? _buildLargeScreenChat(
+                            context,
+                            compactRail: constraints.maxWidth <
+                                app_colors.desktopBreakpoint,
+                          )
                         : _buildSmallScreenChat(context))),
       ]),
     );
@@ -2145,10 +2149,11 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildLargeScreenChat(BuildContext context) {
+  Widget _buildLargeScreenChat(BuildContext context,
+      {bool compactRail = false}) {
     return Row(
       children: [
-        const NavSidebar(),
+        NavSidebar(compact: compactRail),
         Expanded(
           child: StreamBuilder<List<Message>>(
             stream: Supa.watchMessages(widget.conversationId),
@@ -2240,7 +2245,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         _markUnreadAsReadIfNeeded(messages);
                         return Center(
                           child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 600),
+                            constraints: BoxConstraints(
+                              maxWidth: compactRail ? 680 : 760,
+                            ),
                             child: Stack(
                               children: [
                                 ListView.builder(
@@ -3209,7 +3216,9 @@ class _Bubble extends StatelessWidget {
         },
         child: Container(
           constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.68),
+            maxWidth:
+                (MediaQuery.sizeOf(context).width * 0.68).clamp(180.0, 520.0),
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             gradient: mine
@@ -3475,7 +3484,7 @@ class _AttachmentContent extends StatelessWidget {
   }
 }
 
-class _Composer extends StatelessWidget {
+class _Composer extends StatefulWidget {
   const _Composer({
     required this.controller,
     required this.onSend,
@@ -3492,6 +3501,43 @@ class _Composer extends StatelessWidget {
   final VoidCallback? onVoice;
   final VoidCallback? onEmoji;
   final VoidCallback? onSchedule;
+
+  @override
+  State<_Composer> createState() => _ComposerState();
+}
+
+class _ComposerState extends State<_Composer> {
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode(onKeyEvent: _handleKeyEvent);
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (!kIsWeb) return KeyEventResult.ignored;
+    final isEnter = event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter;
+    if (event is KeyDownEvent &&
+        isEnter &&
+        !HardwareKeyboard.instance.isShiftPressed &&
+        !HardwareKeyboard.instance.isControlPressed &&
+        !HardwareKeyboard.instance.isAltPressed &&
+        !HardwareKeyboard.instance.isMetaPressed) {
+      if (widget.controller.text.trim().isNotEmpty) {
+        widget.onSend();
+      }
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3515,7 +3561,7 @@ class _Composer extends StatelessWidget {
             const SizedBox(width: 4),
             PressScale(
               scaleFactor: 0.88,
-              onTap: onAttach,
+              onTap: widget.onAttach,
               child: const Padding(
                 padding: EdgeInsets.all(8),
                 child: Icon(Icons.add_circle_outline_rounded,
@@ -3524,7 +3570,7 @@ class _Composer extends StatelessWidget {
             ),
             PressScale(
               scaleFactor: 0.88,
-              onTap: onEmoji,
+              onTap: widget.onEmoji,
               child: const Padding(
                 padding: EdgeInsets.all(8),
                 child: Icon(Icons.emoji_emotions_outlined,
@@ -3533,7 +3579,7 @@ class _Composer extends StatelessWidget {
             ),
             PressScale(
               scaleFactor: 0.88,
-              onTap: onSchedule,
+              onTap: widget.onSchedule,
               child: const Padding(
                 padding: EdgeInsets.all(8),
                 child: Icon(Icons.schedule_outlined, color: _P.muted, size: 22),
@@ -3542,9 +3588,12 @@ class _Composer extends StatelessWidget {
             const SizedBox(width: 4),
             Expanded(
               child: TextField(
-                controller: controller,
+                controller: widget.controller,
+                focusNode: _focusNode,
                 minLines: 1,
                 maxLines: 5,
+                textInputAction:
+                    kIsWeb ? TextInputAction.send : TextInputAction.newline,
                 style: const TextStyle(color: _P.text, fontSize: 15),
                 decoration: InputDecoration(
                   hintText: 'Message',
@@ -3554,12 +3603,16 @@ class _Composer extends StatelessWidget {
                   isDense: true,
                   contentPadding: const EdgeInsets.symmetric(vertical: 12),
                 ),
-                onSubmitted: (_) => onSend(),
-                onChanged: onTypingChanged,
+                onSubmitted: (_) {
+                  if (widget.controller.text.trim().isNotEmpty) {
+                    widget.onSend();
+                  }
+                },
+                onChanged: widget.onTypingChanged,
               ),
             ),
             ValueListenableBuilder<TextEditingValue>(
-              valueListenable: controller,
+              valueListenable: widget.controller,
               builder: (_, v, __) {
                 final hasText = v.text.trim().isNotEmpty;
                 return Padding(
@@ -3577,7 +3630,7 @@ class _Composer extends StatelessWidget {
                         ? PressScale(
                             key: const ValueKey('send-btn'),
                             scaleFactor: 0.88,
-                            onTap: onSend,
+                            onTap: widget.onSend,
                             child: Container(
                               width: 36,
                               height: 36,
@@ -3606,7 +3659,7 @@ class _Composer extends StatelessWidget {
                             : PressScale(
                                 key: const ValueKey('mic-btn'),
                                 scaleFactor: 0.88,
-                                onTap: onVoice,
+                                onTap: widget.onVoice,
                                 child: Container(
                                   width: 36,
                                   height: 36,

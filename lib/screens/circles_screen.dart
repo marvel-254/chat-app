@@ -252,7 +252,7 @@ class _CirclesScreenState extends State<CirclesScreen> {
     return ResponsiveAppShell(
       title: 'Circles',
       subtitle: 'Small groups for the people who matter',
-      navIndex: 2,
+      navIndex: 1,
       actions: [
         IconButton(
           tooltip: 'Create circle',
