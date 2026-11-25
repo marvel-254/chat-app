@@ -29,8 +29,10 @@ import 'theme/app_colors.dart' as app_colors;
 export 'theme/app_colors.dart';
 import 'screens/auth/auth_gate.dart' as auth_gate;
 import 'screens/auth/login_screen.dart';
+import 'screens/auth/mfa_challenge_screen.dart';
 import 'screens/auth/onboarding_screen.dart' as onboarding;
 import 'screens/auth/confirmation_screen.dart';
+import 'screens/auth/reset_password_screen.dart';
 import 'screens/chat/conversation_list_screen.dart';
 import 'screens/chat/suggest_friends_screen.dart';
 import 'screens/chat/chat_screen.dart';
@@ -226,6 +228,14 @@ final _router = GoRouter(
     GoRoute(path: '/circles', builder: (_, __) => const CirclesScreen()),
     GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
     GoRoute(
+      path: '/reset-password',
+      builder: (_, __) => const ResetPasswordScreen(),
+    ),
+    GoRoute(
+      path: '/mfa-challenge',
+      builder: (_, __) => const MfaChallengeScreen(),
+    ),
+    GoRoute(
       path: '/confirm',
       builder: (_, state) =>
           ConfirmationScreen(email: state.extra as String? ?? ''),
@@ -319,16 +329,25 @@ final _router = GoRouter(
     final location = state.matchedLocation;
     final isOnboarding = location == '/onboarding';
     final loggingIn = location == '/login';
+    final resettingPassword = location == '/reset-password';
+    final mfaChallenge = location == '/mfa-challenge';
     if (!authed) {
       if (!onboarding.onboardingCompleted) {
         return isOnboarding ? null : '/onboarding';
       }
       if (isOnboarding) return '/login';
-      if (!loggingIn) return '/login';
+      if (!loggingIn && !resettingPassword) return '/login';
       return null;
+    }
+    if (Supa.passwordRecoveryPending.value) {
+      return resettingPassword ? null : '/reset-password';
+    }
+    if (Supa.needsMfaChallenge()) {
+      return mfaChallenge ? null : '/mfa-challenge';
     }
     if (isOnboarding ||
         loggingIn ||
+        mfaChallenge ||
         (location.startsWith('/call/') &&
             (state.extra is! Profile ||
                 !PushMessageTarget.isId(state.uri.queryParameters['id'])))) {
@@ -485,9 +504,14 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
       (_) => unawaited(_pollIncoming()),
     );
     _authSub = Supa.authStateChanges.listen((state) {
-      if (state.session != null) {
+      if (state.event == AuthChangeEvent.passwordRecovery) {
+        Supa.passwordRecoveryPending.value = true;
+        Presence.resume();
+        _router.go('/reset-password');
+      } else if (state.session != null) {
         Presence.resume();
       } else {
+        Supa.passwordRecoveryPending.value = false;
         Presence.unbind();
         LegacyMessaging.reset();
         _closeIncoming();

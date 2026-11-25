@@ -39,13 +39,22 @@ class AuthGate extends StatelessWidget {
         if (snapshot.hasError) {
           return _AuthErrorState(error: friendlyErrorMessage(snapshot.error));
         }
+        final event = snapshot.data?.event;
+        if (event == AuthChangeEvent.passwordRecovery ||
+            Supa.passwordRecoveryPending.value) {
+          Supa.passwordRecoveryPending.value = true;
+          return const _RedirectPlaceholder(route: '/reset-password');
+        }
         final session = snapshot.data?.session;
         if (session != null) {
+          if (Supa.needsMfaChallenge()) {
+            return const _RedirectPlaceholder(route: '/mfa-challenge');
+          }
           // Ensure last_seen is recorded on cold start
           unawaited(Supa.recordLastSeen());
           unawaited(LinkedDevices.registerCurrentDeviceSilently());
           // Navigate to conversations; the router will handle the redirect.
-          return const _ConversationListPlaceholder();
+          return const _RedirectPlaceholder(route: '/conversations');
         }
         return const LoginScreen();
       },
@@ -53,13 +62,15 @@ class AuthGate extends StatelessWidget {
   }
 }
 
-/// Placeholder that navigates to conversations when auth succeeds.
-class _ConversationListPlaceholder extends StatelessWidget {
-  const _ConversationListPlaceholder();
+/// Placeholder that navigates to [route] when auth state settles.
+class _RedirectPlaceholder extends StatelessWidget {
+  const _RedirectPlaceholder({required this.route});
+  final String route;
+
   @override
   Widget build(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.go('/conversations');
+      if (context.mounted) context.go(route);
     });
     return const Scaffold();
   }

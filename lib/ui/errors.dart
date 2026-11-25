@@ -66,7 +66,12 @@ String _authMessage(AuthException error, String fallback) {
     case 'signup_disabled':
       return "New accounts aren't being created right now.";
     case 'weak_password':
-      return 'Please choose a longer password — at least 6 characters.';
+      return 'Please choose a stronger password — at least 8 characters with letters and numbers or symbols.';
+    case 'mfa_verification_failed':
+    case 'invalid_mfa_code':
+      return "That 6-digit code didn't match. Check your authenticator app and try again.";
+    case 'mfa_factor_not_found':
+      return 'That two-factor method is no longer active.';
     case 'over_request_rate_limit':
     case 'over_email_send_rate_limit':
       return "We've sent a few emails already. Please wait a minute and try again.";

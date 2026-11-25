@@ -56,8 +56,40 @@ class Supa {
   }
 
   // Auth
+  static const String _configuredResetRedirectUrl = String.fromEnvironment(
+    'PASSWORD_RESET_REDIRECT_URL',
+  );
+
+  /// Whether the current session arrived via a password-recovery link and
+  /// has not yet completed the `/reset-password` step.
+  static final ValueNotifier<bool> passwordRecoveryPending =
+      ValueNotifier<bool>(false);
+
+  /// Explicit redirect URL for password recovery emails.
+  static String passwordResetRedirectUrl() {
+    if (_configuredResetRedirectUrl.isNotEmpty) {
+      return _configuredResetRedirectUrl;
+    }
+    if (kIsWeb) {
+      return '${Uri.base.origin}/app/#/reset-password';
+    }
+    return 'io.bro.chat://reset-password';
+  }
+
+  /// Explicit redirect URL for OAuth sign-in callbacks.
+  static String oauthRedirectUrl() {
+    if (kIsWeb) {
+      return '${Uri.base.origin}/app/';
+    }
+    return 'io.bro.chat://login-callback';
+  }
+
   static Future<AuthResponse> signUp(
-      String email, String password, String username) async {
+    String email,
+    String password,
+    String username, {
+    String? captchaToken,
+  }) async {
     // The profile row is created by the on_auth_user_created database
     // trigger (migration 20261031000000_profile_creation_trigger.sql), which
     // also runs for confirmation-required sign-ups where no session exists
@@ -67,16 +99,88 @@ class Supa {
       email: email,
       password: password,
       data: {'username': username},
+      captchaToken: captchaToken,
     );
   }
 
-  static Future<AuthResponse> signIn(String email, String password) =>
-      client.auth.signInWithPassword(email: email, password: password);
+  static Future<AuthResponse> signIn(
+    String email,
+    String password, {
+    String? captchaToken,
+  }) =>
+      client.auth.signInWithPassword(
+        email: email,
+        password: password,
+        captchaToken: captchaToken,
+      );
+
+  static Future<bool> signInWithOAuth(OAuthProvider provider) =>
+      client.auth.signInWithOAuth(
+        provider,
+        redirectTo: oauthRedirectUrl(),
+      );
 
   static Future<void> signOut() {
+    passwordRecoveryPending.value = false;
     LegacyMessaging.reset();
     return client.auth.signOut();
   }
+
+  static Future<void> signOutOtherSessions() =>
+      client.auth.signOut(scope: SignOutScope.others);
+
+  /// Re-authenticates the signed-in user by verifying their current password.
+  static Future<void> reauthenticateWithPassword(String currentPassword) async {
+    final email = currentUser?.email;
+    if (email == null || email.isEmpty) {
+      throw StateError('Sign in again before continuing.');
+    }
+    await client.auth.signInWithPassword(
+      email: email,
+      password: currentPassword,
+    );
+  }
+
+  // MFA (TOTP)
+  static bool needsMfaChallenge() {
+    if (currentUser == null || client.auth.currentSession == null) {
+      return false;
+    }
+    try {
+      final aal = client.auth.mfa.getAuthenticatorAssuranceLevel();
+      return aal.currentLevel == AuthenticatorAssuranceLevels.aal1 &&
+          aal.nextLevel == AuthenticatorAssuranceLevels.aal2;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static AuthMFAGetAuthenticatorAssuranceLevelResponse
+      getAuthenticatorAssuranceLevel() =>
+          client.auth.mfa.getAuthenticatorAssuranceLevel();
+
+  static Future<AuthMFAListFactorsResponse> listMfaFactors() =>
+      client.auth.mfa.listFactors();
+
+  static Future<AuthMFAEnrollResponse> enrollTotp({
+    String friendlyName = 'BRO Authenticator',
+  }) =>
+      client.auth.mfa.enroll(
+        factorType: FactorType.totp,
+        friendlyName: friendlyName,
+      );
+
+  static Future<AuthMFAVerifyResponse> verifyTotp({
+    required String factorId,
+    required String code,
+  }) =>
+      client.auth.mfa.challengeAndVerify(
+        factorId: factorId,
+        code: code.trim(),
+      );
+
+  static Future<AuthMFAUnenrollResponse> unenrollMfaFactor(String factorId) =>
+      client.auth.mfa.unenroll(factorId);
   static User? get currentUser => client.auth.currentUser;
   static Stream<AuthState> get authStateChanges =>
       client.auth.onAuthStateChange;
@@ -86,10 +190,17 @@ class Supa {
       client.auth.resend(type: OtpType.signup, email: email);
 
   // Send a password-reset email. The recovery link lands on the configured
-  // site URL / deep link with a recovery session; the user can then set a
-  // new password in Settings → Account (which uses updateUser).
-  static Future<void> resetPasswordForEmail(String email) =>
-      client.auth.resetPasswordForEmail(email.trim());
+  // site URL / deep link with a recovery session; AuthGate / BroApp routes
+  // AuthChangeEvent.passwordRecovery to /reset-password.
+  static Future<void> resetPasswordForEmail(
+    String email, {
+    String? captchaToken,
+  }) =>
+      client.auth.resetPasswordForEmail(
+        email.trim(),
+        redirectTo: passwordResetRedirectUrl(),
+        captchaToken: captchaToken,
+      );
 
   // Profiles
   static Future<Profile?> getProfile(String uid) async {

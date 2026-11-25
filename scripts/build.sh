@@ -26,7 +26,7 @@ if [[ -f .env.local ]]; then
     key="$(echo "$key" | xargs)"
     value="$(echo "$value" | sed 's/^"\(.*\)"$/\1/; s/^'\''\(.*\)'\''$/\1/')"
     case "$key" in
-      SUPABASE_URL|SUPABASE_ANON_KEY|CLOUD_STORAGE_URL|CALL_RELAY_ONLY|FIREBASE_WEB_API_KEY|FIREBASE_WEB_APP_ID|FIREBASE_WEB_SENDER_ID|FIREBASE_WEB_PROJECT_ID|FIREBASE_WEB_VAPID_KEY)
+      SUPABASE_URL|SUPABASE_ANON_KEY|CLOUD_STORAGE_URL|CALL_RELAY_ONLY|FIREBASE_WEB_API_KEY|FIREBASE_WEB_APP_ID|FIREBASE_WEB_SENDER_ID|FIREBASE_WEB_PROJECT_ID|FIREBASE_WEB_VAPID_KEY|TURNSTILE_SITE_KEY)
         if [[ -z "${!key:-}" ]]; then export "$key=$value"; fi ;;
     esac
   done < .env.local
@@ -34,7 +34,7 @@ fi
 
 # CI and shell environments can provide the public Supabase client config too.
 # These values are safe for client apps; never pass a service-role key here.
-for key in SUPABASE_URL SUPABASE_ANON_KEY CLOUD_STORAGE_URL CALL_RELAY_ONLY FIREBASE_WEB_API_KEY FIREBASE_WEB_APP_ID FIREBASE_WEB_SENDER_ID FIREBASE_WEB_PROJECT_ID FIREBASE_WEB_VAPID_KEY; do
+for key in SUPABASE_URL SUPABASE_ANON_KEY CLOUD_STORAGE_URL CALL_RELAY_ONLY FIREBASE_WEB_API_KEY FIREBASE_WEB_APP_ID FIREBASE_WEB_SENDER_ID FIREBASE_WEB_PROJECT_ID FIREBASE_WEB_VAPID_KEY TURNSTILE_SITE_KEY; do
   value="${!key:-}"
   if [[ -n "$value" ]]; then
     DEFINES+=(--dart-define="${key}=${value}")

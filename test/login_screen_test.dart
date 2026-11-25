@@ -8,13 +8,21 @@ Finder _fieldWithHint(String hint) => find.byWidgetPredicate(
           widget is TextField && widget.decoration?.hintText == hint,
     );
 
-Widget _app({bool disableAnimations = false}) => MaterialApp(
+Widget _app({
+  bool disableAnimations = false,
+  Future<void> Function(String email, String password)? onSignIn,
+  Future<bool> Function(String password)? onLeakedCheck,
+}) =>
+    MaterialApp(
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context)
             .copyWith(disableAnimations: disableAnimations),
         child: child!,
       ),
-      home: const LoginScreen(),
+      home: LoginScreen(
+        onSignIn: onSignIn,
+        onLeakedCheck: onLeakedCheck,
+      ),
     );
 
 void main() {
@@ -97,5 +105,63 @@ void main() {
 
     expect(find.text('Good to see you, Bro.'), findsOneWidget);
     expect(find.byKey(const Key('auth-cta')), findsOneWidget);
+  });
+
+  testWidgets('sign-up mode shows live password strength meter',
+      (tester) async {
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    await tester.tap(find.text('Create Account'));
+    await tester.pump();
+
+    await tester.enterText(_fieldWithHint('••••••••'), 'abc');
+    await tester.pump();
+    expect(find.text('Weak'), findsOneWidget);
+
+    await tester.enterText(_fieldWithHint('••••••••'), 'brochat1');
+    await tester.pump();
+    expect(find.text('Fair'), findsOneWidget);
+
+    await tester.enterText(_fieldWithHint('••••••••'), 'BroChat!2026');
+    await tester.pump();
+    expect(find.text('Strong'), findsOneWidget);
+  });
+
+  testWidgets('sign-in enforces cooldown after 3 consecutive failures',
+      (tester) async {
+    var attempts = 0;
+    await tester.pumpWidget(_app(
+      onSignIn: (_, __) async {
+        attempts += 1;
+        throw StateError('Invalid credentials');
+      },
+    ));
+    await tester.pump();
+
+    await tester
+        .enterText(_fieldWithHint('you@bro.network'), 'bro@example.com');
+    await tester.enterText(_fieldWithHint('••••••••'), 'wrongpass1');
+
+    for (var i = 0; i < 3; i++) {
+      await tester.tap(find.byKey(const Key('auth-cta')));
+      await tester.pump();
+    }
+
+    expect(attempts, 3);
+    expect(find.text('Too many attempts. Try again in 5s.'), findsOneWidget);
+    expect(find.text('Wait 5s'), findsOneWidget);
+
+    // Advance past the 5-second cooldown so no pending timer remains.
+    await tester.pump(const Duration(seconds: 6));
+    expect(find.text('Sign In'), findsWidgets);
+  });
+
+  testWidgets('renders Google and GitHub OAuth buttons', (tester) async {
+    await tester.pumpWidget(_app());
+    await tester.pump();
+
+    expect(find.text('Google'), findsOneWidget);
+    expect(find.text('GitHub'), findsOneWidget);
   });
 }

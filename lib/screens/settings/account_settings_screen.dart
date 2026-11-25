@@ -19,10 +19,15 @@ import '../../services/presence.dart';
 import '../../followers_following_screen.dart';
 import '../../app_constants.dart';
 import '../../services/app_lock.dart';
+import '../../services/hibp_password_check.dart';
 import '../../models/avatar_config.dart';
 import '../../widgets/digital_avatar.dart';
+import '../auth/auth_validation.dart';
+import '../auth/widgets/password_strength_meter.dart';
+import '../auth/widgets/reauth_dialog.dart';
 import '../chat/widgets/avatar.dart';
 import '../../widgets/responsive_app_shell.dart';
+import 'widgets/totp_enrollment_dialog.dart';
 
 const _chatBackgroundOptions = app_colors.chatBackgroundOptions;
 
@@ -77,6 +82,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   bool _uploadingProfileMedia = false;
   bool _loading = true;
   bool _saving = false;
+  bool _signingOutOthers = false;
+  bool _mfaBusy = false;
+  Factor? _totpFactor;
   String? _error;
   String _photoVisibility = 'everyone';
   String _statusVisibility = 'everyone';
@@ -90,7 +98,107 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   @override
   void initState() {
     super.initState();
+    _password.addListener(() {
+      if (mounted) setState(() {});
+    });
     _loadProfile();
+  }
+
+  Future<void> _loadMfaState() async {
+    try {
+      final factors = await Supa.listMfaFactors();
+      if (mounted) {
+        setState(() => _totpFactor = factors.totp.firstOrNull);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _enable2fa() async {
+    if (_mfaBusy) return;
+    setState(() => _mfaBusy = true);
+    try {
+      final enabled = await showTotpEnrollmentDialog(context);
+      if (enabled && mounted) {
+        await _loadMfaState();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Two-factor authentication enabled.')),
+          );
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _mfaBusy = false);
+    }
+  }
+
+  Future<void> _disable2fa() async {
+    final factor = _totpFactor;
+    if (_mfaBusy || factor == null) return;
+    final reauthed = await showReauthDialog(
+      context,
+      title: 'Disable Two-Factor Auth',
+      subtitle: 'Confirm your identity before turning off 2FA.',
+    );
+    if (!reauthed || !mounted) return;
+    setState(() => _mfaBusy = true);
+    try {
+      await Supa.unenrollMfaFactor(factor.id);
+      if (mounted) {
+        setState(() => _totpFactor = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Two-factor authentication disabled.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendlyErrorMessage(e))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _mfaBusy = false);
+    }
+  }
+
+  Future<void> _signOutOtherDevices() async {
+    if (_signingOutOthers) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sign out other devices?'),
+        content: const Text(
+          'Every other active BRO session will be signed out. This device will stay signed in.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sign out others'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _signingOutOthers = true);
+    try {
+      await Supa.signOutOtherSessions();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('All other devices signed out.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendlyErrorMessage(e))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _signingOutOthers = false);
+    }
   }
 
   Future<void> _loadProfile() async {
@@ -137,6 +245,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       }
       if (!mounted) return;
       setState(() => _loading = false);
+      unawaited(_loadMfaState());
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -308,9 +417,12 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
           _error = 'Profile color must be a six-digit hex value like #D4FF00.');
       return;
     }
-    if (_password.text.isNotEmpty && _password.text.length < 6) {
-      setState(() => _error = 'Use at least 6 characters for your password.');
-      return;
+    if (_password.text.isNotEmpty) {
+      final passwordError = validatePassword(_password.text);
+      if (passwordError != null) {
+        setState(() => _error = passwordError);
+        return;
+      }
     }
     if (_password.text != _confirmPassword.text) {
       setState(() => _error = "Those passwords don't match yet.");
@@ -324,6 +436,21 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     if (gameError != null) {
       setState(() => _error = gameError);
       return;
+    }
+    if (_password.text.isNotEmpty) {
+      final leaked = await HibpPasswordCheck.isLeaked(_password.text);
+      if (!mounted) return;
+      if (leaked) {
+        setState(() => _error =
+            'This password has appeared in a known data breach. Please choose a different one.');
+        return;
+      }
+      final reauthed = await showReauthDialog(
+        context,
+        title: 'Confirm password change',
+        subtitle: 'Verify your identity before updating your password.',
+      );
+      if (!reauthed || !mounted) return;
     }
     setState(() {
       _saving = true;
@@ -978,6 +1105,95 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     ),
                   ]),
                   const SizedBox(height: 24),
+                  Text('Security',
+                      style: TextStyle(
+                          color: _P.muted, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: _P.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: _P.border.withValues(alpha: 0.5)),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              _totpFactor != null
+                                  ? Icons.verified_user_outlined
+                                  : Icons.shield_outlined,
+                              color: _totpFactor != null
+                                  ? _P.success
+                                  : _P.muted,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Two-Factor Authentication',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.w600)),
+                                  Text(
+                                    _totpFactor != null
+                                        ? 'Enabled (Authenticator app)'
+                                        : 'Off · Add an extra layer of security',
+                                    style: TextStyle(
+                                        color: _P.muted, fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _mfaBusy
+                                  ? null
+                                  : (_totpFactor != null
+                                      ? _disable2fa
+                                      : _enable2fa),
+                              child: Text(
+                                _totpFactor != null ? 'Disable' : 'Enable',
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Divider(height: 20),
+                        Row(
+                          children: [
+                            Icon(Icons.devices_other_outlined,
+                                color: _P.muted, size: 20),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Other active sessions',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.w600)),
+                                  Text(
+                                    'Sign out all other devices immediately',
+                                    style: TextStyle(
+                                        color: _P.muted, fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _signingOutOthers
+                                  ? null
+                                  : _signOutOtherDevices,
+                              child: Text(_signingOutOthers
+                                  ? 'Signing out…'
+                                  : 'Sign out others'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
                   Text('Change password',
                       style: TextStyle(
                           color: _P.muted, fontWeight: FontWeight.w600)),
@@ -987,6 +1203,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       label: 'New password',
                       icon: Icons.lock_outline,
                       obscure: true),
+                  PasswordStrengthMeter(password: _password.text),
                   const SizedBox(height: 14),
                   _SettingsField(
                       controller: _confirmPassword,

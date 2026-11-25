@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_colors.dart' as app_colors;
 import '../../services/supabase.dart';
 import '../../services/connection_monitor.dart';
+import '../../services/hibp_password_check.dart';
 import '../../ui/errors.dart';
 import '../../ui/motion.dart';
 import '../../ui/auth_backdrop.dart';
@@ -13,10 +15,23 @@ import 'auth_validation.dart';
 import 'widgets/auth_controls.dart';
 import 'widgets/auth_prop_backdrop.dart';
 import 'widgets/bro_wordmark.dart';
+import 'widgets/password_strength_meter.dart';
+import 'widgets/turnstile_widget.dart';
 import 'widgets/welcome_hero.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({
+    super.key,
+    this.onSignIn,
+    this.onLeakedCheck,
+  });
+
+  /// Optional test hook overriding `Supa.signIn`.
+  final Future<void> Function(String email, String password)? onSignIn;
+
+  /// Optional test hook overriding `HibpPasswordCheck.isLeaked`.
+  final Future<bool> Function(String password)? onLeakedCheck;
+
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
@@ -31,6 +46,36 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _error;
   String? _notice;
   final Map<String, String?> _fieldErrors = {};
+  String? _captchaToken;
+  int _failedSignInAttempts = 0;
+  int _cooldownSeconds = 0;
+  Timer? _cooldownTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _password.addListener(() {
+      if (_isSignUp && mounted) setState(() {});
+    });
+  }
+
+  void _startCooldown(Duration duration) {
+    _cooldownTimer?.cancel();
+    if (duration <= Duration.zero) return;
+    setState(() => _cooldownSeconds = duration.inSeconds);
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_cooldownSeconds <= 1) {
+        timer.cancel();
+        setState(() => _cooldownSeconds = 0);
+      } else {
+        setState(() => _cooldownSeconds -= 1);
+      }
+    });
+  }
 
   void _clearFieldError(String field) {
     setState(() => _fieldErrors.remove(field));
@@ -53,9 +98,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (_isSignUp) {
       errors['username'] = validateUsername(_username.text);
+      errors['password'] = validatePassword(password);
+    } else {
+      errors['password'] = validateSignInPassword(password);
     }
     errors['email'] = validateEmail(email);
-    errors['password'] = validatePassword(password);
     errors.removeWhere((_, value) => value == null);
 
     setState(() {
@@ -68,6 +115,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _submit() async {
+    if (_cooldownSeconds > 0 && !_isSignUp) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -78,7 +126,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (validation != null) {
         return; // inline errors already set; no banner needed
       }
-      if (!ConnectionMonitor.isOnline.value) {
+      if (!ConnectionMonitor.isOnline.value && widget.onSignIn == null) {
         if (mounted) {
           setState(() =>
               _error = "You're offline. Check your connection and try again.");
@@ -88,7 +136,23 @@ class _LoginScreenState extends State<LoginScreen> {
       final email = _email.text.trim();
       final password = _password.text;
       if (_isSignUp) {
-        final res = await Supa.signUp(email, password, _username.text.trim());
+        final leaked = await (widget.onLeakedCheck ??
+            HibpPasswordCheck.isLeaked)(password);
+        if (leaked) {
+          if (mounted) {
+            setState(() {
+              _fieldErrors['password'] =
+                  'This password has appeared in a known data breach. Please choose a different one.';
+            });
+          }
+          return;
+        }
+        final res = await Supa.signUp(
+          email,
+          password,
+          _username.text.trim(),
+          captchaToken: _captchaToken,
+        );
         // Supabase may require email confirmation before sign-in is allowed.
         // If no session was created, the user must confirm their email first.
         if (res.session == null) {
@@ -98,7 +162,17 @@ class _LoginScreenState extends State<LoginScreen> {
           return;
         }
       } else {
-        await Supa.signIn(email, password);
+        if (widget.onSignIn != null) {
+          await widget.onSignIn!(email, password);
+          _failedSignInAttempts = 0;
+          return;
+        }
+        await Supa.signIn(email, password, captchaToken: _captchaToken);
+        _failedSignInAttempts = 0;
+        if (Supa.needsMfaChallenge()) {
+          if (mounted) context.go('/mfa-challenge');
+          return;
+        }
       }
       if (mounted) {
         context.go('/conversations');
@@ -110,6 +184,13 @@ class _LoginScreenState extends State<LoginScreen> {
         // instead of surfacing a raw exception.
         if (mounted) context.go('/confirm', extra: _email.text.trim());
         return;
+      }
+      if (!_isSignUp) {
+        _failedSignInAttempts += 1;
+        final cooldown = loginCooldownForFailures(_failedSignInAttempts);
+        if (cooldown > Duration.zero) {
+          _startCooldown(cooldown);
+        }
       }
       if (e is AuthRetryableFetchException) {
         if (mounted) {
@@ -164,10 +245,10 @@ class _LoginScreenState extends State<LoginScreen> {
       _fieldErrors.remove('email');
     });
     try {
-      await Supa.resetPasswordForEmail(email);
+      await Supa.resetPasswordForEmail(email, captchaToken: _captchaToken);
       if (mounted) {
         setState(() => _notice =
-            'Reset link sent to $email. Check your inbox to choose a new password.');
+            'If an account exists for $email, a reset link is on the way. Check your inbox.');
       }
     } catch (e) {
       if (mounted) {
@@ -182,8 +263,30 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _signInWithOAuth(OAuthProvider provider) async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+      _notice = null;
+    });
+    try {
+      await Supa.signInWithOAuth(provider);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = friendlyErrorMessage(
+              e,
+              fallback: "We couldn't start social sign-in right now.",
+            ));
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   @override
   void dispose() {
+    _cooldownTimer?.cancel();
     _email.dispose();
     _password.dispose();
     _username.dispose();
@@ -306,12 +409,15 @@ class _LoginScreenState extends State<LoginScreen> {
                 ? const [AutofillHints.password]
                 : const [AutofillHints.newPassword],
             errorText: _fieldErrors['password'],
-            helperText: _isSignUp ? 'At least 6 characters.' : null,
+            helperText: _isSignUp
+                ? 'At least 8 characters with letters and numbers or symbols.'
+                : null,
             onFocus: () {
               _clearFieldError('password');
               setState(() => _guideTarget = 'password');
             },
           ),
+          if (_isSignUp) PasswordStrengthMeter(password: _password.text),
           if (isSignIn) ...[
             Align(
               alignment: Alignment.centerRight,
@@ -335,12 +441,68 @@ class _LoginScreenState extends State<LoginScreen> {
           ] else
             const SizedBox(height: 24),
 
+          TurnstileWidget(
+            onToken: (token) => _captchaToken = token,
+          ),
+          if (_cooldownSeconds > 0 && isSignIn)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text(
+                'Too many attempts. Try again in ${_cooldownSeconds}s.',
+                style: const TextStyle(
+                  color: Color(0xFFFF8D8D),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+
           // CTA
           AuthPrimaryButton(
             key: const Key('auth-cta'),
-            label: _isSignUp ? 'Create Account' : 'Sign In',
+            label: _isSignUp
+                ? 'Create Account'
+                : (_cooldownSeconds > 0
+                    ? 'Wait ${_cooldownSeconds}s'
+                    : 'Sign In'),
             loading: _loading,
-            onPressed: _submit,
+            onPressed: (_cooldownSeconds > 0 && isSignIn) ? null : _submit,
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _loading
+                      ? null
+                      : () => _signInWithOAuth(OAuthProvider.google),
+                  icon: const Icon(Icons.g_mobiledata, size: 22),
+                  label: const Text('Google'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: app_colors.P.text,
+                    side: BorderSide(color: app_colors.P.border),
+                    shape: const StadiumBorder(),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _loading
+                      ? null
+                      : () => _signInWithOAuth(OAuthProvider.github),
+                  icon: const Icon(Icons.code, size: 18),
+                  label: const Text('GitHub'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: app_colors.P.text,
+                    side: BorderSide(color: app_colors.P.border),
+                    shape: const StadiumBorder(),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           TextButton(
