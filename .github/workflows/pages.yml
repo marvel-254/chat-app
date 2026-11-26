@@ -118,6 +118,10 @@ jobs:
             if gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
                 --jq '.artifacts[] | select(.name == "github-pages") | .id' | grep -q .; then
               echo "Pages artifact visible after ${attempt} attempt(s)."
+              # REST visibility can still beat the API used by deploy-pages;
+              # give GitHub a short window to make the metadata consistent.
+              sleep 20
+              echo "Pages artifact metadata settled."
               exit 0
             fi
             echo "Artifact metadata not visible yet (attempt ${attempt}); retrying in 10s."

@@ -1,6 +1,6 @@
 # BRO next feature plan
 
-Status: Phase A shipped in v1.5.9, Phase B shipped in v1.5.10, Phase C implemented and gate-verified; device matrices pending. All GitHub issues are closed as of 2026-11-24; v1.5.7 shipped with voice-note fixes. Scope: `lib/`, `docs/`, tests, and timestamped Supabase migrations only when a phase needs them. No route changes, no brand refresh, no E2EE protocol rewrite, no other projects.
+Status: Phase A shipped in v1.5.9, Phase B shipped in v1.5.10, Phase C implemented and gate-verified; 1.6.0 adds the responsive layout, auth hardening and the call/status/E2EE/account merge. Device matrices and Phase D pending. All GitHub issues are closed as of 2026-11-24; v1.5.7 shipped with voice-note fixes. Scope: `lib/`, `docs/`, tests, and timestamped Supabase migrations only when a phase needs them. No route changes, no brand refresh, no E2EE protocol rewrite, no other projects.
 
 ## 1. Current state
 
