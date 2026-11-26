@@ -5,6 +5,27 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:bro_chat/services/signal_e2ee.dart';
 
 void main() {
+  group('fresh Signal key allocation', () {
+    test('new IDs advance past stored high water and known keys', () {
+      expect(
+        allocateFreshSignalIds(
+          existing: const [1, 2, 8],
+          highWater: 8,
+          count: 3,
+        ),
+        const [9, 10, 11],
+      );
+      expect(
+        allocateFreshSignalIds(existing: const [], highWater: 0, count: 2),
+        const [1, 2],
+      );
+      expect(
+        allocateFreshSignalIds(existing: const [4, 12], highWater: 9, count: 1),
+        const [13],
+      );
+    });
+  });
+
   group('fail-closed E2EE contract', () {
     test('legacy plaintext is not reported as a secure envelope', () {
       expect(SignalE2ee.instance.isSecureEnvelope('good evening'), isFalse);

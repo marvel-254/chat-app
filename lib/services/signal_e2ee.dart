@@ -325,6 +325,21 @@ bool _bytesEqual(List<int> a, List<int> b) {
 }
 
 /// Singleton Signal Protocol facade used by the messaging layer.
+/// Allocates IDs strictly above every locally known ID and the stored high
+/// water mark. Consumed server-side keys must never be re-registered under a
+/// reused ID: `upsert(..., ignoreDuplicates: true)` would keep `used_at` set.
+List<int> allocateFreshSignalIds({
+  required Iterable<int> existing,
+  required int highWater,
+  required int count,
+}) {
+  var next = highWater;
+  for (final id in existing) {
+    if (id > next) next = id;
+  }
+  return List<int>.generate(count, (_) => ++next, growable: false);
+}
+
 class SignalE2ee {
   SignalE2ee._();
 
@@ -346,6 +361,8 @@ class SignalE2ee {
 
   bool get isReady => _localAddress != null;
 
+  static Future<void>? _libSignalInit;
+
   Future<void> init(String ownerId) async {
     if (ownerId.isEmpty) throw const E2eeException(E2eeFailure.notInitialized);
     if (isReady && _ownerId == ownerId) return;
@@ -357,7 +374,16 @@ class SignalE2ee {
       _identities = null;
       _localAddress = null;
     }
-    await LibSignal.init();
+    // The web loader appends <script src="pkg/libsignal_frb.js"> on every
+    // call. Loading it twice throws "Identifier 'wasm_bindgen' has already
+    // been declared", so initialise the native library exactly once.
+    _libSignalInit ??= LibSignal.init();
+    try {
+      await _libSignalInit!;
+    } catch (_) {
+      _libSignalInit = null;
+      rethrow;
+    }
     final storage = _storage ?? const FlutterSecureStorage();
     _storage = storage;
     final prefix = '$_storagePrefix${sha256.convert(utf8.encode(ownerId))}.';
@@ -497,55 +523,48 @@ class SignalE2ee {
       );
     }
 
+    // Publish a fresh batch on every init. Re-uploading previously consumed
+    // IDs with ignoreDuplicates leaves them consumed on the server, so peers
+    // eventually see no bundle and sends fail with peerBundleUnavailable.
+    final oneTimeCounterKey = '${_accountPrefix}prekey_high_water';
+    final freshIds = allocateFreshSignalIds(
+      existing: await preKeys.getAllPreKeyIds(),
+      highWater:
+          int.tryParse(await _storage!.read(key: oneTimeCounterKey) ?? '') ?? 0,
+      count: 8,
+    );
     final oneTime = <(int, Uint8List)>[];
-    final existing = await preKeys.getAllPreKeyIds();
-    final counterKey = '${_accountPrefix}prekey_high_water';
-    var nextId = int.tryParse(await _storage!.read(key: counterKey) ?? '') ?? 0;
-    if (existing.isNotEmpty &&
-        existing.reduce((a, b) => a > b ? a : b) > nextId) {
-      nextId = existing.reduce((a, b) => a > b ? a : b);
-    }
-    for (final id in existing) {
-      oneTime.add((id, (await preKeys.loadPreKey(id))!.publicKey()));
-    }
-    while (oneTime.length < 8) {
-      nextId++;
+    for (final id in freshIds) {
       final private = PrivateKey.generate();
       final public = private.getPublicKey();
-      await preKeys.storePreKey(nextId,
-          PreKeyRecord(id: nextId, publicKey: public, privateKey: private));
-      oneTime.add((nextId, public.serialize()));
-    }
-    await _storage!.write(key: counterKey, value: '$nextId');
-
-    var kyberIds = await kyber.getAllKyberPreKeyIds();
-    if (kyberIds.isEmpty) {
-      final counterKey = '${_accountPrefix}kyber_high_water';
-      final nextId =
-          (int.tryParse(await _storage!.read(key: counterKey) ?? '') ?? 0) + 1;
-      final pair = KyberKeyPair.generate();
-      final public = pair.getPublicKey();
-      final signature = identity.sign(message: public.serialize().toList());
-      await kyber.storeKyberPreKey(
-        nextId,
-        KyberPreKeyRecord.create(
-          id: nextId,
-          keyPair: pair,
-          signature: signature.toList(),
-          timestamp: timestamp,
-        ),
+      await preKeys.storePreKey(
+        id,
+        PreKeyRecord(id: id, publicKey: public, privateKey: private),
       );
-      await _storage!.write(key: counterKey, value: '$nextId');
-      kyberIds = [nextId];
-    } else {
-      final counterKey = '${_accountPrefix}kyber_high_water';
-      final current =
-          int.tryParse(await _storage!.read(key: counterKey) ?? '') ?? 0;
-      final maximum = kyberIds.reduce((a, b) => a > b ? a : b);
-      if (maximum > current) {
-        await _storage!.write(key: counterKey, value: '$maximum');
-      }
+      oneTime.add((id, public.serialize()));
     }
+    await _storage!.write(key: oneTimeCounterKey, value: '${freshIds.last}');
+
+    final kyberCounterKey = '${_accountPrefix}kyber_high_water';
+    final freshKyberId = allocateFreshSignalIds(
+      existing: await kyber.getAllKyberPreKeyIds(),
+      highWater:
+          int.tryParse(await _storage!.read(key: kyberCounterKey) ?? '') ?? 0,
+      count: 1,
+    ).single;
+    final pair = KyberKeyPair.generate();
+    final public = pair.getPublicKey();
+    final signature = identity.sign(message: public.serialize().toList());
+    await kyber.storeKyberPreKey(
+      freshKyberId,
+      KyberPreKeyRecord.create(
+        id: freshKyberId,
+        keyPair: pair,
+        signature: signature.toList(),
+        timestamp: timestamp,
+      ),
+    );
+    await _storage!.write(key: kyberCounterKey, value: '$freshKyberId');
 
     final registrar = registerBundle;
     if (registrar == null) return;
@@ -553,7 +572,7 @@ class SignalE2ee {
     final identityPair = await identityStore.getIdentityKeyPair();
     final signedRecord = (await signed.getAllSignedPreKeyIds()).first;
     final signedKey = (await signed.loadSignedPreKey(signedRecord))!;
-    final kyberRecord = kyberIds.first;
+    final kyberRecord = freshKyberId;
     final kyberKey = (await kyber.loadKyberPreKey(kyberRecord))!;
     await registrar(
       _localAddress!.deviceId(),
