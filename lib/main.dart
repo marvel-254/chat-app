@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'services/call_feedback.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'
@@ -194,7 +195,8 @@ class BackendConfigurationApp extends StatelessWidget {
                   const Text(
                     'Make sure .env.local contains SUPABASE_URL and SUPABASE_ANON_KEY.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: _P.muted, fontSize: 12, height: 1.5),
+                    style:
+                        TextStyle(color: _P.muted, fontSize: 12, height: 1.5),
                   ),
                   if (buildNumber.isNotEmpty) ...[
                     const SizedBox(height: 20),
@@ -365,10 +367,12 @@ class BroApp extends StatefulWidget {
 }
 
 class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
+  final CallFeedback _incomingFeedback = CallFeedback();
   bool _appLocked = false;
   DateTime? _pausedAt;
   StreamSubscription<AuthState>? _authSub;
   Timer? _incomingTimer;
+  Timer? _ringTimer;
   DialogRoute<bool>? _incomingDialog;
   CallRecord? _promptedCall;
   bool _checkingIncoming = false;
@@ -379,6 +383,9 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
   }
 
   void _closeIncoming() {
+    _ringTimer?.cancel();
+    _ringTimer = null;
+    unawaited(_incomingFeedback.stop());
     final route = _incomingDialog;
     if (route?.isActive == true) route!.navigator?.removeRoute(route);
   }
@@ -422,38 +429,154 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
           _appLocked ||
           !record.expiresAt.isAfter(DateTime.now()) ||
           _activeLocation.startsWith('/call/')) {
-          return;
-        }
+        return;
+      }
       final dialog = DialogRoute<bool>(
         context: navigator.context,
         barrierDismissible: false,
         builder: (context) => PopScope(
           canPop: false,
-          child: AlertDialog(
-            title: Text(
-              record.video ? 'Incoming video call' : 'Incoming voice call',
+          child: Dialog(
+            backgroundColor: const Color(0xFF202229),
+            insetPadding: const EdgeInsets.symmetric(horizontal: 22),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(28),
+              side: const BorderSide(color: Colors.white12),
             ),
-            content: Text('${peer.label} is calling.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Decline'),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF5965E8).withValues(alpha: 0.18),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        record.video ? Icons.videocam_rounded : Icons.call,
+                        color: const Color(0xFF9CA5FF),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      record.video
+                          ? 'Incoming video call'
+                          : 'Incoming voice call',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    CircleAvatar(
+                      radius: 44,
+                      backgroundColor: const Color(0xFF343640),
+                      backgroundImage: peer.avatarUrl == null
+                          ? null
+                          : NetworkImage(peer.avatarUrl!),
+                      child: peer.avatarUrl == null
+                          ? Text(
+                              peer.peerInitial,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 30,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      peer.label,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '@${peer.username} is calling you',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 52,
+                            child: OutlinedButton.icon(
+                              onPressed: () => Navigator.pop(context, false),
+                              icon: const Icon(Icons.call_end_rounded),
+                              label: const Text('Decline'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFFFF7777),
+                                side:
+                                    const BorderSide(color: Color(0x66FF7777)),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: SizedBox(
+                            height: 52,
+                            child: FilledButton.icon(
+                              onPressed: () => Navigator.pop(context, true),
+                              icon: const Icon(Icons.call_rounded),
+                              label: const Text('Answer'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF36B875),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Answer'),
-              ),
-            ],
+            ),
           ),
         ),
       );
       _promptedCall = record;
       _incomingDialog = dialog;
+      // Foreground incoming calls need an audible cue before the user answers.
+      // Browsers may suppress it until the user has interacted with the page.
+      unawaited(_incomingFeedback.play(CallFeedbackCue.ringtone));
+      _ringTimer?.cancel();
+      _ringTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+        if (_incomingDialog == dialog && _foreground && !_appLocked) {
+          unawaited(_incomingFeedback.play(CallFeedbackCue.ringtone));
+        }
+      });
       // Let the timer reconcile remote cancellation while the prompt is open.
       unawaited(
         navigator.push(dialog).then((answer) async {
           if (_incomingDialog != dialog) return;
           _incomingDialog = null;
+          _ringTimer?.cancel();
+          _ringTimer = null;
+          unawaited(_incomingFeedback.stop());
           _promptedCall = null;
           if (!mounted ||
               Supa.currentUser?.id != owner ||
@@ -510,6 +633,7 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
         _router.go('/reset-password');
       } else if (state.session != null) {
         Presence.resume();
+        unawaited(Supa.initializeEncryptionKeys().catchError((Object _) {}));
       } else {
         Supa.passwordRecoveryPending.value = false;
         Presence.unbind();
@@ -566,7 +690,15 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
       await Future<void>.delayed(AppUpdate.checkInterval);
       if (!mounted) break;
       try {
-        await AppUpdate.backgroundCheck(appVersion);
+        final update = await AppUpdate.backgroundCheck(appVersion);
+        if (update == null || !mounted || !_foreground) continue;
+        final ctx = _rootNav.currentContext;
+        if (ctx == null || !ctx.mounted) continue;
+        await AppUpdate.promptIfNeeded(
+          context: ctx,
+          currentVersion: appVersion,
+          latest: update,
+        );
       } catch (_) {
         // Silently ignore background check failures
       }
@@ -576,6 +708,8 @@ class _BroAppState extends State<BroApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     _incomingTimer?.cancel();
+    _ringTimer?.cancel();
+    unawaited(_incomingFeedback.dispose());
     _authSub?.cancel();
     Presence.unbind();
     AppLock.enabled.removeListener(_onLockPref);

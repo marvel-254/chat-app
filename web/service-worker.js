@@ -1,5 +1,11 @@
 'use strict';
 
+try {
+  importScripts('push-config.js');
+} catch (_) {
+  // Keep offline caching usable on unconfigured local builds.
+}
+
 /* BRO PWA service worker
  * Provides offline caching for the Flutter web app at /app/.
  * Cache strategy:
@@ -9,7 +15,7 @@
  *  - Supabase/API calls → never cached (network-only, pass-through).
  */
 
-const VERSION = 'bro-pwa-v4';
+const VERSION = `bro-pwa-${self.BRO_APP_VERSION || 'v4'}`;
 const APP_SHELL = [
   'index.html',
   'main.dart.js',
@@ -168,7 +174,6 @@ self.addEventListener('notificationclick', (event) => {
 });
 
 try {
-  importScripts('push-config.js');
   if (self.BRO_FIREBASE_CONFIG) {
     importScripts('https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js',
       'https://www.gstatic.com/firebasejs/12.10.0/firebase-messaging-compat.js');

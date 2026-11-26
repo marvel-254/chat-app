@@ -205,6 +205,7 @@ class Message {
   final String conversationId;
   final String senderId;
   final String content;
+  final String contentFormat;
   final DateTime createdAt;
   final DateTime? readAt;
   final DateTime? expiresAt;
@@ -220,6 +221,7 @@ class Message {
     required this.conversationId,
     required this.senderId,
     required this.content,
+    this.contentFormat = 'legacy_unversioned',
     required this.createdAt,
     this.readAt,
     this.expiresAt,
@@ -236,6 +238,8 @@ class Message {
         conversationId: json['conversation_id'] as String,
         senderId: json['sender_id'] as String,
         content: json['content'] as String,
+        contentFormat:
+            json['content_format'] as String? ?? 'legacy_unversioned',
         createdAt: DateTime.parse(json['created_at'] as String),
         readAt: json['read_at'] != null
             ? DateTime.parse(json['read_at'] as String)
@@ -263,6 +267,7 @@ class Message {
         'conversation_id': conversationId,
         'sender_id': senderId,
         'content': content,
+        'content_format': contentFormat,
         'created_at': createdAt.toIso8601String(),
         'read_at': readAt?.toIso8601String(),
         'expires_at': expiresAt?.toIso8601String(),

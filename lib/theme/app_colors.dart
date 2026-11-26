@@ -16,6 +16,9 @@ const darkOnVolt = Color(0xFF0C0D12); // text on lime accents
 const adaptiveBreakpoint = 600.0;
 const desktopBreakpoint = 960.0;
 
+/// Width at which chats/circles switch to nav + list + detail panes.
+const desktopWideBreakpoint = 1200.0;
+
 /// Responsive layout tiers for Android/mobile, tablet, and desktop web views.
 enum ScreenSizeClass { compact, tablet, desktop }
 
@@ -25,6 +28,23 @@ ScreenSizeClass screenSizeClassForWidth(double width) {
   if (width >= adaptiveBreakpoint) return ScreenSizeClass.tablet;
   return ScreenSizeClass.compact;
 }
+
+/// Status composer washes and viewer backdrops. Kept here so the status
+/// surfaces share one palette without changing their existing colours.
+const statusWashes = <List<Color>>[
+  [Color(0xFF1A1C12), Color(0xFF3D4A00)],
+  [Color(0xFF102438), Color(0xFF0D1724)],
+  [Color(0xFF241018), Color(0xFF4A1530)],
+  [Color(0xFF142A24), Color(0xFF0E1B19)],
+];
+
+const statusBackdrops = <List<Color>>[
+  [Color(0xFF1A1C12), Color(0xFF3D4A00)],
+  [Color(0xFF102438), Color(0xFF0D1724)],
+  [Color(0xFF241018), Color(0xFF4A1530)],
+  [Color(0xFF142A24), Color(0xFF0E1B19)],
+  [Color(0xFF2A1D35), Color(0xFF191521)],
+];
 
 const chatBackgroundOptions = <(String, String, List<Color>)>[
   ('default', 'Night', [bg, surfaceLow]),

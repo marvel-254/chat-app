@@ -1,6 +1,6 @@
 # BRO E2EE protocol selection (internal ADR)
 
-Status: proposed for implementation, pending integration tests.
+Status: implementation in progress; not yet ready to advertise as fully E2EE.
 
 ## Decision
 
@@ -25,7 +25,7 @@ Rejected alternatives:
 - Sender builds an X3DH session from the recipient's public bundle; messages use Double Ratchet ciphertext with authenticated encryption, per-message keys, replay protection and forward secrecy.
 - Every message carries an encryption envelope version. A message that claims to be encrypted but cannot be decrypted is shown as an error, never as plaintext.
 - Legacy plaintext rows remain readable as an explicit, clearly labelled migration class; new sends are encrypted only. There is no silent downgrade.
-- Attachments are encrypted client-side before upload; object keys contain no plaintext filename or identity beyond opaque UUIDs.
+- File, voice, GIF, and scheduled-message sending is disabled until client-side encryption and per-device delivery are implemented. Existing uploaded media is not retroactively encrypted.
 - Device revocation removes registered public keys; existing sessions are discarded. Identity changes are surfaced to users, never silently accepted.
 
 ## Required infrastructure
@@ -33,6 +33,15 @@ Rejected alternatives:
 - Supabase tables and RLS for `signal_devices`, `signal_prekeys`, `signal_signed_prekeys`, `signal_sessions` (if sessions are server-relayed) and `signal_device_revocations`, plus RPCs for atomic prekey reservation and bundle lookup.
 - Build hook must provision `web/pkg/libsignal_frb.js` and WASM assets for Flutter Web (dart2js only; dart2wasm is not supported upstream).
 - TURN credentials for calls and a Firebase service account / web push VAPID key for notifications (separate ADRs pending audit results).
+
+## Current implementation limits
+
+- New text messages use Signal ciphertext by default and the database migration rejects new plaintext message inserts. Both the client release and migrations must be deployed before that policy takes effect.
+- The current bundle lookup and addressing are single-device. Account-scoped storage prevents one signed-in account from reusing another account's private keys on the same install, but delivery to multiple devices for one account still needs implementation before claiming multi-device support.
+- New text messages require every participant to have opened a compatible client and published a public bundle. Sending fails closed if a bundle is missing.
+- Existing messages remain legacy plaintext or legacy ciphertext and are not converted in place.
+- The current client does not encrypt attachments, voice notes, GIF files, scheduled messages, or edit history; those send paths are disabled. Reactions and routing metadata remain visible to Supabase.
+- Web and Android runtime interoperability, identity change behavior, and server RLS still require integration verification before general release.
 
 ## Fail-closed rules
 

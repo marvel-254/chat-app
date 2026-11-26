@@ -4,28 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../theme/app_colors.dart' as app_colors;
 import '../services/status_feed.dart';
 import '../services/supabase.dart';
 import '../ui/errors.dart';
 import '../ui/states.dart';
-
-class _C {
-  static const bg = Color(0xFF050505);
-  static const surface = Color(0xFF1E1F25);
-  static const text = Color(0xFFE3E1E9);
-  static const muted = Color(0xFFC5C9AC);
-  static const primary = Color(0xFFD4FF00);
-  static const darkOnAccent = Color(0xFF0C0D12);
-}
+import '../widgets/responsive_app_shell.dart';
 
 const _moods = ['🔥', '😊', '💭', '🎉', '😴', '💪', '❤️', '✨'];
-
-const _washes = <List<Color>>[
-  [Color(0xFF1A1C12), Color(0xFF3D4A00)],
-  [Color(0xFF102438), Color(0xFF0D1724)],
-  [Color(0xFF241018), Color(0xFF4A1530)],
-  [Color(0xFF142A24), Color(0xFF0E1B19)],
-];
 
 class StatusComposerScreen extends StatefulWidget {
   const StatusComposerScreen({super.key, this.initialSource});
@@ -145,179 +131,239 @@ class _StatusComposerScreenState extends State<StatusComposerScreen> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Widget _privacyMenu() {
+    return PopupMenuButton<String>(
+      tooltip: 'Who can see this',
+      initialValue: _privacy,
+      onSelected: (value) => setState(() => _privacy = value),
+      itemBuilder: (_) => const [
+        PopupMenuItem(value: 'everyone', child: Text('Everyone')),
+        PopupMenuItem(value: 'contacts', child: Text('Contacts')),
+        PopupMenuItem(value: 'close_friends', child: Text('Close friends')),
+        PopupMenuItem(value: 'followers', child: Text('Followers')),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          children: [
+            const Icon(Icons.visibility_outlined, size: 18),
+            const SizedBox(width: 6),
+            Text(statusPrivacyLabel(_privacy),
+                style: const TextStyle(fontSize: 13)),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final colors = _washes[_wash % _washes.length];
-    return Scaffold(
-      backgroundColor: _C.bg,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        actions: [
-          PopupMenuButton<String>(
-            tooltip: 'Who can see this',
-            initialValue: _privacy,
-            onSelected: (v) => setState(() => _privacy = v),
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'everyone', child: Text('Everyone')),
-              PopupMenuItem(value: 'contacts', child: Text('Contacts')),
-              PopupMenuItem(
-                  value: 'close_friends', child: Text('Close friends')),
-              PopupMenuItem(value: 'followers', child: Text('Followers')),
-            ],
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
+    final colors =
+        app_colors.statusWashes[_wash % app_colors.statusWashes.length];
+    final composer = Stack(
+      fit: StackFit.expand,
+      children: [
+        if (_photo != null)
+          Image.memory(_photo!, fit: BoxFit.cover)
+        else
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: colors,
+              ),
+            ),
+          ),
+        Container(color: Colors.black.withValues(alpha: 0.18)),
+        SafeArea(
+          child: Column(
+            children: [
+              const Spacer(),
+              if (_mood != null)
+                Text(_mood!, style: const TextStyle(fontSize: 64)),
+              if (_photo == null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: TextField(
+                    controller: _text,
+                    maxLength: 280,
+                    maxLines: 6,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                      height: 1.25,
+                    ),
+                    onChanged: (_) => setState(() {}),
+                    decoration: const InputDecoration(
+                      counterText: '',
+                      hintText: 'Tap to write…',
+                      hintStyle: TextStyle(color: Colors.white54, fontSize: 24),
+                      border: InputBorder.none,
+                    ),
+                  ),
+                ),
+              const Spacer(),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.center,
                 children: [
-                  const Icon(Icons.visibility_outlined, size: 18),
-                  const SizedBox(width: 6),
-                  Text(statusPrivacyLabel(_privacy),
-                      style: const TextStyle(fontSize: 13)),
+                  for (final mood in _moods)
+                    Tooltip(
+                      message: 'Add mood',
+                      child: InkWell(
+                        onTap: () => setState(
+                          () => _mood = _mood == mood ? null : mood,
+                        ),
+                        customBorder: const CircleBorder(),
+                        hoverColor: app_colors.volt.withValues(alpha: 0.12),
+                        focusColor: app_colors.volt.withValues(alpha: 0.16),
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: _mood == mood
+                                  ? app_colors.volt
+                                  : Colors.transparent,
+                              width: 2,
+                            ),
+                          ),
+                          child: CircleAvatar(
+                            radius: 20,
+                            backgroundColor: _mood == mood
+                                ? app_colors.volt.withValues(alpha: 0.35)
+                                : Colors.black38,
+                            child: Text(
+                              mood,
+                              style: const TextStyle(fontSize: 18),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
-            ),
+              const SizedBox(height: 12),
+              if (_photo != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: TextField(
+                    controller: _caption,
+                    maxLength: 140,
+                    style: const TextStyle(color: app_colors.P.text),
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      counterText: '',
+                      hintText: 'Add a caption',
+                      hintStyle: const TextStyle(color: app_colors.P.muted),
+                      filled: true,
+                      fillColor: app_colors.P.surface.withValues(alpha: 0.92),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Row(
+                  children: [
+                    IconButton.filledTonal(
+                      tooltip: 'Camera',
+                      onPressed: () => _pick(ImageSource.camera),
+                      icon: const Icon(Icons.photo_camera_outlined),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.filledTonal(
+                      tooltip: 'Gallery',
+                      onPressed: () => _pick(ImageSource.gallery),
+                      icon: const Icon(Icons.photo_outlined),
+                    ),
+                    if (_photo == null) ...[
+                      const SizedBox(width: 8),
+                      IconButton.filledTonal(
+                        tooltip: 'Change colour',
+                        onPressed: () => setState(
+                          () => _wash = (_wash + 1) %
+                              app_colors.statusWashes.length,
+                        ),
+                        icon: const Icon(Icons.palette_outlined),
+                      ),
+                    ],
+                    const Spacer(),
+                    FilledButton.icon(
+                      onPressed: _canPost ? _post : null,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: app_colors.P.primary,
+                        foregroundColor: app_colors.P.darkOnAccent,
+                        disabledBackgroundColor: Colors.white24,
+                      ),
+                      icon: _posting
+                          ? const BroSpinner(
+                              size: 16,
+                              color: app_colors.P.darkOnAccent,
+                            )
+                          : const Icon(Icons.send),
+                      label: const Text(
+                        'Post',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                'Visible to ${statusPrivacyLabel(_privacy).toLowerCase()} · $statusLifetimeHours hours',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+              const SizedBox(height: 12),
+            ],
           ),
-          const SizedBox(width: 8),
-        ],
+        ),
+      ],
+    );
+
+    return ResponsiveAppShell(
+      title: 'New status',
+      subtitle: 'Share a moment with your people',
+      navIndex: 2,
+      showBottomNavigation: false,
+      leading: IconButton(
+        tooltip: 'Back',
+        icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+        onPressed: () => Navigator.of(context).pop(),
       ),
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (_photo != null)
-            Image.memory(_photo!, fit: BoxFit.cover)
-          else
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: colors,
+      actions: [_privacyMenu()],
+      body: LayoutBuilder(builder: (context, constraints) {
+        if (constraints.maxWidth < app_colors.desktopBreakpoint) {
+          return composer;
+        }
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: SizedBox(
+              height: constraints.maxHeight * 0.88,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: app_colors.border.withValues(alpha: 0.5),
+                    ),
+                  ),
+                  child: composer,
                 ),
               ),
             ),
-          Container(color: Colors.black.withValues(alpha: 0.18)),
-          SafeArea(
-            child: Column(
-              children: [
-                const Spacer(),
-                if (_mood != null)
-                  Text(_mood!, style: const TextStyle(fontSize: 64)),
-                if (_photo == null)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: TextField(
-                      controller: _text,
-                      maxLength: 280,
-                      maxLines: 6,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w700,
-                          height: 1.25),
-                      onChanged: (_) => setState(() {}),
-                      decoration: const InputDecoration(
-                        counterText: '',
-                        hintText: 'Tap to write…',
-                        hintStyle:
-                            TextStyle(color: Colors.white54, fontSize: 24),
-                        border: InputBorder.none,
-                      ),
-                    ),
-                  ),
-                const Spacer(),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final mood in _moods)
-                      GestureDetector(
-                        onTap: () =>
-                            setState(() => _mood = _mood == mood ? null : mood),
-                        child: CircleAvatar(
-                          radius: 20,
-                          backgroundColor: _mood == mood
-                              ? _C.primary.withValues(alpha: 0.35)
-                              : Colors.black38,
-                          child:
-                              Text(mood, style: const TextStyle(fontSize: 18)),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                if (_photo != null)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: TextField(
-                      controller: _caption,
-                      maxLength: 140,
-                      style: const TextStyle(color: _C.text),
-                      onChanged: (_) => setState(() {}),
-                      decoration: InputDecoration(
-                        counterText: '',
-                        hintText: 'Add a caption',
-                        hintStyle: const TextStyle(color: _C.muted),
-                        filled: true,
-                        fillColor: _C.surface.withValues(alpha: 0.92),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 12),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: Row(
-                    children: [
-                      IconButton.filledTonal(
-                        tooltip: 'Camera',
-                        onPressed: () => _pick(ImageSource.camera),
-                        icon: const Icon(Icons.photo_camera_outlined),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton.filledTonal(
-                        tooltip: 'Gallery',
-                        onPressed: () => _pick(ImageSource.gallery),
-                        icon: const Icon(Icons.photo_outlined),
-                      ),
-                      if (_photo == null) ...[
-                        const SizedBox(width: 8),
-                        IconButton.filledTonal(
-                          tooltip: 'Change colour',
-                          onPressed: () => setState(
-                              () => _wash = (_wash + 1) % _washes.length),
-                          icon: const Icon(Icons.palette_outlined),
-                        ),
-                      ],
-                      const Spacer(),
-                      FilledButton.icon(
-                        onPressed: _canPost ? _post : null,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _C.primary,
-                          foregroundColor: _C.darkOnAccent,
-                          disabledBackgroundColor: Colors.white24,
-                        ),
-                        icon: _posting
-                            ? const BroSpinner(size: 16, color: _C.darkOnAccent)
-                            : const Icon(Icons.send),
-                        label: const Text('Post',
-                            style: TextStyle(fontWeight: FontWeight.w800)),
-                      ),
-                    ],
-                  ),
-                ),
-                Text(
-                  'Visible to ${statusPrivacyLabel(_privacy).toLowerCase()} · $statusLifetimeHours hours',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-                const SizedBox(height: 12),
-              ],
-            ),
           ),
-        ],
-      ),
+        );
+      }),
     );
   }
 }

@@ -69,7 +69,7 @@ class ResponsiveAppShell extends StatelessWidget {
               Expanded(
                 child: Column(
                   children: [
-                    _WorkspaceHeader(
+                    WorkspaceHeader(
                       leading: leading,
                       title: title,
                       subtitle: subtitle,
@@ -101,8 +101,9 @@ class ResponsiveAppShell extends StatelessWidget {
   }
 }
 
-class _WorkspaceHeader extends StatelessWidget {
-  const _WorkspaceHeader({
+class WorkspaceHeader extends StatelessWidget {
+  const WorkspaceHeader({
+    super.key,
     required this.title,
     required this.subtitle,
     required this.actions,

@@ -31,7 +31,8 @@ class E2eeException implements Exception {
   final String detail;
 
   @override
-  String toString() => 'E2eeException(${reason.name})${detail.isEmpty ? '' : ': $detail'}';
+  String toString() =>
+      'E2eeException(${reason.name})${detail.isEmpty ? '' : ': $detail'}';
 }
 
 /// Public data needed to establish a session with one device.
@@ -85,12 +86,13 @@ const _storagePrefix = 'bro.signal.v2.';
 String _addrKey(String name, int device) => '$name:$device';
 
 abstract class _BaseSecureStore {
-  _BaseSecureStore(this._storage, this._kind);
+  _BaseSecureStore(this._storage, this._kind, this._prefix);
 
   final FlutterSecureStorage _storage;
   final String _kind;
+  final String _prefix;
 
-  String _key(String suffix) => '$_storagePrefix$_kind.$suffix';
+  String _key(String suffix) => '$_prefix$_kind.$suffix';
 
   Future<Uint8List?> _read(String suffix) async {
     final value = await _storage.read(key: _key(suffix));
@@ -114,7 +116,8 @@ abstract class _BaseSecureStore {
 }
 
 class SecureSessionStore extends _BaseSecureStore implements SessionStore {
-  SecureSessionStore(FlutterSecureStorage storage) : super(storage, 'session');
+  SecureSessionStore(FlutterSecureStorage storage, String prefix)
+      : super(storage, 'session', prefix);
 
   @override
   Future<SessionRecord?> loadSession(ProtocolAddress address) async {
@@ -154,7 +157,8 @@ class SecureSessionStore extends _BaseSecureStore implements SessionStore {
 }
 
 class SecurePreKeyStore extends _BaseSecureStore implements PreKeyStore {
-  SecurePreKeyStore(FlutterSecureStorage storage) : super(storage, 'prekey');
+  SecurePreKeyStore(FlutterSecureStorage storage, String prefix)
+      : super(storage, 'prekey', prefix);
 
   @override
   Future<PreKeyRecord?> loadPreKey(int preKeyId) async {
@@ -167,7 +171,8 @@ class SecurePreKeyStore extends _BaseSecureStore implements PreKeyStore {
       _write('$preKeyId', record.serialize());
 
   @override
-  Future<bool> containsPreKey(int preKeyId) async => await _read('$preKeyId') != null;
+  Future<bool> containsPreKey(int preKeyId) async =>
+      await _read('$preKeyId') != null;
 
   @override
   Future<void> removePreKey(int preKeyId) => _remove('$preKeyId');
@@ -185,8 +190,8 @@ class SecurePreKeyStore extends _BaseSecureStore implements PreKeyStore {
 
 class SecureSignedPreKeyStore extends _BaseSecureStore
     implements SignedPreKeyStore {
-  SecureSignedPreKeyStore(FlutterSecureStorage storage)
-      : super(storage, 'signed_prekey');
+  SecureSignedPreKeyStore(FlutterSecureStorage storage, String prefix)
+      : super(storage, 'signed_prekey', prefix);
 
   @override
   Future<SignedPreKeyRecord?> loadSignedPreKey(int id) async {
@@ -217,8 +222,8 @@ class SecureSignedPreKeyStore extends _BaseSecureStore
 
 class SecureKyberPreKeyStore extends _BaseSecureStore
     implements KyberPreKeyStore {
-  SecureKyberPreKeyStore(FlutterSecureStorage storage)
-      : super(storage, 'kyber_prekey');
+  SecureKyberPreKeyStore(FlutterSecureStorage storage, String prefix)
+      : super(storage, 'kyber_prekey', prefix);
 
   @override
   Future<KyberPreKeyRecord?> loadKyberPreKey(int id) async {
@@ -269,7 +274,8 @@ class SecureIdentityKeyStore extends _BaseSecureStore
     FlutterSecureStorage storage,
     this._identity,
     this._registrationId,
-  ) : super(storage, 'identity');
+    String prefix,
+  ) : super(storage, 'identity', prefix);
 
   final IdentityKeyPair _identity;
   final int _registrationId;
@@ -281,7 +287,8 @@ class SecureIdentityKeyStore extends _BaseSecureStore
   Future<int> getLocalRegistrationId() async => _registrationId;
 
   @override
-  Future<bool> saveIdentity(ProtocolAddress address, PublicKey identityKey) async {
+  Future<bool> saveIdentity(
+      ProtocolAddress address, PublicKey identityKey) async {
     final key = _addrKey(address.name(), address.deviceId());
     final previous = await _read(key);
     final next = identityKey.serialize();
@@ -333,20 +340,34 @@ class SignalE2ee {
   SecureKyberPreKeyStore? _kyberPreKeys;
   SecureIdentityKeyStore? _identities;
   ProtocolAddress? _localAddress;
+  String? _ownerId;
+  String? _accountPrefix;
   final Map<String, Future<void>> _locks = {};
 
   bool get isReady => _localAddress != null;
 
-  Future<void> init() async {
-    if (isReady) return;
+  Future<void> init(String ownerId) async {
+    if (ownerId.isEmpty) throw const E2eeException(E2eeFailure.notInitialized);
+    if (isReady && _ownerId == ownerId) return;
+    if (isReady && _ownerId != ownerId) {
+      _sessions = null;
+      _preKeys = null;
+      _signedPreKeys = null;
+      _kyberPreKeys = null;
+      _identities = null;
+      _localAddress = null;
+    }
     await LibSignal.init();
     final storage = _storage ?? const FlutterSecureStorage();
     _storage = storage;
+    final prefix = '$_storagePrefix${sha256.convert(utf8.encode(ownerId))}.';
+    _ownerId = ownerId;
+    _accountPrefix = prefix;
 
-    final identityBytes = await storage.read(key: '${_storagePrefix}identity_pair');
+    final identityBytes = await storage.read(key: '${prefix}identity_pair');
     final registrationText =
-        await storage.read(key: '${_storagePrefix}registration_id');
-    final deviceText = await storage.read(key: '${_storagePrefix}device_id');
+        await storage.read(key: '${prefix}registration_id');
+    final deviceText = await storage.read(key: '${prefix}device_id');
 
     final IdentityKeyPair identity;
     final int registrationId;
@@ -358,28 +379,77 @@ class SignalE2ee {
       registrationId = 1 + (DateTime.now().microsecondsSinceEpoch % 100000000);
       deviceId = 1;
       await storage.write(
-        key: '${_storagePrefix}identity_pair',
+        key: '${prefix}identity_pair',
         value: base64Encode(identity.serialize()),
       );
       await storage.write(
-        key: '${_storagePrefix}registration_id',
+        key: '${prefix}registration_id',
         value: '$registrationId',
       );
-      await storage.write(key: '${_storagePrefix}device_id', value: '$deviceId');
+      await storage.write(key: '${prefix}device_id', value: '$deviceId');
     } else {
-      identity = IdentityKeyPair.deserialize(bytes: base64Decode(identityBytes));
+      identity =
+          IdentityKeyPair.deserialize(bytes: base64Decode(identityBytes));
       registrationId = int.parse(registrationText);
       deviceId = int.parse(deviceText);
     }
 
-    _sessions = SecureSessionStore(storage);
-    _preKeys = SecurePreKeyStore(storage);
-    _signedPreKeys = SecureSignedPreKeyStore(storage);
-    _kyberPreKeys = SecureKyberPreKeyStore(storage);
-    _identities = SecureIdentityKeyStore(storage, identity, registrationId);
+    _sessions = SecureSessionStore(storage, prefix);
+    _preKeys = SecurePreKeyStore(storage, prefix);
+    _signedPreKeys = SecureSignedPreKeyStore(storage, prefix);
+    _kyberPreKeys = SecureKyberPreKeyStore(storage, prefix);
+    _identities =
+        SecureIdentityKeyStore(storage, identity, registrationId, prefix);
     _localAddress = ProtocolAddress(name: _localName, deviceId: deviceId);
 
     await _ensureOwnPreKeys(identity);
+  }
+
+  /// Wipe this install's Signal keys and cached sessions after account deletion.
+  Future<void> clearLocalData() async {
+    final storage = _storage ?? const FlutterSecureStorage();
+    final values = await storage.readAll();
+    final prefix = _accountPrefix ?? _storagePrefix;
+    for (final key in values.keys.where((key) => key.startsWith(prefix))) {
+      await storage.delete(key: key);
+    }
+    _storage = storage;
+    _sessions = null;
+    _preKeys = null;
+    _signedPreKeys = null;
+    _kyberPreKeys = null;
+    _identities = null;
+    _localAddress = null;
+    _ownerId = null;
+    _accountPrefix = null;
+    _locks.clear();
+  }
+
+  /// Keeps this device's own sent-message display copy in secure storage.
+  /// The server receives only the per-recipient ciphertext envelope.
+  Future<void> cacheSentMessage(String messageId, String plaintext) async {
+    final prefix = _accountPrefix;
+    if (prefix == null) throw const E2eeException(E2eeFailure.notInitialized);
+    final storage = _storage ?? const FlutterSecureStorage();
+    _storage = storage;
+    await storage.write(
+      key: '${prefix}sent.$messageId',
+      value: base64Encode(utf8.encode(plaintext)),
+    );
+  }
+
+  Future<String?> cachedSentMessage(String messageId) async {
+    final prefix = _accountPrefix;
+    if (prefix == null) return null;
+    final storage = _storage ?? const FlutterSecureStorage();
+    _storage = storage;
+    final value = await storage.read(key: '${prefix}sent.$messageId');
+    if (value == null) return null;
+    try {
+      return utf8.decode(base64Decode(value));
+    } catch (_) {
+      return null;
+    }
   }
 
   /// The protocol address name is a stable device-scoped identifier, never a
@@ -429,18 +499,52 @@ class SignalE2ee {
 
     final oneTime = <(int, Uint8List)>[];
     final existing = await preKeys.getAllPreKeyIds();
-    for (var id = 1; id <= 8; id++) {
-      if (existing.contains(id)) {
-        oneTime.add((id, (await preKeys.loadPreKey(id))!.publicKey()));
-        continue;
-      }
+    final counterKey = '${_accountPrefix}prekey_high_water';
+    var nextId = int.tryParse(await _storage!.read(key: counterKey) ?? '') ?? 0;
+    if (existing.isNotEmpty &&
+        existing.reduce((a, b) => a > b ? a : b) > nextId) {
+      nextId = existing.reduce((a, b) => a > b ? a : b);
+    }
+    for (final id in existing) {
+      oneTime.add((id, (await preKeys.loadPreKey(id))!.publicKey()));
+    }
+    while (oneTime.length < 8) {
+      nextId++;
       final private = PrivateKey.generate();
       final public = private.getPublicKey();
-      await preKeys.storePreKey(
-        id,
-        PreKeyRecord(id: id, publicKey: public, privateKey: private),
+      await preKeys.storePreKey(nextId,
+          PreKeyRecord(id: nextId, publicKey: public, privateKey: private));
+      oneTime.add((nextId, public.serialize()));
+    }
+    await _storage!.write(key: counterKey, value: '$nextId');
+
+    var kyberIds = await kyber.getAllKyberPreKeyIds();
+    if (kyberIds.isEmpty) {
+      final counterKey = '${_accountPrefix}kyber_high_water';
+      final nextId =
+          (int.tryParse(await _storage!.read(key: counterKey) ?? '') ?? 0) + 1;
+      final pair = KyberKeyPair.generate();
+      final public = pair.getPublicKey();
+      final signature = identity.sign(message: public.serialize().toList());
+      await kyber.storeKyberPreKey(
+        nextId,
+        KyberPreKeyRecord.create(
+          id: nextId,
+          keyPair: pair,
+          signature: signature.toList(),
+          timestamp: timestamp,
+        ),
       );
-      oneTime.add((id, public.serialize()));
+      await _storage!.write(key: counterKey, value: '$nextId');
+      kyberIds = [nextId];
+    } else {
+      final counterKey = '${_accountPrefix}kyber_high_water';
+      final current =
+          int.tryParse(await _storage!.read(key: counterKey) ?? '') ?? 0;
+      final maximum = kyberIds.reduce((a, b) => a > b ? a : b);
+      if (maximum > current) {
+        await _storage!.write(key: counterKey, value: '$maximum');
+      }
     }
 
     final registrar = registerBundle;
@@ -449,7 +553,7 @@ class SignalE2ee {
     final identityPair = await identityStore.getIdentityKeyPair();
     final signedRecord = (await signed.getAllSignedPreKeyIds()).first;
     final signedKey = (await signed.loadSignedPreKey(signedRecord))!;
-    final kyberRecord = (await kyber.getAllKyberPreKeyIds()).first;
+    final kyberRecord = kyberIds.first;
     final kyberKey = (await kyber.loadKyberPreKey(kyberRecord))!;
     await registrar(
       _localAddress!.deviceId(),
@@ -490,7 +594,8 @@ class SignalE2ee {
     }
     final stored = await _identities!.getIdentity(address);
     if (stored != null &&
-        !stored.equals(other: PublicKey.deserialize(bytes: bundle.identityKey))) {
+        !stored.equals(
+            other: PublicKey.deserialize(bytes: bundle.identityKey))) {
       throw const E2eeException(E2eeFailure.identityChanged);
     }
     final signalBundle = PreKeyBundle(
@@ -561,8 +666,7 @@ class SignalE2ee {
         if (!isReady) throw const E2eeException(E2eeFailure.notInitialized);
         final address = ProtocolAddress(name: senderUserId, deviceId: 1);
         final stored = await _identities!.getIdentity(address);
-        if (stored == null &&
-            !(await _sessions!.containsSession(address))) {
+        if (stored == null && !(await _sessions!.containsSession(address))) {
           throw const E2eeException(E2eeFailure.decryptionFailed);
         }
         try {
@@ -572,9 +676,12 @@ class SignalE2ee {
             ciphertext: Uint8List.fromList(bytes.sublist(1)),
           );
           if (type == CiphertextMessageType.preKey) {
-            final parsed = PreKeySignalMessage.deserialize(data: ciphertext.ciphertext);
+            final parsed =
+                PreKeySignalMessage.deserialize(data: ciphertext.ciphertext);
             if (stored != null &&
-                !stored.equals(other: PublicKey.deserialize(bytes: parsed.identityKey()))) {
+                !stored.equals(
+                    other:
+                        PublicKey.deserialize(bytes: parsed.identityKey()))) {
               throw const E2eeException(E2eeFailure.identityChanged);
             }
           }
@@ -601,7 +708,8 @@ class SignalE2ee {
       throw const E2eeException(E2eeFailure.verificationRequired);
     }
     final merged = <int>[...own, ...peer.serialize()]..sort();
-    final digest = sha256.convert([...utf8.encode('bro.e2ee.safety.v1'), ...merged]);
+    final digest =
+        sha256.convert([...utf8.encode('bro.e2ee.safety.v1'), ...merged]);
     final hex = digest.toString().toUpperCase();
     final buffer = StringBuffer();
     for (var i = 0; i < hex.length; i += 4) {
@@ -612,18 +720,26 @@ class SignalE2ee {
   }
 
   Future<void> verifyPeer(String peerUserId, String fingerprint) async {
+    final prefix = _accountPrefix;
+    if (prefix == null) throw const E2eeException(E2eeFailure.notInitialized);
     await _storage!.write(
-      key: '${_storagePrefix}verified.$peerUserId',
+      key: '${prefix}verified.$peerUserId',
       value: fingerprint,
     );
   }
 
-  Future<String?> verifiedFingerprint(String peerUserId) =>
-      _storage!.read(key: '${_storagePrefix}verified.$peerUserId');
+  Future<String?> verifiedFingerprint(String peerUserId) {
+    final prefix = _accountPrefix;
+    if (prefix == null) return Future.value(null);
+    return _storage!.read(key: '${prefix}verified.$peerUserId');
+  }
 
   Future<bool> isPeerVerified(String peerUserId, String fingerprint) async =>
       (await verifiedFingerprint(peerUserId)) == fingerprint;
 
-  Future<void> clearPeerVerification(String peerUserId) =>
-      _storage!.delete(key: '${_storagePrefix}verified.$peerUserId');
+  Future<void> clearPeerVerification(String peerUserId) {
+    final prefix = _accountPrefix;
+    if (prefix == null) return Future.value();
+    return _storage!.delete(key: '${prefix}verified.$peerUserId');
+  }
 }

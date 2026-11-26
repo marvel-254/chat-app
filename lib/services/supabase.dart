@@ -34,15 +34,17 @@ class Supa {
   static Future<Map<String, dynamic>> _storagePost(String path,
       {Map<String, String>? query,
       List<int>? bytes,
-      String? contentType}) async {
+      String? contentType,
+      Map<String, dynamic>? jsonBody}) async {
     final uri =
         Uri.parse('$_cloudStorageUrl$path').replace(queryParameters: query);
     final response = await http.post(uri,
         headers: {
           ..._storageHeaders,
           if (contentType != null) 'Content-Type': contentType,
+          if (jsonBody != null) 'Content-Type': 'application/json',
         },
-        body: bytes);
+        body: bytes ?? (jsonBody == null ? null : jsonEncode(jsonBody)));
     var body = <String, dynamic>{};
     try {
       final decoded = jsonDecode(response.body);
@@ -181,6 +183,30 @@ class Supa {
 
   static Future<AuthMFAUnenrollResponse> unenrollMfaFactor(String factorId) =>
       client.auth.mfa.unenroll(factorId);
+
+  static Future<void> signOutLocally() {
+    LegacyMessaging.reset();
+    return client.auth.signOut(scope: SignOutScope.local);
+  }
+
+  /// Permanently removes the signed-in account through the trusted backend.
+  /// The caller handles local device cleanup and local sign-out after success.
+  static Future<void> deleteCurrentAccount() async {
+    if (currentUser == null || client.auth.currentSession == null) {
+      throw StateError('Sign in again before deleting your account.');
+    }
+    if (_cloudStorageUrl.isNotEmpty) {
+      await _storagePost(
+        '/delete-account-data',
+        jsonBody: {'confirmation': 'DELETE'},
+      );
+    }
+    await client.functions.invoke(
+      'delete-account',
+      body: {'confirmation': 'DELETE'},
+    );
+  }
+
   static User? get currentUser => client.auth.currentUser;
   static Stream<AuthState> get authStateChanges =>
       client.auth.onAuthStateChange;
@@ -1083,7 +1109,7 @@ class Supa {
     try {
       final dynamic result = await client.rpc('get_all_conversations_for_user');
       if (result is List) {
-        return result.cast<dynamic>();
+        return await _decryptConversationPreviews(result);
       }
       return [];
     } on PostgrestException catch (e) {
@@ -1094,18 +1120,19 @@ class Supa {
         debugPrint(
             'get_all_conversations_for_user RPC not found, falling back to get_conversations_for_user');
         Sentry.captureException(
-          Exception('RPC get_all_conversations_for_user not found: ${e.message}'),
+          Exception(
+              'RPC get_all_conversations_for_user not found: ${e.message}'),
         );
         try {
           final fallback = await client.rpc('get_conversations_for_user');
           if (fallback is List) {
-            return fallback.cast<dynamic>();
+            return await _decryptConversationPreviews(fallback);
           }
           return [];
         } catch (fb) {
           debugPrint('Fallback RPC also failed: $fb');
-          Sentry.captureException(
-              Exception('Fallback RPC get_conversations_for_user also failed: $fb'));
+          Sentry.captureException(Exception(
+              'Fallback RPC get_conversations_for_user also failed: $fb'));
           return [];
         }
       }
@@ -1116,6 +1143,50 @@ class Supa {
           Exception('fetchConversationsWithCircles failed: $e'));
       return [];
     }
+  }
+
+  static Future<List<dynamic>> _decryptConversationPreviews(
+    List<dynamic> rows,
+  ) async {
+    final owner = currentUser?.id;
+    if (owner == null) return rows;
+    final result = <dynamic>[];
+    for (final raw in rows) {
+      if (raw is! Map) {
+        result.add(raw);
+        continue;
+      }
+      final row = Map<String, dynamic>.from(raw);
+      final preview = row['last_message'];
+      final conversationId = row['conversation_id'];
+      if (preview is String &&
+          preview.startsWith('sig2:') &&
+          conversationId is String) {
+        try {
+          final latest = await client
+              .from('messages')
+              .select('id,sender_id,content')
+              .eq('conversation_id', conversationId)
+              .order('created_at', ascending: false)
+              .limit(1)
+              .maybeSingle();
+          if (latest != null && currentUser?.id == owner) {
+            row['last_message'] = await decryptForDisplay(
+              latest['sender_id'] as String,
+              latest['content'] as String,
+              recipientUserId: owner,
+              messageId: latest['id'] as String,
+            );
+          } else {
+            row['last_message'] = 'Encrypted message';
+          }
+        } catch (_) {
+          row['last_message'] = 'Encrypted message';
+        }
+      }
+      result.add(row);
+    }
+    return result;
   }
 
   static Future<Conversation> getOrCreateDM(String otherUid) async {
@@ -1260,7 +1331,6 @@ class Supa {
     _convRefreshController.add(null);
   }
 
-
   // For backward compatibility
   static Future<List<Conversation>> fetchConversations() async {
     // Parse the union result into separate lists
@@ -1319,8 +1389,7 @@ class Supa {
         final uid = client.auth.currentUser?.id;
         if (uid != null) {
           try {
-            RealtimeChannel built =
-                client.channel('bro-conversations-$uid');
+            RealtimeChannel built = client.channel('bro-conversations-$uid');
             for (final table in const <String>[
               'conversations',
               'conversation_participants',
@@ -1418,6 +1487,8 @@ class Supa {
             decrypted.add(await decryptForDisplay(
               row['sender_id'] as String,
               row['content'] as String,
+              recipientUserId: currentUser?.id,
+              messageId: row['id'] as String,
             ));
           }
           return [
@@ -1438,23 +1509,24 @@ class Supa {
     Set<String> readByPeerSet,
     Map<String, List<Map<String, dynamic>>> reactionsMap,
   ) {
-            final id = r['id'] as String;
-            final msg = Message.fromJson(r);
-            return Message(
-              id: msg.id,
-              conversationId: msg.conversationId,
-              senderId: msg.senderId,
-              content: content,
-              createdAt: msg.createdAt,
-              readAt: msg.readAt,
-              expiresAt: msg.expiresAt,
-              pinnedAt: msg.pinnedAt,
-              editedAt: msg.editedAt,
-              originalContent: msg.originalContent,
-              readByPeer: readByPeerSet.contains(id) || msg.readAt != null,
-              replyToId: msg.replyToId,
-              reactions: reactionsMap[id] ?? [],
-            );
+    final id = r['id'] as String;
+    final msg = Message.fromJson(r);
+    return Message(
+      id: msg.id,
+      conversationId: msg.conversationId,
+      senderId: msg.senderId,
+      content: content,
+      contentFormat: msg.contentFormat,
+      createdAt: msg.createdAt,
+      readAt: msg.readAt,
+      expiresAt: msg.expiresAt,
+      pinnedAt: msg.pinnedAt,
+      editedAt: msg.editedAt,
+      originalContent: msg.originalContent,
+      readByPeer: readByPeerSet.contains(id) || msg.readAt != null,
+      replyToId: msg.replyToId,
+      reactions: reactionsMap[id] ?? [],
+    );
   }
 
   static Future<Message> sendMessage(String conversationId, String content,
@@ -1480,16 +1552,29 @@ class Supa {
   static Future<void> updateMessage(String messageId, String content) async {
     final owner = currentUser?.id;
     LegacyMessaging.requireAllowed(owner);
-    final current = await client.from('messages').select('content')
-        .eq('id', messageId).eq('sender_id', owner!).single();
+    final current = await client
+        .from('messages')
+        .select('content')
+        .eq('id', messageId)
+        .eq('sender_id', owner!)
+        .single();
     if (currentUser?.id != owner) throw StateError('Account changed');
     if (content == current['content']) return;
-    await client.from('messages').update({
-      'content': content, 'content_format': LegacyMessageCodec.plaintext,
-    }).eq('id', messageId).eq('sender_id', owner).select('id').single();
+    await client
+        .from('messages')
+        .update({
+          'content': content,
+          'content_format': LegacyMessageCodec.plaintext,
+        })
+        .eq('id', messageId)
+        .eq('sender_id', owner)
+        .select('id')
+        .single();
     if (currentUser?.id != owner) return;
     await client.from('message_edit_history').insert({
-      'message_id': messageId, 'previous_content': current['content'], 'new_content': content,
+      'message_id': messageId,
+      'previous_content': current['content'],
+      'new_content': content,
     });
   }
 
@@ -1581,7 +1666,9 @@ class Supa {
   /// Save a draft for the current user in a conversation.
   static Future<void> saveDraft(String conversationId, String text) async {
     final me = currentUser;
-    if (me == null || (text.isNotEmpty && !LegacyMessaging.allowed(me.id))) return;
+    if (me == null || (text.isNotEmpty && !LegacyMessaging.allowed(me.id))) {
+      return;
+    }
     // Drafts only update an existing participation row. Inserting a row here
     // is forbidden by RLS and produced recurring 42501 errors in production.
     await client
@@ -1679,17 +1766,47 @@ class Supa {
     String? replyToId,
     Duration? expiry,
     String? expectedSenderId,
-  }) =>
-      message_safety.MessageSafety.send(
-        conversationId: conversationId,
-        content: content,
-        replyToId: replyToId,
-        expiry: expiry,
-        expectedSenderId: expectedSenderId,
-      );
+  }) async {
+    final owner = currentUser?.id;
+    if (owner == null ||
+        (expectedSenderId != null && expectedSenderId != owner)) {
+      throw StateError('The sender is no longer signed in.');
+    }
+    final envelope = await encryptForConversation(conversationId, content);
+    if (currentUser?.id != owner) throw StateError('Account changed');
+    final messageId = const Uuid().v4();
+    await SignalE2ee.instance.cacheSentMessage(messageId, content);
+    return message_safety.MessageSafety.send(
+      conversationId: conversationId,
+      content: envelope,
+      messageId: messageId,
+      validationContent: content,
+      contentFormat: LegacyMessageCodec.signal,
+      replyToId: replyToId,
+      expiry: expiry,
+      expectedSenderId: owner,
+    );
+  }
 
-  static Future<Message?> getReplyPreview(String messageId) =>
-      message_safety.MessageSafety.getReplyPreview(messageId);
+  static Future<Message?> getReplyPreview(String messageId) async {
+    final message =
+        await message_safety.MessageSafety.getReplyPreview(messageId);
+    if (message == null) return null;
+    final content = await decryptForDisplay(
+      message.senderId,
+      message.content,
+      recipientUserId: currentUser?.id,
+      messageId: message.id,
+    );
+    return Message(
+      id: message.id,
+      conversationId: message.conversationId,
+      senderId: message.senderId,
+      content: content,
+      contentFormat: message.contentFormat,
+      createdAt: message.createdAt,
+    );
+  }
 
   // ===== Read Receipts (delegated) =====
 
@@ -1751,7 +1868,7 @@ class Supa {
       final devices = await client
           .from('signal_devices')
           .select('id,device_id,registration_id,identity_key,signed_prekey_id,'
-                  'signed_prekey,signed_prekey_signature')
+              'signed_prekey,signed_prekey_signature')
           .eq('user_id', userId)
           .isFilter('revoked_at', null)
           .order('device_id')
@@ -1760,32 +1877,22 @@ class Supa {
       final device = devices.first;
       final deviceId = device['device_id'] as int;
       final deviceRowId = device['id'] as String;
-      final prekeys = await client
-          .from('signal_one_time_prekeys')
-          .select('prekey_id,public_key')
-          .eq('device_row_id', deviceRowId)
-          .isFilter('used_at', null)
-          .limit(1);
       // Atomic claim; the RPC authorises own devices and conversation peers.
       final claimed = await client.rpc('signal_claim_prekey', params: {
         'p_device_row_id': deviceRowId,
       });
       final claimRows = claimed as List?;
       final hasClaim = claimRows != null && claimRows.isNotEmpty;
-      final prekeyRow = hasClaim
-          ? claimRows.first as Map<String, dynamic>
-          : (prekeys as List).isEmpty
-              ? null
-              : prekeys.first;
+      final prekeyRow =
+          hasClaim ? claimRows.first as Map<String, dynamic> : null;
       // Kyber public material is stored alongside the signed prekey record.
-      final kyber = await client
-          .from('signal_kyber_prekeys')
-          .select('prekey_id,public_key,signature')
-          .eq('device_row_id', deviceRowId)
-          .isFilter('used_at', null)
-          .limit(1);
-      if ((kyber as List).isEmpty) return null;
-      final kyberRow = kyber.first;
+      final claimedKyber =
+          await client.rpc('signal_claim_kyber_prekey', params: {
+        'p_device_row_id': deviceRowId,
+      });
+      final kyberRows = claimedKyber as List?;
+      if (kyberRows == null || kyberRows.isEmpty) return null;
+      final kyberRow = kyberRows.first as Map<String, dynamic>;
       return SignalPublicBundle(
         userId: userId,
         deviceId: deviceId,
@@ -1836,42 +1943,84 @@ class Supa {
           .select('id')
           .single();
       final rowId = rows['id'] as String;
-      await client
-          .from('signal_one_time_prekeys')
-          .upsert([
-            for (final entry in oneTimePreKeys)
-              {
-                'device_row_id': rowId,
-                'prekey_id': entry.$1,
-                'public_key': _encodeBytes(entry.$2),
-                'used_at': null,
-              }
-          ], onConflict: 'device_row_id,prekey_id');
+      await client.from('signal_one_time_prekeys').upsert([
+        for (final entry in oneTimePreKeys)
+          {
+            'device_row_id': rowId,
+            'prekey_id': entry.$1,
+            'public_key': _encodeBytes(entry.$2),
+            'used_at': null,
+          }
+      ], onConflict: 'device_row_id,prekey_id', ignoreDuplicates: true);
       await client.from('signal_kyber_prekeys').upsert({
         'device_row_id': rowId,
         'prekey_id': kyberPreKeyId,
         'public_key': _encodeBytes(kyberPreKey),
         'signature': _encodeBytes(kyberPreKeySignature),
         'used_at': null,
-      }, onConflict: 'device_row_id,prekey_id');
+      }, onConflict: 'device_row_id,prekey_id', ignoreDuplicates: true);
     };
   }
 
-  static String _encodeBytes(List<int> bytes) => base64Encode(bytes);
-  static Uint8List _decodeBytes(String value) => Uint8List.fromList(base64Decode(value));
+  // PostgREST exposes PostgreSQL bytea values as hex (`\\x...`).
+  static String _encodeBytes(List<int> bytes) =>
+      '\\x${bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join()}';
 
-  /// Encrypts for one peer. Never returns plaintext on failure.
+  static Uint8List _decodeBytes(String value) {
+    if (value.startsWith(r'\x')) {
+      final hex = value.substring(2);
+      if (hex.length.isOdd) throw const FormatException('Invalid bytea hex');
+      return Uint8List.fromList([
+        for (var i = 0; i < hex.length; i += 2)
+          int.parse(hex.substring(i, i + 2), radix: 16),
+      ]);
+    }
+    return Uint8List.fromList(base64Decode(value));
+  }
+
+  /// Encrypts for every conversation member, including the sender's own copy.
+  /// Never returns plaintext if a participant has no registered key bundle.
   static Future<String> encryptForConversation(
     String conversationId,
     String plaintext,
   ) async {
-    final peer = await getPeerUserId(conversationId);
-    if (peer == null) {
+    final owner = currentUser?.id;
+    if (owner == null) throw StateError('Not authenticated');
+    await _configureSignal();
+    await SignalE2ee.instance.init(owner);
+    final rows = await client
+        .from('conversation_participants')
+        .select('user_id')
+        .eq('conversation_id', conversationId);
+    if (currentUser?.id != owner) throw StateError('Account changed');
+    final members =
+        (rows as List).map((row) => row['user_id'] as String).toSet();
+    if (!members.contains(owner) || members.length < 2 || members.length > 64) {
       throw const E2eeException(E2eeFailure.peerBundleUnavailable);
     }
+    final envelopes = <String, String>{};
+    for (final member in members) {
+      if (member == owner) continue;
+      if (currentUser?.id != owner) throw StateError('Account changed');
+      envelopes[member] = await SignalE2ee.instance.encrypt(
+        member,
+        utf8.encode(plaintext),
+      );
+    }
+    final encoded = base64Encode(utf8.encode(jsonEncode({
+      'v': 2,
+      'recipients': envelopes,
+    })));
+    return 'sig2:$encoded';
+  }
+
+  /// Initializes and publishes only this device's public Signal bundle.
+  static Future<void> initializeEncryptionKeys() async {
+    final owner = currentUser?.id;
+    if (owner == null) throw StateError('Not authenticated');
     await _configureSignal();
-    await SignalE2ee.instance.init();
-    return SignalE2ee.instance.encrypt(peer, utf8.encode(plaintext));
+    await SignalE2ee.instance.init(owner);
+    if (currentUser?.id != owner) throw StateError('Account changed');
   }
 
   /// Returns display text for a stored message. Legacy plaintext is returned
@@ -1882,7 +2031,10 @@ class Supa {
     String content,
     String? key,
   ) {
-    if (!SignalE2ee.instance.isSecureEnvelope(content)) return content;
+    if (!content.startsWith('sig2:') &&
+        !SignalE2ee.instance.isSecureEnvelope(content)) {
+      return content;
+    }
     // Decryption is asynchronous; watchMessages resolves it before mapping.
     return '[Encrypted message]';
   }
@@ -1890,17 +2042,55 @@ class Supa {
   /// Decrypts an envelope for display. Throws [E2eeException] on failure.
   static Future<String> decryptForDisplay(
     String senderUserId,
-    String content,
-  ) async {
-    if (!SignalE2ee.instance.isSecureEnvelope(content)) return content;
+    String content, {
+    String? recipientUserId,
+    String? messageId,
+  }) async {
+    if (senderUserId == recipientUserId && messageId != null) {
+      final owner = currentUser?.id;
+      if (owner == null || owner != recipientUserId) {
+        return '[Encrypted message: account unavailable]';
+      }
+      await _configureSignal();
+      await SignalE2ee.instance.init(owner);
+      return await SignalE2ee.instance.cachedSentMessage(messageId) ??
+          '[Your encrypted message was sent from another device]';
+    }
+    var envelope = content;
+    if (content.startsWith('sig2:')) {
+      try {
+        final decoded = jsonDecode(
+          utf8.decode(base64Decode(content.substring(5))),
+        ) as Map<String, dynamic>;
+        if (decoded['v'] != 2) {
+          throw const E2eeException(E2eeFailure.malformedEnvelope);
+        }
+        final recipients = decoded['recipients'] as Map<String, dynamic>;
+        final selected =
+            recipientUserId == null ? null : recipients[recipientUserId];
+        if (selected is! String || !selected.startsWith('sig1:')) {
+          throw const E2eeException(E2eeFailure.decryptionFailed);
+        }
+        envelope = selected;
+      } on E2eeException {
+        rethrow;
+      } catch (_) {
+        return '[Encrypted message: invalid format]';
+      }
+    } else if (!SignalE2ee.instance.isSecureEnvelope(content)) {
+      return content;
+    }
     await _configureSignal();
-    await SignalE2ee.instance.init();
+    final owner = currentUser?.id;
+    if (owner == null) throw StateError('Not authenticated');
+    await SignalE2ee.instance.init(owner);
     try {
-      final bytes = await SignalE2ee.instance.decrypt(senderUserId, content);
+      final bytes = await SignalE2ee.instance.decrypt(senderUserId, envelope);
       return utf8.decode(bytes);
     } on E2eeException catch (error) {
       return switch (error.reason) {
-        E2eeFailure.identityChanged => '[Security warning: contact identity changed]',
+        E2eeFailure.identityChanged =>
+          '[Security warning: contact identity changed]',
         E2eeFailure.malformedEnvelope => '[Encrypted message: invalid format]',
         _ => '[Encrypted message: could not decrypt]',
       };
@@ -1909,16 +2099,20 @@ class Supa {
 
   /// Kept for API compatibility. Signal derives per-message keys; there is no
   /// reusable conversation key and no deterministic derivation.
-  static Future<String?> getConversationKey(String conversationId) async => null;
+  static Future<String?> getConversationKey(String conversationId) async =>
+      null;
 
   /// Safety number for out-of-band verification of the peer's Signal identity.
-  static Future<String> safetyNumberForConversation(String conversationId) async {
+  static Future<String> safetyNumberForConversation(
+      String conversationId) async {
     final peer = await getPeerUserId(conversationId);
     if (peer == null) {
       throw const E2eeException(E2eeFailure.peerBundleUnavailable);
     }
     await _configureSignal();
-    await SignalE2ee.instance.init();
+    final owner = currentUser?.id;
+    if (owner == null) throw StateError('Not authenticated');
+    await SignalE2ee.instance.init(owner);
     return SignalE2ee.instance.safetyNumber(peer);
   }
 

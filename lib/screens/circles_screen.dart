@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../ui/states.dart';
 import '../ui/errors.dart';
 import '../ui/motion.dart';
@@ -9,6 +10,7 @@ import '../services/circles.dart';
 import '../theme/app_colors.dart' as app_colors;
 import '../widgets/circle_invite_tile.dart';
 import '../widgets/responsive_app_shell.dart';
+import '../widgets/desktop_workspace_shell.dart';
 import 'circle_detail_screen.dart';
 
 class CirclesScreen extends StatefulWidget {
@@ -28,6 +30,9 @@ class _CirclesScreenState extends State<CirclesScreen> {
   StreamSubscription<List<CircleInvite>>? _invitesSub;
 
   bool _isLoading = true;
+  String? _selectedCircleId;
+  int _keyboardIndex = 0;
+  final _circleListFocusNode = FocusNode(debugLabel: 'circle-list');
   List<Circle> _circles = [];
   List<CircleInvite> _invites = [];
   String? _error;
@@ -241,6 +246,7 @@ class _CirclesScreenState extends State<CirclesScreen> {
     _circlesSub?.cancel();
     _invitesSub?.cancel();
     _scrollController.dispose();
+    _circleListFocusNode.dispose();
     _nameController.dispose();
     _descriptionController.dispose();
     _addMemberController.dispose();
@@ -249,18 +255,102 @@ class _CirclesScreenState extends State<CirclesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ResponsiveAppShell(
-      title: 'Circles',
-      subtitle: 'Small groups for the people who matter',
-      navIndex: 1,
-      actions: [
-        IconButton(
-          tooltip: 'Create circle',
-          icon: const Icon(Icons.add),
-          onPressed: _showCreateCircleDialog,
+    return LayoutBuilder(builder: (context, constraints) {
+      final wide = constraints.maxWidth >= app_colors.desktopWideBreakpoint;
+      final createAction = IconButton(
+        tooltip: 'Create circle',
+        icon: const Icon(Icons.add),
+        onPressed: _showCreateCircleDialog,
+      );
+      if (wide) {
+        return DesktopWorkspaceShell(
+          navIndex: 1,
+          listTitle: 'Circles',
+          listActions: [createAction],
+          detailTitle: _selectedCircleId == null
+              ? 'No circle selected'
+              : null,
+          detailSubtitle: 'Pick a circle from the list to see its members',
+          detailPane: _selectedCircleId == null
+              ? const Center(
+                  child: Icon(Icons.groups_outlined,
+                      color: app_colors.P.muted, size: 56))
+              : CircleDetailScreen(
+                  circleId: _selectedCircleId!,
+                  embedded: true,
+                ),
+          listPane: Focus(
+            focusNode: _circleListFocusNode,
+            onKeyEvent: (node, event) =>
+                _onListKeyEvent(event, wide: wide),
+            child: _buildListBody(wide: true),
+          ),
+        );
+      }
+      return ResponsiveAppShell(
+        title: 'Circles',
+        subtitle: 'Small groups for the people who matter',
+        navIndex: 1,
+        actions: [createAction],
+        body: Focus(
+          focusNode: _circleListFocusNode,
+          onKeyEvent: (node, event) => _onListKeyEvent(event, wide: wide),
+          child: _buildListBody(wide: false),
         ),
-      ],
-      body: CustomScrollView(
+      );
+    });
+  }
+
+  void _openCircle(Circle circle, int index, bool wide) {
+    setState(() => _keyboardIndex = index);
+    if (wide) {
+      setState(() => _selectedCircleId = circle.id);
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CircleDetailScreen(circleId: circle.id),
+      ),
+    );
+  }
+
+  KeyEventResult _onListKeyEvent(KeyEvent event, {required bool wide}) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (_circles.isEmpty) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown ||
+        event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      final step = event.logicalKey == LogicalKeyboardKey.arrowDown ? 1 : -1;
+      setState(() {
+        _keyboardIndex =
+            (_keyboardIndex + step).clamp(0, _circles.length - 1);
+      });
+      _scrollController.animateTo(
+        (_keyboardIndex * 108).clamp(
+          0.0,
+          _scrollController.position.maxScrollExtent,
+        ).toDouble(),
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+      );
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+      _openCircle(
+        _circles[_keyboardIndex.clamp(0, _circles.length - 1)],
+        _keyboardIndex,
+        wide,
+      );
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  Widget _buildListBody({required bool wide}) {
+    return CustomScrollView(
         controller: _scrollController,
         slivers: [
           if (_invites.isNotEmpty)
@@ -343,14 +433,12 @@ class _CirclesScreenState extends State<CirclesScreen> {
                                               _showEditCircleDialog(circle),
                                           onDelete: () => _deleteCircle(
                                               circle.id, circle.name),
-                                          onTap: () => Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) =>
-                                                  CircleDetailScreen(
-                                                      circleId: circle.id),
-                                            ),
-                                          ),
+                                          onTap: () =>
+                                              _openCircle(circle, index, wide),
+                                          selected:
+                                              _selectedCircleId == circle.id,
+                                          highlighted:
+                                              _keyboardIndex == index,
                                         ),
                                       ),
                                     );
@@ -361,8 +449,7 @@ class _CirclesScreenState extends State<CirclesScreen> {
                           ),
           ),
         ],
-      ),
-    );
+      );
   }
 
   void _showEditCircleDialog(Circle circle) {
@@ -442,18 +529,29 @@ class _CirclesCard extends StatelessWidget {
     this.onTap,
     this.onEdit,
     this.onDelete,
+    this.selected = false,
+    this.highlighted = false,
   });
+
+  final bool selected;
+  final bool highlighted;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
+      hoverColor: app_colors.P.surfaceHigh.withValues(alpha: 0.6),
+      focusColor: app_colors.P.surfaceHigh.withValues(alpha: 0.6),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: app_colors.P.surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: app_colors.P.border.withValues(alpha: 0.4)),
+          border: Border.all(
+            color: selected || highlighted
+                ? app_colors.P.primary.withValues(alpha: 0.7)
+                : app_colors.P.border.withValues(alpha: 0.4),
+          ),
         ),
         child: Row(
           children: [

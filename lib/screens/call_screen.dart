@@ -7,11 +7,19 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/profile.dart';
 import '../models/call_record.dart';
 import '../services/call_ice.dart';
+import '../services/call_state_machine.dart';
+import '../services/call_media_failure.dart';
+import '../services/call_feedback.dart';
+import '../services/call_audio.dart'
+    if (dart.library.html) '../services/call_audio_web.dart';
+import '../widgets/call_device_picker.dart';
 import '../services/calls.dart';
 import '../services/supabase.dart';
 
 /// One-to-one WebRTC call. Supabase Realtime carries only the SDP/ICE setup;
 /// audio and video stay peer-to-peer.
+enum _PipCorner { topRight, topLeft, bottomRight, bottomLeft }
+
 class CallScreen extends StatefulWidget {
   const CallScreen({
     super.key,
@@ -47,16 +55,27 @@ class _CallScreenState extends State<CallScreen> {
   StreamSubscription<AuthState>? _auth;
   StreamSubscription<List<ConnectivityResult>>? _network;
   String? _networkSignature;
-  bool _ready = false, _muted = false, _cameraOff = false, _finished = false;
+  bool _signalingReady = false, _muted = false, _cameraOff = false;
+  bool _videoUnavailable = false, _remoteCameraOff = false;
+  _PipCorner _pipCorner = _PipCorner.topRight;
+  Offset? _pipDragOffset;
+  final CallFeedback _feedback = CallFeedback();
+  List<CallDeviceEntry> _devices = <CallDeviceEntry>[];
+  String? _audioInputId, _audioOutputId, _videoInputId;
+  late final CallStateMachine _machine;
+
+  /// The single source of truth for call phase and terminal state.
+  CallStateMachine get machine => _machine;
+  bool get _videoActive => widget.video && !_videoUnavailable;
+  bool get _finished => _machine.state.isTerminal;
+  bool get _everConnected => _clock.isRunning;
+  int get _restarts => _machine.state.reconnectionAttempts;
   bool _front = true, _canSwitch = false, _switching = false, _speaker = false;
   bool _polling = false,
       _offerPending = false,
       _remoteDescriptionPending = true;
   bool _receivedOffer = false, _offeredInitially = false;
-  bool _sessionCreated = false,
-      _everConnected = false,
-      _connectedReported = false;
-  int _restarts = 0;
+  bool _sessionCreated = false, _serverConnectedReported = false;
   DateTime? _lastHeartbeat;
   String _status = 'Preparing call…';
   late final String _myId;
@@ -69,11 +88,45 @@ class _CallScreenState extends State<CallScreen> {
     super.initState();
     _myId = Supa.currentUser!.id;
     _client = Supa.client;
+    _machine = CallStateMachine(
+      initial: widget.outgoing ? CallPhase.outgoing : CallPhase.incoming,
+    );
     _auth = Supa.authStateChanges.listen((_) {
       if (Supa.currentUser?.id != _myId) unawaited(_finish());
     });
     _armDeadline(const Duration(seconds: 30), 'Could not prepare the call.');
     unawaited(_start());
+  }
+
+  /// Browsers block remote audio when the video element was created without a
+  /// user gesture. Called after each media attachment so playback is retried.
+  void _resumeRemotePlayback() {
+    if (!kIsWeb || !mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_finished) resumeRemoteVideoAudio();
+    });
+  }
+
+  Color get _statusColor {
+    if (_status == 'Connected') return const Color(0xFF22C55E);
+    if (_status == 'Connecting…' ||
+        _status.startsWith('Calling') ||
+        _status == 'Joining call…' ||
+        _status == 'Reconnecting…') {
+      return Colors.amber;
+    }
+    return Colors.redAccent;
+  }
+
+  /// Applies a validated phase change; duplicate or reverse transitions are
+  /// ignored instead of leaving the UI in an impossible state.
+  void _transition(CallPhase phase, {CallEndReason? reason}) {
+    if (_machine.state.phase == phase || _finished) return;
+    try {
+      _machine.transition(phase, reason: reason);
+    } on InvalidCallTransition catch (error) {
+      _diagnostic('invalid_transition_$error');
+    }
   }
 
   void _armDeadline(Duration delay, String error) {
@@ -105,6 +158,7 @@ class _CallScreenState extends State<CallScreen> {
           return;
         }
         final claimed = await Calls.advance(widget.callId, 'accept');
+        _transition(CallPhase.accepted);
         _sessionCreated = claimed.status == CallStatus.accepted;
         if (_finished) {
           if (_sessionCreated) unawaited(_advanceQuietly('end'));
@@ -159,7 +213,7 @@ class _CallScreenState extends State<CallScreen> {
       });
       await subscribed.future.timeout(Calls.timeout);
       if (_finished) return;
-      setState(() => _ready = true);
+      setState(() => _signalingReady = true);
       _poll = Timer.periodic(
         const Duration(seconds: 2),
         (_) => unawaited(_refresh()),
@@ -185,28 +239,260 @@ class _CallScreenState extends State<CallScreen> {
     }
   }
 
-  Future<void> _preparePeer() async {
-    final config = await CallIce.configuration(_client);
+  Future<void> _loadDevices() async {
+    try {
+      final found = await navigator.mediaDevices.enumerateDevices();
+      if (!mounted || _finished) return;
+      setState(() {
+        _devices = found
+            .where((device) => device.deviceId.isNotEmpty)
+            .map((device) {
+              final kind = device.kind;
+              final deviceKind = kind == 'audioinput'
+                  ? CallDeviceKind.microphone
+                  : kind == 'audiooutput'
+                      ? CallDeviceKind.speaker
+                      : kind == 'videoinput'
+                          ? CallDeviceKind.camera
+                          : null;
+              if (deviceKind == null) return null;
+              final selected = deviceKind == CallDeviceKind.microphone
+                  ? _audioInputId == device.deviceId
+                  : deviceKind == CallDeviceKind.speaker
+                      ? _audioOutputId == device.deviceId
+                      : _videoInputId == device.deviceId;
+              return CallDeviceEntry(
+                id: device.deviceId,
+                label: device.label,
+                kind: deviceKind,
+                isSelected: selected,
+              );
+            })
+            .whereType<CallDeviceEntry>()
+            .toList();
+      });
+    } catch (_) {
+      // Device labels are unavailable before permission; skip silently.
+    }
+  }
+
+  Future<void> _openDevicePicker() async {
+    final grouped = <CallDeviceKind, List<CallDeviceEntry>>{
+      for (final kind in CallDeviceKind.values)
+        kind: _devices.where((entry) => entry.kind == kind).toList(),
+    };
+    await showCallDevicePicker(
+      context: context,
+      devices: grouped,
+      currentMicrophoneId: _audioInputId,
+      currentSpeakerId: _audioOutputId,
+      currentCameraId: _videoInputId,
+      onSelected: (entry) => unawaited(_selectDevice(entry)),
+    );
+  }
+
+  Future<void> _selectDevice(CallDeviceEntry entry) async {
     if (_finished) return;
-    final pc = await createPeerConnection(config);
+    try {
+      switch (entry.kind) {
+        case CallDeviceKind.speaker:
+          await Helper.selectAudioOutput(entry.id);
+          setState(() => _audioOutputId = entry.id);
+          break;
+        case CallDeviceKind.microphone:
+          if (kIsWeb) {
+            final stream = await navigator.mediaDevices.getUserMedia({
+              'audio': {
+                'deviceId': {'exact': entry.id}
+              },
+              'video': false,
+            });
+            final tracks = stream.getAudioTracks();
+            if (tracks.isEmpty) return;
+            await _replaceLocalTrack(tracks.first);
+          } else {
+            await Helper.selectAudioInput(entry.id);
+          }
+          setState(() => _audioInputId = entry.id);
+          break;
+        case CallDeviceKind.camera:
+          if (kIsWeb) {
+            final stream = await navigator.mediaDevices.getUserMedia({
+              'audio': false,
+              'video': {
+                'deviceId': {'exact': entry.id}
+              },
+            });
+            final tracks = stream.getVideoTracks();
+            if (tracks.isEmpty) return;
+            await _replaceLocalTrack(tracks.first);
+            setState(() => _front = false);
+          } else {
+            final track = _videoTrack;
+            if (track != null) {
+              final stream = await Helper.switchCamera(
+                track,
+                entry.id,
+                _localStream,
+              );
+              if (!stream) return;
+            }
+          }
+          setState(() => _videoInputId = entry.id);
+          break;
+      }
+      if (mounted && !_finished) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Using ${entry.label.isEmpty ? 'device' : entry.label}',
+            ),
+          ),
+        );
+      }
+      unawaited(_loadDevices());
+    } catch (error) {
+      if (mounted && !_finished) {
+        final failure = describeMediaError(
+          error,
+          video: entry.kind == CallDeviceKind.camera,
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(failure.message)),
+        );
+      }
+    }
+  }
+
+  Future<void> _replaceLocalTrack(MediaStreamTrack track) async {
+    final pc = _peerConnection;
+    if (pc == null) return;
+    MediaStreamTrack? previous;
+    for (final sender in await pc.getSenders()) {
+      final current = sender.track;
+      if (current != null && current.kind == track.kind) {
+        previous = current;
+        await sender.replaceTrack(track);
+      }
+    }
+    final oldStream = _localRenderer.srcObject;
+    final tracks = <MediaStreamTrack>[];
+    if (oldStream != null) {
+      for (final existing in oldStream.getTracks()) {
+        if (existing.kind != track.kind) tracks.add(existing);
+      }
+    }
+    tracks.add(track);
+    final replacement = await createLocalMediaStream(
+      'local-${DateTime.now().microsecondsSinceEpoch}',
+    );
+    for (final item in tracks) {
+      await replacement.addTrack(item);
+    }
+    if (mounted && !_finished) {
+      setState(() {
+        _localStream = replacement;
+        _localRenderer.srcObject = replacement;
+        if (track.kind == 'video') _videoTrack = track;
+      });
+    }
+    await previous?.stop();
+  }
+
+  /// Opens capture with a typed failure. On desktop browsers without a camera
+  /// we keep audio instead of dropping the entire call.
+  Future<MediaStream> _openLocalMedia() async {
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        'audio': true,
+        'video': widget.video ? {'facingMode': 'user'} : false,
+      });
+    } catch (error) {
+      final failure = describeMediaError(error, video: widget.video);
+      if (!widget.video ||
+          (failure.kind != CallMediaFailureKind.deviceNotFound &&
+              failure.kind != CallMediaFailureKind.deviceBusy)) {
+        throw failure;
+      }
+      try {
+        final audioOnly = await navigator.mediaDevices.getUserMedia({
+          'audio': true,
+          'video': false,
+        });
+        if (mounted && !_finished) {
+          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+            const SnackBar(
+              content: Text('Camera unavailable. Continuing with audio only.'),
+            ),
+          );
+        }
+        _videoUnavailable = true;
+        _diagnostic('audio_only_fallback');
+        return audioOnly;
+      } catch (_) {
+        throw failure;
+      }
+    }
+  }
+
+  Future<void> _preparePeer() async {
+    // ICE credential issuance can take a network round trip. Start device
+    // capture alongside it so TURN setup does not add directly to call setup
+    // time. Keep cleanup explicit if relay-only diagnostics fail meanwhile.
+    final mediaFuture = _openLocalMedia();
+    late final Map<String, dynamic> config;
+    try {
+      config = await CallIce.configuration(_client);
+    } catch (_) {
+      try {
+        await _releaseStream(await mediaFuture);
+      } catch (_) {}
+      rethrow;
+    }
+    if (_finished) {
+      try {
+        await _releaseStream(await mediaFuture);
+      } catch (_) {}
+      return;
+    }
+    RTCPeerConnection pc;
+    try {
+      pc = await createPeerConnection(config);
+    } catch (_) {
+      try {
+        await _releaseStream(await mediaFuture);
+      } catch (_) {}
+      rethrow;
+    }
     if (_finished) {
       await _release(() async {
         await pc.close();
         await pc.dispose();
       });
+      try {
+        await _releaseStream(await mediaFuture);
+      } catch (_) {}
       return;
     }
     _peerConnection = pc;
-    final stream = await navigator.mediaDevices.getUserMedia({
-      'audio': true,
-      'video': widget.video ? {'facingMode': 'user'} : false,
-    });
+    MediaStream stream;
+    try {
+      stream = await mediaFuture;
+    } on CallMediaFailure catch (failure) {
+      await _finish(action: 'fail', error: failure.message);
+      return;
+    } catch (error) {
+      final failure = describeMediaError(error, video: widget.video);
+      await _finish(action: 'fail', error: failure.message);
+      return;
+    }
     if (_finished) {
       await _releaseStream(stream);
       return;
     }
     _localStream = stream;
     _localRenderer.srcObject = stream;
+    unawaited(_loadDevices());
     for (final track in stream.getTracks()) {
       if (_finished) return;
       final sender = await pc.addTrack(track, stream);
@@ -224,7 +510,13 @@ class _CallScreenState extends State<CallScreen> {
     if (_finished) return;
     pc.onTrack = (event) {
       if (!_finished && mounted && event.streams.isNotEmpty) {
-        setState(() => _remoteRenderer.srcObject = event.streams.first);
+        final incoming = event.streams.first;
+        setState(() {
+          _remoteRenderer.srcObject = incoming;
+          _remoteCameraOff = incoming.getVideoTracks().isEmpty ||
+              incoming.getVideoTracks().every((track) => !track.enabled);
+        });
+        _resumeRemotePlayback();
       }
     };
     pc.onIceCandidate = (candidate) {
@@ -247,9 +539,9 @@ class _CallScreenState extends State<CallScreen> {
           _deadline?.cancel();
           _recovery?.cancel();
           _recovery = null;
-          _restarts = 0;
+          _transition(CallPhase.connected);
+          unawaited(_feedback.stop());
           if (!_everConnected) {
-            _everConnected = true;
             _clock.start();
             _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
               if (mounted && !_finished) setState(() {});
@@ -281,7 +573,7 @@ class _CallScreenState extends State<CallScreen> {
       final heartbeatDue = _lastHeartbeat == null ||
           DateTime.now().difference(_lastHeartbeat!) >=
               const Duration(seconds: 20);
-      final action = _everConnected && !_connectedReported
+      final action = _everConnected && !_serverConnectedReported
           ? 'connected'
           : _status == 'Connected' && heartbeatDue
               ? 'heartbeat'
@@ -294,7 +586,7 @@ class _CallScreenState extends State<CallScreen> {
       final record = await Calls.advance(widget.callId, action);
       if (_finished) return;
       if (action != 'refresh' && record.status == CallStatus.connected) {
-        _connectedReported = true;
+        _serverConnectedReported = true;
         _lastHeartbeat = DateTime.now();
       }
       _applyRecord(record);
@@ -319,12 +611,30 @@ class _CallScreenState extends State<CallScreen> {
       );
       return;
     }
+    if (record.status == CallStatus.accepted) {
+      // The callee repeats `ready` over Realtime, but that broadcast can be
+      // lost during subscribe/reconnect. The call row is authoritative, so
+      // the caller also starts negotiation when its status poll sees accept.
+      unawaited(
+        _offerInitial().catchError((Object _) {
+          if (!_finished) {
+            unawaited(
+              _finish(action: 'fail', error: 'Call signaling failed.'),
+            );
+          }
+        }),
+      );
+    }
     if (previous == record.status) return;
     if (record.status == CallStatus.ringing) {
+      _transition(CallPhase.ringing);
+      unawaited(_feedback.play(CallFeedbackCue.ringback));
       _setStatus('Calling ${widget.peer.label}…');
       // Server timestamp is authoritative; this is an independent UI ceiling.
       _armDeadline(const Duration(seconds: 52), 'No answer.');
     } else if (record.status == CallStatus.accepted && !_everConnected) {
+      _transition(CallPhase.accepted);
+      unawaited(_feedback.stop());
       _setStatus('Connecting…');
       _armDeadline(const Duration(seconds: 35), 'Could not connect the call.');
     }
@@ -345,6 +655,17 @@ class _CallScreenState extends State<CallScreen> {
     await _send('offer', {'sdp': offer.sdp, 'type': offer.type});
   }
 
+  Future<void> _offerInitial() async {
+    if (!widget.outgoing ||
+        !_signalingReady ||
+        _offeredInitially ||
+        _finished) {
+      return;
+    }
+    _offeredInitially = true;
+    await _offer();
+  }
+
   Future<void> _onSignal(Map<String, dynamic> payload) async {
     final pc = _peerConnection;
     if (_finished ||
@@ -356,9 +677,11 @@ class _CallScreenState extends State<CallScreen> {
     final raw = payload['data'];
     if (raw is! Map) return;
     final kind = payload['kind'];
-    if (kind == 'ready' && widget.outgoing && _ready && !_offeredInitially) {
-      _offeredInitially = true;
-      await _offer();
+    if (kind == 'ready' &&
+        widget.outgoing &&
+        _signalingReady &&
+        !_offeredInitially) {
+      await _offerInitial();
       return;
     }
     if (kind == 'offer' && !widget.outgoing ||
@@ -367,6 +690,7 @@ class _CallScreenState extends State<CallScreen> {
       if (sdp is! String || raw['type'] != kind) return;
       await pc.setRemoteDescription(RTCSessionDescription(sdp, kind as String));
       _remoteDescriptionPending = false;
+      _resumeRemotePlayback();
       for (final candidate in _pendingCandidates) {
         await _release(() => pc.addCandidate(candidate));
       }
@@ -411,20 +735,28 @@ class _CallScreenState extends State<CallScreen> {
 
   void _beginRecovery() {
     if (_finished || !_everConnected || _recovery != null) return;
+    if (!_machine.shouldRetryReconnect) {
+      unawaited(_finish(
+        action: 'fail',
+        error: 'Connection lost. Please try again.',
+      ));
+      return;
+    }
+    _transition(CallPhase.reconnecting);
+    if (_finished) return;
     _setStatus('Reconnecting…');
     _recovery = Timer(const Duration(seconds: 3), () => unawaited(_recover()));
   }
 
   Future<void> _recover() async {
     if (_finished || _status == 'Connected') return;
-    if (_restarts >= 2) {
+    if (!_machine.shouldRetryReconnect) {
       await _finish(
         action: 'fail',
         error: 'Connection lost. Please try again.',
       );
       return;
     }
-    _restarts++;
     _diagnostic('reconnect_attempt_$_restarts');
     try {
       if (widget.outgoing) {
@@ -461,7 +793,7 @@ class _CallScreenState extends State<CallScreen> {
   Future<void> _advanceQuietly(String action) async {
     if (Supa.currentUser?.id != _myId) return;
     try {
-      if (action == 'end' && _everConnected && !_connectedReported) {
+      if (action == 'end' && _everConnected && !_serverConnectedReported) {
         // A fast hangup can race the first connected report. Preserve the
         // completed outcome before finalizing, even for a sub-second call.
         try {
@@ -521,10 +853,11 @@ class _CallScreenState extends State<CallScreen> {
     _cameraOperation = operation;
     try {
       await operation;
-    } catch (_) {
+    } catch (error) {
       if (mounted && !_finished) {
+        final failure = describeMediaError(error, video: true);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not switch cameras.')),
+          SnackBar(content: Text(failure.message)),
         );
       }
     } finally {
@@ -538,7 +871,12 @@ class _CallScreenState extends State<CallScreen> {
     if (_finished || cameras.length < 2) return;
     if (!kIsWeb) {
       // Native flutter_webrtc swaps capture hardware on the same sender track.
-      _front = await Helper.switchCamera(old);
+      final switched = await Helper.switchCamera(old);
+      if (switched) {
+        // switchCamera reports success, not the camera's facing direction.
+        // Toggle the facing state so the local preview mirror follows hardware.
+        _front = !_front;
+      }
       return;
     }
     final sender = _videoSender;
@@ -612,7 +950,15 @@ class _CallScreenState extends State<CallScreen> {
     bool navigate = true,
   }) async {
     if (_finished) return;
-    _finished = true;
+    _transition(
+      action == 'fail' ? CallPhase.failed : CallPhase.ended,
+      reason: _machine.reasonFor(error),
+    );
+    if (action == 'fail') {
+      unawaited(_feedback.play(CallFeedbackCue.denied));
+    } else if (action == 'end') {
+      unawaited(_feedback.play(CallFeedbackCue.hangup));
+    }
     _clock.stop();
     if (_everConnected) {
       _diagnostic('connected_seconds_${_clock.elapsed.inSeconds}');
@@ -689,20 +1035,69 @@ class _CallScreenState extends State<CallScreen> {
   @override
   void dispose() {
     unawaited(_finish(action: 'end', navigate: false));
+    // Let the hangup cue finish before tearing the player down.
+    Timer(const Duration(milliseconds: 1200), () {
+      unawaited(_feedback.dispose());
+    });
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, box) {
+      return Scaffold(
         backgroundColor: const Color(0xFF121318),
         body: SafeArea(
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (widget.video && _remoteRenderer.srcObject != null)
+              Positioned(
+                top: 16,
+                left: 0,
+                right: 0,
+                child: Center(child: _buildStatusPill()),
+              ),
+              if (_videoActive &&
+                  _remoteRenderer.srcObject != null &&
+                  !_remoteCameraOff)
                 RTCVideoView(
                   _remoteRenderer,
                   objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                )
+              else if (_videoActive &&
+                  _remoteRenderer.srcObject != null &&
+                  _remoteCameraOff)
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 96,
+                        height: 96,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF292A2F),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white12),
+                        ),
+                        child: Icon(
+                          Icons.videocam_off_outlined,
+                          size: 42,
+                          color: Colors.white54,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        '${widget.peer.label} turned off their camera',
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 15),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'You can keep talking',
+                        style: TextStyle(color: Colors.white38, fontSize: 13),
+                      ),
+                    ],
+                  ),
                 )
               else
                 Center(
@@ -739,176 +1134,143 @@ class _CallScreenState extends State<CallScreen> {
                         style: const TextStyle(color: Colors.white70),
                       ),
                       const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black45,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.white12),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: _status == 'Connected'
-                                    ? const Color(0xFF22C55E)
-                                    : (_status == 'Connecting…' ||
-                                            _status.startsWith('Calling') ||
-                                            _status == 'Joining call…'
-                                        ? Colors.amber
-                                        : Colors.redAccent),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              _everConnected
-                                  ? '$_status · ${CallRecord.formatDuration(_clock.elapsed)}'
-                                  : _status,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                     ],
                   ),
                 ),
-              if (_everConnected &&
-                  widget.video &&
-                  _remoteRenderer.srcObject != null)
-                Positioned(
-                  top: 24,
-                  left: 18,
-                  child: Chip(
-                    label: Text(
-                      '$_status · ${CallRecord.formatDuration(_clock.elapsed)}',
-                    ),
-                  ),
-                ),
-              if (widget.video && _ready)
-                Positioned(
-                  right: 18,
-                  top: 24,
-                  width: 110,
-                  height: 160,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: RTCVideoView(
-                      _localRenderer,
-                      mirror: _front,
-                      objectFit:
-                          RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                    ),
-                  ),
-                ),
+              if (_videoActive && _signalingReady) _buildLocalPip(box),
               Positioned(
                 left: 20,
                 right: 20,
-                bottom: 32,
+                bottom: 16,
                 child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xE61E1F25),
-                      borderRadius: BorderRadius.circular(40),
-                      border: Border.all(color: Colors.white12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.4),
-                          blurRadius: 20,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      alignment: WrapAlignment.center,
-                      children: [
-                        _CallControl(
-                          label:
-                              _muted ? 'Unmute microphone' : 'Mute microphone',
-                          icon: _muted ? Icons.mic_off : Icons.mic,
-                          color: _muted
-                              ? Colors.red.withValues(alpha: 0.8)
-                              : const Color(0xFF292A2F),
-                          onTap: () {
-                            setState(() => _muted = !_muted);
-                            for (final track
-                                in _localStream?.getAudioTracks() ??
-                                    <MediaStreamTrack>[]) {
-                              track.enabled = !_muted;
-                            }
-                          },
-                        ),
-                        if (widget.video) ...[
-                          _CallControl(
-                            label: _cameraOff
-                                ? 'Turn camera on'
-                                : 'Turn camera off',
-                            icon: _cameraOff
-                                ? Icons.videocam_off
-                                : Icons.videocam,
-                            color: _cameraOff
-                                ? Colors.red.withValues(alpha: 0.8)
-                                : const Color(0xFF292A2F),
-                            onTap: () {
-                              setState(() => _cameraOff = !_cameraOff);
-                              _videoTrack?.enabled = !_cameraOff;
-                            },
-                          ),
-                          _CallControl(
-                            label: 'Switch camera',
-                            icon: Icons.flip_camera_ios_outlined,
-                            busy: _switching,
-                            onTap: _canSwitch && !_switching
-                                ? _switchCamera
-                                : null,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 640),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xF01C1E24),
+                        borderRadius: BorderRadius.circular(28),
+                        border: Border.all(color: Colors.white12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.42),
+                            blurRadius: 28,
+                            offset: const Offset(0, 8),
                           ),
                         ],
-                        if (!kIsWeb &&
-                            (defaultTargetPlatform == TargetPlatform.android ||
-                                defaultTargetPlatform == TargetPlatform.iOS))
-                          _CallControl(
-                            label: _speaker ? 'Use earpiece' : 'Use speaker',
-                            icon: _speaker ? Icons.volume_up : Icons.hearing,
-                            onTap: !_ready
-                                ? null
-                                : () async {
-                                    try {
-                                      final next = !_speaker;
-                                      if (next) {
-                                        await Helper
-                                            .setSpeakerphoneOnButPreferBluetooth();
-                                      } else {
-                                        await Helper.setSpeakerphoneOn(false);
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _CallControl(
+                                    label: _muted
+                                        ? 'Unmute microphone'
+                                        : 'Mute microphone',
+                                    caption: _muted ? 'Unmute' : 'Mute',
+                                    icon: _muted ? Icons.mic_off : Icons.mic,
+                                    color: _muted
+                                        ? Colors.red.withValues(alpha: 0.8)
+                                        : const Color(0xFF292A2F),
+                                    onTap: () {
+                                      setState(() => _muted = !_muted);
+                                      _feedback.setEnabled(!_muted);
+                                      for (final track
+                                          in _localStream?.getAudioTracks() ??
+                                              <MediaStreamTrack>[]) {
+                                        track.enabled = !_muted;
                                       }
-                                      if (mounted && !_finished) {
-                                        setState(() => _speaker = next);
-                                      }
-                                    } catch (_) {}
-                                  },
+                                    },
+                                  ),
+                                  if (_videoActive) ...[
+                                    _CallControl(
+                                      label: _cameraOff
+                                          ? 'Turn camera on'
+                                          : 'Turn camera off',
+                                      caption:
+                                          _cameraOff ? 'Camera on' : 'Camera',
+                                      icon: _cameraOff
+                                          ? Icons.videocam_off
+                                          : Icons.videocam,
+                                      color: _cameraOff
+                                          ? Colors.red.withValues(alpha: 0.8)
+                                          : const Color(0xFF292A2F),
+                                      onTap: () {
+                                        setState(
+                                            () => _cameraOff = !_cameraOff);
+                                        _videoTrack?.enabled = !_cameraOff;
+                                      },
+                                    ),
+                                    _CallControl(
+                                      label: 'Switch camera',
+                                      caption: 'Flip',
+                                      icon: Icons.flip_camera_ios_outlined,
+                                      busy: _switching,
+                                      onTap: _canSwitch && !_switching
+                                          ? _switchCamera
+                                          : null,
+                                    ),
+                                  ],
+                                  if (!kIsWeb &&
+                                      (defaultTargetPlatform ==
+                                              TargetPlatform.android ||
+                                          defaultTargetPlatform ==
+                                              TargetPlatform.iOS))
+                                    _CallControl(
+                                      label: _speaker
+                                          ? 'Use earpiece'
+                                          : 'Use speaker',
+                                      caption:
+                                          _speaker ? 'Earpiece' : 'Speaker',
+                                      icon: _speaker
+                                          ? Icons.volume_up
+                                          : Icons.hearing,
+                                      onTap: !_signalingReady
+                                          ? null
+                                          : () async {
+                                              try {
+                                                final next = !_speaker;
+                                                if (next) {
+                                                  await Helper
+                                                      .setSpeakerphoneOnButPreferBluetooth();
+                                                } else {
+                                                  await Helper
+                                                      .setSpeakerphoneOn(false);
+                                                }
+                                                if (mounted && !_finished) {
+                                                  setState(
+                                                      () => _speaker = next);
+                                                }
+                                              } catch (_) {}
+                                            },
+                                    ),
+                                  _CallControl(
+                                    label: 'Select call devices',
+                                    caption: 'Devices',
+                                    icon: Icons.devices_other_rounded,
+                                    onTap: !_signalingReady || _finished
+                                        ? null
+                                        : _openDevicePicker,
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
-                        _CallControl(
-                          label: 'End call',
-                          icon: Icons.call_end,
-                          color: Colors.redAccent,
-                          onTap: () => _finish(action: 'end'),
-                        ),
-                      ],
+                          const SizedBox(width: 10),
+                          _CallControl(
+                            label: 'End call',
+                            caption: 'End',
+                            icon: Icons.call_end,
+                            color: Colors.redAccent,
+                            onTap: () => _finish(action: 'end'),
+                            prominent: true,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -917,6 +1279,145 @@ class _CallScreenState extends State<CallScreen> {
           ),
         ),
       );
+    });
+  }
+
+  Offset _pipBaseOffset(BoxConstraints box, Size size) {
+    const insetX = 18.0;
+    const insetTop = 76.0;
+    const insetBottom = 156.0;
+    switch (_pipCorner) {
+      case _PipCorner.topLeft:
+        return const Offset(insetX, insetTop);
+      case _PipCorner.topRight:
+        return Offset(box.maxWidth - size.width - insetX, insetTop);
+      case _PipCorner.bottomLeft:
+        return Offset(insetX, box.maxHeight - size.height - insetBottom);
+      case _PipCorner.bottomRight:
+        return Offset(
+          box.maxWidth - size.width - insetX,
+          box.maxHeight - size.height - insetBottom,
+        );
+    }
+  }
+
+  Widget _buildLocalPip(BoxConstraints box) {
+    final landscape = box.maxWidth > box.maxHeight;
+    final size = landscape ? const Size(160, 100) : const Size(100, 144);
+    final base = _pipBaseOffset(box, size);
+    final offset = _pipDragOffset ?? base;
+    final left = offset.dx.clamp(
+      0.0,
+      (box.maxWidth - size.width).clamp(0.0, 1e9),
+    );
+    final top = offset.dy.clamp(
+      0.0,
+      (box.maxHeight - size.height).clamp(0.0, 1e9),
+    );
+    return AnimatedPositioned(
+      duration: _pipDragOffset == null
+          ? const Duration(milliseconds: 220)
+          : Duration.zero,
+      curve: Curves.easeOut,
+      left: left,
+      top: top,
+      width: size.width,
+      height: size.height,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onPanStart: (_) => setState(() => _pipDragOffset = base),
+        onPanUpdate: (details) {
+          setState(() {
+            _pipDragOffset = (_pipDragOffset ?? base) + details.delta;
+          });
+        },
+        onPanEnd: (_) {
+          final center = (_pipDragOffset ?? base) +
+              Offset(size.width / 2, size.height / 2);
+          final isLeft = center.dx < box.maxWidth / 2;
+          final isTop = center.dy < box.maxHeight / 2;
+          setState(() {
+            _pipCorner = isTop
+                ? (isLeft ? _PipCorner.topLeft : _PipCorner.topRight)
+                : (isLeft ? _PipCorner.bottomLeft : _PipCorner.bottomRight);
+            _pipDragOffset = null;
+          });
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.45),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(15),
+                child: RTCVideoView(
+                  _localRenderer,
+                  mirror: _front,
+                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                ),
+              ),
+              const Positioned(
+                right: 6,
+                top: 6,
+                child: Icon(Icons.open_with, size: 14, color: Colors.white70),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusPill() {
+    final label = _everConnected
+        ? '$_status · ${CallRecord.formatDuration(_clock.elapsed)}'
+        : _status;
+    final shown = _remoteCameraOff ? '$label · Camera off' : label;
+    return Semantics(
+      label: shown,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: const Color(0xE61E1F25),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: _statusColor,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              shown,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _CallControl extends StatelessWidget {
@@ -924,32 +1425,74 @@ class _CallControl extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.onTap,
+    this.caption,
     this.busy = false,
     this.color = const Color(0xFF292A2F),
+    this.prominent = false,
   });
   final String label;
+  final String? caption;
   final IconData icon;
   final VoidCallback? onTap;
   final bool busy;
   final Color color;
+  final bool prominent;
   @override
-  Widget build(BuildContext context) => Semantics(
-        button: true,
-        label: label,
-        child: CircleAvatar(
-          radius: 28,
-          backgroundColor: color,
-          child: IconButton(
-            tooltip: label,
-            onPressed: onTap,
-            icon: busy
-                ? const SizedBox.square(
-                    dimension: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Icon(icon,
-                    color: onTap == null ? Colors.white38 : Colors.white),
-          ),
+  Widget build(BuildContext context) {
+    final size = prominent ? 54.0 : 48.0;
+    return Semantics(
+      button: true,
+      enabled: onTap != null,
+      label: label,
+      child: SizedBox(
+        width: 66,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Tooltip(
+              message: label,
+              child: Material(
+                color: color,
+                borderRadius: BorderRadius.circular(prominent ? 27 : 18),
+                child: InkWell(
+                  onTap: onTap,
+                  borderRadius: BorderRadius.circular(prominent ? 27 : 18),
+                  child: SizedBox.square(
+                    dimension: size,
+                    child: Center(
+                      child: busy
+                          ? const SizedBox.square(
+                              dimension: 19,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Icon(
+                              icon,
+                              size: prominent ? 25 : 22,
+                              color:
+                                  onTap == null ? Colors.white38 : Colors.white,
+                            ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              caption ?? label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: onTap == null ? Colors.white38 : Colors.white70,
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
         ),
-      );
+      ),
+    );
+  }
 }

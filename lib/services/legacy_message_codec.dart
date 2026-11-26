@@ -8,6 +8,7 @@ import 'package:pointycastle/export.dart';
 class LegacyMessageCodec {
   static const plaintext = 'legacy_plaintext';
   static const unversioned = 'legacy_unversioned';
+  static const signal = 'signal_v1';
 
   static Uint8List historicalKey(String first, String second) {
     final ordered = [first, second]..sort();
@@ -31,7 +32,9 @@ class LegacyMessageCodec {
       String content, String format, Uint8List? historicalKey) {
     if (format == plaintext) return content;
     if (format != unversioned) return 'Unsupported message format';
-    if (historicalKey == null || content.length < 38 || content.length > 100000) {
+    if (historicalKey == null ||
+        content.length < 38 ||
+        content.length > 100000) {
       return content;
     }
     try {

@@ -4,27 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
+import '../theme/app_colors.dart' as app_colors;
 import '../models/profile.dart';
 import '../services/status_feed.dart';
 import '../services/supabase.dart';
 import '../ui/errors.dart';
 import '../ui/states.dart';
 
-class _C {
-  static const bg = Color(0xFF050505);
-  static const text = Color(0xFFE3E1E9);
-  static const muted = Color(0xFFC5C9AC);
-}
-
 const _statusViewDuration = Duration(minutes: 2, seconds: 30);
-
-const _backdrops = <List<Color>>[
-  [Color(0xFF1A1C12), Color(0xFF3D4A00)],
-  [Color(0xFF102438), Color(0xFF0D1724)],
-  [Color(0xFF241018), Color(0xFF4A1530)],
-  [Color(0xFF142A24), Color(0xFF0E1B19)],
-  [Color(0xFF2A1D35), Color(0xFF191521)],
-];
 
 class StatusViewerScreen extends StatefulWidget {
   const StatusViewerScreen({
@@ -56,6 +43,7 @@ class _StatusViewerScreenState extends State<StatusViewerScreen>
   bool _loading = true;
   String? _error;
   bool _paused = false;
+  final FocusNode _keyFocus = FocusNode(debugLabel: 'status-viewer');
 
   StatusPost? get _current =>
       _posts.isEmpty ? null : _posts[_index.clamp(0, _posts.length - 1)];
@@ -110,8 +98,41 @@ class _StatusViewerScreenState extends State<StatusViewerScreen>
 
   @override
   void dispose() {
+    _keyFocus.dispose();
     _progress.dispose();
     super.dispose();
+  }
+
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      _previous();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowRight) {
+      _next();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.space) {
+      if (_paused) {
+        _resume();
+      } else {
+        _pause();
+      }
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.escape && mounted && context.canPop()) {
+      context.pop();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.delete && _isMine) {
+      unawaited(_delete());
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   void _next() {
@@ -208,10 +229,14 @@ class _StatusViewerScreenState extends State<StatusViewerScreen>
   @override
   Widget build(BuildContext context) {
     final post = _current;
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: Scaffold(
-        backgroundColor: _C.bg,
+    return Focus(
+      autofocus: true,
+      focusNode: _keyFocus,
+      onKeyEvent: _onKeyEvent,
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: Scaffold(
+        backgroundColor: app_colors.P.bg,
         body: _loading
             ? const AppLoader()
             : _error != null
@@ -220,7 +245,7 @@ class _StatusViewerScreenState extends State<StatusViewerScreen>
                       padding: const EdgeInsets.all(24),
                       child: Text(_error!,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: _C.muted, fontSize: 16)),
+                          style: const TextStyle(color: app_colors.P.muted, fontSize: 16)),
                     ),
                   )
                 : GestureDetector(
@@ -238,18 +263,30 @@ class _StatusViewerScreenState extends State<StatusViewerScreen>
                         Row(
                           children: [
                             Expanded(
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onTap: _previous,
-                                child: const SizedBox.expand(),
+                              child: MouseRegion(
+                                cursor: SystemMouseCursors.click,
+                                child: Semantics(
+                                  label: 'Previous status',
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: _previous,
+                                    child: const SizedBox.expand(),
+                                  ),
+                                ),
                               ),
                             ),
                             Expanded(
                               flex: 2,
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onTap: _next,
-                                child: const SizedBox.expand(),
+                              child: MouseRegion(
+                                cursor: SystemMouseCursors.click,
+                                child: Semantics(
+                                  label: 'Next status',
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: _next,
+                                    child: const SizedBox.expand(),
+                                  ),
+                                ),
                               ),
                             ),
                           ],
@@ -296,22 +333,22 @@ class _StatusViewerScreenState extends State<StatusViewerScreen>
                                       (post.userAvatarUrl ?? '').isEmpty
                                           ? null
                                           : NetworkImage(post.userAvatarUrl!),
-                                  backgroundColor: const Color(0xFF292A2F),
+                                  backgroundColor: app_colors.surfaceHigh,
                                   child: (post.userAvatarUrl ?? '').isEmpty
                                       ? Text(post.userInitial,
                                           style: const TextStyle(
-                                              color: _C.text,
+                                              color: app_colors.P.text,
                                               fontWeight: FontWeight.w700))
                                       : null,
                                 ),
                                 title: Text(post.userLabel,
                                     style: const TextStyle(
-                                        color: _C.text,
+                                        color: app_colors.P.text,
                                         fontWeight: FontWeight.w700)),
                                 subtitle: Text(
                                   '${statusTimeAgo(post.createdAt, DateTime.now())} · ${statusTimeLeft(post.expiresAt, DateTime.now())}',
                                   style: const TextStyle(
-                                      color: _C.muted, fontSize: 12),
+                                      color: app_colors.P.muted, fontSize: 12),
                                 ),
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -343,7 +380,7 @@ class _StatusViewerScreenState extends State<StatusViewerScreen>
                                     style: FilledButton.styleFrom(
                                       backgroundColor:
                                           Colors.white.withValues(alpha: 0.12),
-                                      foregroundColor: _C.text,
+                                      foregroundColor: app_colors.P.text,
                                       minimumSize: const Size.fromHeight(48),
                                     ),
                                   ),
@@ -354,6 +391,7 @@ class _StatusViewerScreenState extends State<StatusViewerScreen>
                       ],
                     ),
                   ),
+        ),
       ),
     );
   }
@@ -365,7 +403,8 @@ class _Backdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = _backdrops[post.userId.hashCode.abs() % _backdrops.length];
+    final colors = app_colors.statusBackdrops[
+        post.userId.hashCode.abs() % app_colors.statusBackdrops.length];
     final media = Supa.statusMediaUrl(post.mediaPath);
     return Stack(
       fit: StackFit.expand,

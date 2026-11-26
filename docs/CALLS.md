@@ -10,30 +10,28 @@
 
 ## TURN configuration
 
-STUN alone is not sufficient across restrictive NATs. The app reads four build-time values:
+STUN alone cannot connect calls through some carrier networks and restrictive NATs. The app requests short-lived relay credentials from the authenticated `call-turn` Supabase Edge Function at runtime. The function supports Cloudflare Realtime TURN and coturn REST credentials; provider secrets stay on the server.
 
-| Define | Purpose |
-| --- | --- |
-| `TURN_URL` | TURN URI, e.g. `turn:turn.example.com:3478` |
-| `TURN_USER` | short-lived username |
-| `TURN_PASS` | short-lived credential |
-| `TURN_RELAY_ONLY` | `true` removes STUN and forces relay for diagnostics |
-
-Example:
+Chosen provider: Cloudflare Realtime TURN. Create a TURN key in the Cloudflare dashboard, then add these Supabase Edge Function secrets:
 
 ```sh
-flutter build apk --release \
-  --dart-define=TURN_URL=turn:turn.example.com:3478 \
-  --dart-define=TURN_USER=<short-lived-user> \
-  --dart-define=TURN_PASS=<short-lived-credential>
+supabase secrets set \
+  CLOUDFLARE_TURN_KEY_ID=<turn-key-id> \
+  CLOUDFLARE_TURN_API_TOKEN=<turn-key-api-token> \
+  --project-ref <supabase-project-ref>
 ```
 
-**Deployment blocker:** no managed TURN account, coturn host or credential-minting service is configured for this project. The client integration is complete, but dependable calls across restrictive networks require provisioning one of:
+The token must be a TURN key API token authorized to generate credentials for that key. The endpoint requests 12-hour credentials and only forwards Cloudflare TURN URLs to clients. Cloudflare documents 1,000 GB free TURN transfer, then $0.05/GB; confirm the current account terms before enabling usage.
 
-1. A managed TURN provider with regional coverage.
-2. Self-hosted coturn with TLS and short-lived credentials.
+Until those two secrets are configured, `call-turn` returns 503 and the app falls back to STUN. Calls may still work on permissive networks, but relay-dependent calls will fail. Never put the Cloudflare API token in the APK, web build, source, or `.env` file shipped to clients.
 
-Short-lived credentials must be minted by an authenticated backend endpoint. Permanent TURN secrets must not be embedded in the APK, source, CI logs or `.env.example`. `--dart-define` values are compiled into the binary, so use them only with credentials whose lifetime is shorter than the app release lifetime, or replace them with a runtime fetch before production distribution.
+For a self-hosted coturn deployment instead, set `TURN_SHARED_SECRET` and comma-separated `TURN_URLS`; the function mints one-hour REST credentials. Do not configure both provider sets at once. `CALL_RELAY_ONLY=true` is reserved for diagnostics and forces calls to fail if relay is unavailable.
+
+### Production verification (2026-11-25)
+
+- `call-turn` is deployed and `ACTIVE` (version 1) on project `dbfgyehzgrmsajpwydps`.
+- No TURN provider secrets are currently provisioned: neither the Cloudflare pair (`CLOUDFLARE_TURN_KEY_ID`, `CLOUDFLARE_TURN_API_TOKEN`) nor the coturn pair (`TURN_SHARED_SECRET`, `TURN_URLS`) is present. The function therefore returns 503 and clients fall back to Google STUN, which is expected to work only on permissive networks.
+- To complete relay enablement, configure one provider pair via `supabase secrets set`, then invoke the function with a real authenticated user token and confirm the 200 response contains `turn:`/`turns:` URLs plus username and credential. Never place those tokens in client builds or tracked files.
 
 ## Manual testing matrix
 

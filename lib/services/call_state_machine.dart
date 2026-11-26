@@ -137,6 +137,20 @@ class CallStateMachine {
     return _state;
   }
 
+  CallEndReason reasonFor(String? error) {
+    final text = (error ?? '').toLowerCase();
+    if (text.contains('denied') || text.contains('permission')) {
+      return CallEndReason.permissionDenied;
+    }
+    if (text.contains('no answer') || text.contains('no longer available')) {
+      return CallEndReason.timeout;
+    }
+    if (text.contains('connect') || text.contains('network')) {
+      return CallEndReason.networkFailure;
+    }
+    return CallEndReason.normalHangup;
+  }
+
   bool get shouldRetryReconnect =>
       _state.phase != CallPhase.failed &&
       _state.reconnectionAttempts < maxReconnectAttempts;

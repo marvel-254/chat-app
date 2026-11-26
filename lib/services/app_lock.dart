@@ -32,6 +32,16 @@ class AppLock {
     enabled.value = value;
   }
 
+  /// Remove device-local lock credentials after permanent account deletion.
+  static Future<void> clearLocalData() async {
+    enabled.value = false;
+    await _secure.delete(key: pinKey);
+    final prefs = await _prefs;
+    await prefs.remove(enabledKey);
+    await prefs.remove(pinKey);
+    await prefs.remove(timeoutKey);
+  }
+
   static Future<bool> hasPin() async =>
       (await _secure.read(key: pinKey))?.isNotEmpty == true ||
       ((await _prefs).getString(pinKey)?.isNotEmpty ?? false);

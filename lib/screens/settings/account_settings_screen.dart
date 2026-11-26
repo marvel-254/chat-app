@@ -18,7 +18,10 @@ import '../lock_gate.dart';
 import '../../services/presence.dart';
 import '../../followers_following_screen.dart';
 import '../../app_constants.dart';
+import '../../services/app_update.dart';
 import '../../services/app_lock.dart';
+import '../../services/push_notifications.dart';
+import '../../services/signal_e2ee.dart';
 import '../../services/hibp_password_check.dart';
 import '../../models/avatar_config.dart';
 import '../../widgets/digital_avatar.dart';
@@ -82,6 +85,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   bool _uploadingProfileMedia = false;
   bool _loading = true;
   bool _saving = false;
+  bool _checkingForUpdates = false;
+  bool _deletingAccount = false;
   bool _signingOutOthers = false;
   bool _mfaBusy = false;
   Factor? _totpFactor;
@@ -91,6 +96,126 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   String _aboutVisibility = 'everyone';
   bool _readReceiptsEnabled = true;
   Duration? _defaultMessageExpiry;
+
+  Future<void> _checkForUpdates() async {
+    if (_checkingForUpdates || !mounted) return;
+    setState(() => _checkingForUpdates = true);
+    try {
+      await AppUpdate.checkNow(context: context, currentVersion: appVersion);
+    } finally {
+      if (mounted) setState(() => _checkingForUpdates = false);
+    }
+  }
+
+  Future<void> _deleteAccount() async {
+    if (_deletingAccount || !mounted) return;
+    final firstConfirmation = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.warning_amber_rounded,
+            color: Colors.redAccent, size: 36),
+        title: const Text('Permanently delete your account?'),
+        content: const Text(
+          'Your BRO profile, messages, media, settings, and account will be permanently deleted. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep my account'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    if (firstConfirmation != true || !mounted) return;
+
+    final confirmation = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, updateDialog) => AlertDialog(
+          title: const Text('Confirm permanent deletion'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Type DELETE to permanently remove your account.'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmation,
+                autofocus: true,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: const InputDecoration(
+                  labelText: 'Type DELETE',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) => updateDialog(() {}),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+              onPressed: confirmation.text.trim() == 'DELETE'
+                  ? () => Navigator.pop(context, true)
+                  : null,
+              child: const Text('Delete permanently'),
+            ),
+          ],
+        ),
+      ),
+    );
+    confirmation.dispose();
+    if (confirmed != true || !mounted) return;
+
+    final reauthed = await showReauthDialog(
+      context,
+      title: 'Confirm your identity',
+      subtitle: 'Re-authenticate before permanently deleting your account.',
+    );
+    if (!reauthed || !mounted) return;
+
+    setState(() => _deletingAccount = true);
+    try {
+      await Supa.deleteCurrentAccount();
+      // The account is already deleted remotely; clear this install's push and
+      // cryptographic state before returning to the sign-in screen.
+      try {
+        await PushNotifications.unregisterCurrentToken();
+      } catch (_) {}
+      try {
+        await SignalE2ee.instance.clearLocalData();
+      } catch (_) {}
+      try {
+        await AppLock.clearLocalData();
+      } catch (_) {}
+      await Supa.signOutLocally();
+      if (mounted) context.go('/login');
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Account deletion could not be completed. Check your connection and try again.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _deletingAccount = false);
+    }
+  }
+
   Duration? _autoLockTimer;
   String? _gamePlatform;
   String _gameVisibility = 'everyone';
@@ -824,8 +949,37 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     onTap: () => context.push('/settings/digital-avatar'),
                   ),
                   const SizedBox(height: 20),
-                  ListTile(leading: const Icon(Icons.notifications_outlined), title: const Text('Notifications'),
-                    trailing: const Icon(Icons.chevron_right), onTap: () => context.push('/settings/notifications')),
+                  ListTile(
+                      leading: const Icon(Icons.notifications_outlined),
+                      title: const Text('Notifications'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => context.push('/settings/notifications')),
+                  const SizedBox(height: 16),
+                  Text('App updates',
+                      style: TextStyle(
+                          color: _P.muted, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Text(
+                    appVersion.isEmpty
+                        ? 'BRO · development build'
+                        : 'BRO v$appVersion${buildNumber.isNotEmpty ? ' · build $buildNumber' : ''}',
+                    style: const TextStyle(color: _P.muted, fontSize: 12),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: _checkingForUpdates ? null : _checkForUpdates,
+                      icon: _checkingForUpdates
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.system_update_alt),
+                      label: Text(_checkingForUpdates
+                          ? 'Checking…'
+                          : 'Check for updates'),
+                    ),
+                  ),
                   Text('Privacy',
                       style: TextStyle(
                           color: _P.muted, fontWeight: FontWeight.w600)),
@@ -1216,7 +1370,11 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                         child: SoftErrorBanner(message: _error!)),
                   const SizedBox(height: 22),
                   FilledButton(
-                      onPressed: _saving || _uploadingAvatar ? null : _save,
+                      onPressed: _saving ||
+                              _uploadingAvatar ||
+                              _deletingAccount
+                          ? null
+                          : _save,
                       style: FilledButton.styleFrom(
                         backgroundColor: _P.primary,
                         foregroundColor: _P.darkOnAccent,
@@ -1243,6 +1401,62 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                           ? 'BRO · development build'
                           : 'BRO · build $buildNumber',
                       style: const TextStyle(color: _P.muted, fontSize: 12)),
+                  const SizedBox(height: 28),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.redAccent.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded,
+                                color: Colors.redAccent, size: 20),
+                            SizedBox(width: 8),
+                            Text(
+                              'Danger Zone',
+                              style: TextStyle(
+                                color: Colors.redAccent,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Permanently delete your BRO account and associated data from this device or the web.',
+                          style: TextStyle(color: _P.muted, fontSize: 12),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed:
+                              _deletingAccount ? null : _deleteAccount,
+                          icon: _deletingAccount
+                              ? const SizedBox.square(
+                                  dimension: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.redAccent,
+                                  ),
+                                )
+                              : const Icon(Icons.delete_forever_outlined),
+                          label: Text(_deletingAccount
+                              ? 'Deleting account…'
+                              : 'Delete account permanently'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.redAccent,
+                            side: const BorderSide(color: Colors.redAccent),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ]),
               )),
       );

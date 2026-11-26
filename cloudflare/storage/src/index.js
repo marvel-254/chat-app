@@ -73,6 +73,34 @@ async function authorizedKey(user, key, env, authorization) {
   return false;
 }
 
+async function deleteOwnedFiles(user, env, authorization) {
+  const url = new URL(`${env.SUPABASE_URL}/rest/v1/conversation_participants`);
+  url.searchParams.set('select', 'conversation_id');
+  url.searchParams.set('user_id', `eq.${user.id}`);
+  const response = await fetch(url, {
+    headers: { apikey: env.SUPABASE_ANON_KEY, Authorization: authorization },
+  });
+  if (!response.ok) throw new Error('Could not load account conversations.');
+  const memberships = await response.json();
+  const prefixes = [
+    `${user.id}/`,
+    ...memberships.map((row) => `${row.conversation_id}/${user.id}/`),
+  ];
+  let deleted = 0;
+  for (const prefix of prefixes) {
+    let cursor;
+    do {
+      const page = await env.CHAT_STORAGE.list({ prefix, cursor, limit: 1000 });
+      if (page.objects.length) {
+        await env.CHAT_STORAGE.delete(page.objects.map((object) => object.key));
+        deleted += page.objects.length;
+      }
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
+  }
+  return deleted;
+}
+
 async function sign(key, expires, secret) {
   const encoder = new TextEncoder();
   const cryptoKey = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -119,7 +147,16 @@ export default {
 
       const user = await userFor(request, env);
       if (!user) return json({ error: 'Sign in to access files.' }, 401);
-      const authorization = request.headers.get('Authorization');
+      const authorization = request.headers.get('Authorization') ?? '';
+
+      if (request.method === 'POST' && url.pathname === '/delete-account-data') {
+        let body;
+        try { body = await request.json(); } catch (_) { body = null; }
+        if (body?.confirmation !== 'DELETE') {
+          return json({ error: 'Account deletion confirmation is required.' }, 400);
+        }
+        return json({ deleted: await deleteOwnedFiles(user, env, authorization) });
+      }
 
       if (request.method === 'POST' && url.pathname === '/upload/background') {
         const contentType = (request.headers.get('Content-Type') ?? '').split(';')[0].toLowerCase();
@@ -194,4 +231,11 @@ export default {
 };
 
 // Exported for unit tests; the worker entry point remains the default export.
-export { isSafeKey, safeContentType, authorizedKey, sign, constantTimeEqual };
+export {
+  isSafeKey,
+  safeContentType,
+  authorizedKey,
+  sign,
+  constantTimeEqual,
+  deleteOwnedFiles,
+};

@@ -16,7 +16,14 @@ import '../widgets/responsive_app_shell.dart';
 class CircleDetailScreen extends StatefulWidget {
   final String circleId;
 
-  const CircleDetailScreen({super.key, required this.circleId});
+  /// When true, renders only the detail body for the wide desktop workspace.
+  final bool embedded;
+
+  const CircleDetailScreen({
+    super.key,
+    required this.circleId,
+    this.embedded = false,
+  });
 
   @override
   State<CircleDetailScreen> createState() => _CircleDetailScreenState();
@@ -215,6 +222,8 @@ class _CircleDetailScreenState extends State<CircleDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final body = _buildBody();
+    if (widget.embedded) return body;
     return ResponsiveAppShell(
       title: _circle?.name ?? 'Circle',
       subtitle: _isAdmin ? 'You manage this circle' : null,
@@ -239,7 +248,12 @@ class _CircleDetailScreenState extends State<CircleDetailScreen> {
           ],
         ),
       ],
-      body: _isLoading
+      body: body,
+    );
+  }
+
+  Widget _buildBody() {
+    return _isLoading
           ? const AppLoader()
           : _error != null
               ? AppErrorState(
@@ -288,8 +302,7 @@ class _CircleDetailScreenState extends State<CircleDetailScreen> {
                               onRemove: () => _removeMember(member.userId),
                             ),
                       ],
-                    ),
-    );
+                    );
   }
 }
 

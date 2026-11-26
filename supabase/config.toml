@@ -7,6 +7,9 @@ project_id = "chat_app"
 [functions.push-new-message]
 verify_jwt = false
 
+[functions.delete-account]
+verify_jwt = true
+
 [api]
 enabled = true
 # Port to use for the API URL.
@@ -158,15 +161,20 @@ max_indexes = 5
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
-site_url = "http://127.0.0.1:3000"
+site_url = "https://bro.omixsystems.store/app/"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
 additional_redirect_urls = [
+  "https://bro.omixsystems.store/app/**",
+  "https://bro.omixsystems.store/app/#/reset-password",
+  "https://bro-landing-lake.vercel.app/app/**",
+  "https://bro-landing-twistedoliver211fs-1271.vercel.app/app/**",
+  "https://marvel-254.github.io/chat-app/app/**",
+  "http://localhost:3000/**",
   "https://127.0.0.1:3000",
   "http://127.0.0.1:3000/app/#/reset-password",
   "https://127.0.0.1:3000/app/#/reset-password",
-  "https://bro.omixsystems.store/app/#/reset-password",
   "io.bro.chat://reset-password",
 ]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
@@ -219,10 +227,10 @@ token_verifications = 30
 web3 = 30
 
 # Configure one of the supported captcha providers: `hcaptcha`, `turnstile`.
-# [auth.captcha]
-# enabled = true
-# provider = "turnstile"
-# secret = "env(SUPABASE_AUTH_CAPTCHA_SECRET)"
+[auth.captcha]
+enabled = true
+provider = "turnstile"
+secret = "env(SUPABASE_AUTH_CAPTCHA_SECRET)"
 
 [auth.email]
 # Allow/disallow new user signups via email to your project.

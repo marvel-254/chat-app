@@ -41,6 +41,7 @@ jobs:
           FIREBASE_WEB_SENDER_ID: ${{ vars.FIREBASE_WEB_SENDER_ID }}
           FIREBASE_WEB_PROJECT_ID: ${{ vars.FIREBASE_WEB_PROJECT_ID }}
           FIREBASE_WEB_VAPID_KEY: ${{ vars.FIREBASE_WEB_VAPID_KEY }}
+          TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
           BASE_HREF: /chat-app/app/
         run: |
           test "$SUPABASE_URL" = 'https://dbfgyehzgrmsajpwydps.supabase.co'

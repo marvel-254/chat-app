@@ -1,4 +1,6 @@
 import 'dart:async';
+
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -14,6 +16,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' hide Presence;
 import 'widgets/avatar.dart';
 import '../../widgets/status_ring_avatar.dart';
 import '../../widgets/responsive_app_shell.dart';
+import '../../widgets/desktop_workspace_shell.dart';
 import '../../widgets/recent_people_searches.dart';
 import '../../services/push_notifications.dart';
 import '../../ui/motion.dart';
@@ -81,10 +84,89 @@ String _formatConversationTimestamp(DateTime dt) {
   return DateFormat('MM/dd/yy').format(local);
 }
 
-class ConversationListScreen extends StatefulWidget {
+Future<void> _signOutFromShell(BuildContext context) async {
+  await PushNotifications.unregisterCurrentToken();
+  await Supa.signOut();
+  if (context.mounted) context.go('/login');
+}
+
+/// Standalone Chats route. On wide desktop it hosts the three-pane workspace;
+/// below 1200 px it keeps the existing single-pane responsive layout.
+class ConversationListScreen extends StatelessWidget {
   const ConversationListScreen({super.key});
+
+  static final GlobalKey<ConversationListPaneState> paneKey =
+      GlobalKey<ConversationListPaneState>();
+
   @override
-  State<ConversationListScreen> createState() => _ConversationListScreenState();
+  Widget build(BuildContext context) {
+    final actions = <Widget>[
+      IconButton(
+        icon: const Icon(Icons.settings_outlined),
+        tooltip: 'Settings',
+        onPressed: () => context.push('/settings'),
+      ),
+      IconButton(
+        icon: const Icon(Icons.logout),
+        tooltip: 'Sign out',
+        onPressed: () => _signOutFromShell(context),
+      ),
+    ];
+    return LayoutBuilder(builder: (context, constraints) {
+      if (constraints.maxWidth >= app_colors.desktopWideBreakpoint) {
+        return DesktopWorkspaceShell(
+          navIndex: 0,
+          listTitle: 'Chats',
+          listActions: actions,
+          detailTitle: 'No conversation selected',
+          detailSubtitle: 'Pick a chat from the list to start talking',
+          detailPane: const Center(
+            child: Icon(Icons.chat_bubble_outline_rounded,
+                color: _P.muted, size: 56),
+          ),
+          listPane: ConversationListPane(
+            key: paneKey,
+            embedded: true,
+            onConversationSelected: (conv) => context.go('/chat/${conv.id}',
+                extra: conv.toPeerProfile()),
+          ),
+        );
+      }
+      return ResponsiveAppShell(
+        title: 'Chats',
+        subtitle: 'Your conversations and new contacts',
+        navIndex: 0,
+        body: ConversationListPane(key: paneKey),
+        actions: actions,
+        floatingActionButton: FloatingActionButton(
+          backgroundColor: _P.primary,
+          foregroundColor: _P.darkOnAccent,
+          tooltip: 'New message',
+          elevation: 4,
+          onPressed: () => paneKey.currentState?.focusSearch(),
+          child: const Icon(Icons.edit_outlined, size: 22),
+        ),
+      );
+    });
+  }
+}
+
+/// The reusable chat list. It is used both as the standalone Chats page and as
+/// the middle pane of the wide desktop workspace.
+class ConversationListPane extends StatefulWidget {
+  const ConversationListPane({
+    super.key,
+    this.embedded = false,
+    this.selectedId,
+    this.onConversationSelected,
+  });
+
+  final bool embedded;
+  final String? selectedId;
+  final void Function(Conversation conversation)? onConversationSelected;
+
+  @override
+  ConversationListPaneState createState() => ConversationListPaneState();
 }
 
 class _MessageRequestTile extends StatelessWidget {
@@ -148,10 +230,14 @@ class _MessageRequestTile extends StatelessWidget {
   }
 }
 
-class _ConversationListScreenState extends State<ConversationListScreen> {
+class ConversationListPaneState extends State<ConversationListPane> {
   final _search = TextEditingController();
   final _searchFocusNode = FocusNode();
+  final _listFocusNode = FocusNode(debugLabel: 'conversation-list');
+  final _listScrollController = ScrollController();
   final _refreshKey = GlobalKey<RefreshIndicatorState>();
+  List<Conversation> _visibleConversations = <Conversation>[];
+  int _keyboardIndex = 0;
   late Stream<List<Conversation>> _conversations = Supa.watchConversations();
   StreamSubscription<List<StatusPost>>? _statusSub;
   Set<String> _statusUserIds = {};
@@ -227,6 +313,8 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     _searchDebounce?.cancel();
     _search.dispose();
     _searchFocusNode.removeListener(_onSearchFocusChanged);
+    _listFocusNode.dispose();
+    _listScrollController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
   }
@@ -360,40 +448,58 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
     );
   }
 
-  Future<void> _signOut() async {
-    await PushNotifications.unregisterCurrentToken();
-    await Supa.signOut();
-    if (mounted) context.go('/login');
-  }
-
   @override
   Widget build(BuildContext context) {
-    return ResponsiveAppShell(
-      title: 'Chats',
-      subtitle: 'Your conversations and new contacts',
-      navIndex: 0,
-      body: _buildSmallScreenLayout(context),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.settings_outlined),
-          tooltip: 'Settings',
-          onPressed: () => context.push('/settings'),
-        ),
-        IconButton(
-          icon: const Icon(Icons.logout),
-          tooltip: 'Sign out',
-          onPressed: _signOut,
-        ),
-      ],
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: _P.primary,
-        foregroundColor: _P.darkOnAccent,
-        tooltip: 'New message',
-        elevation: 4,
-        onPressed: () => _searchFocusNode.requestFocus(),
-        child: const Icon(Icons.edit_outlined, size: 22),
-      ),
+    return Focus(
+      focusNode: _listFocusNode,
+      onKeyEvent: _onListKeyEvent,
+      child: _buildSmallScreenLayout(context),
     );
+  }
+
+  void focusSearch() => _searchFocusNode.requestFocus();
+
+  KeyEventResult _onListKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      if (_searchFocusNode.hasFocus) _searchFocusNode.unfocus();
+      _listFocusNode.unfocus();
+      return KeyEventResult.handled;
+    }
+    if (_searchFocusNode.hasFocus || _visibleConversations.isEmpty) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown ||
+        event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      final step = event.logicalKey == LogicalKeyboardKey.arrowDown ? 1 : -1;
+      setState(() {
+        _keyboardIndex = (_keyboardIndex + step)
+            .clamp(0, _visibleConversations.length - 1);
+      });
+      _listScrollController.animateTo(
+        (_keyboardIndex * 76).clamp(0.0, _listScrollController.position.maxScrollExtent).toDouble(),
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+      );
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+      _openConversation(_visibleConversations[_keyboardIndex]);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void _openConversation(Conversation conversation) {
+    final callback = widget.onConversationSelected;
+    if (callback != null) {
+      callback(conversation);
+      return;
+    }
+    context.go('/chat/${conversation.id}', extra: conversation.toPeerProfile());
   }
 
   Widget _buildPeopleSearchResults() {
@@ -656,6 +762,12 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                             return name.contains(filterQuery) ||
                                 (username?.contains(filterQuery) ?? false);
                           }).toList();
+                _visibleConversations = conversations;
+                if (_keyboardIndex >= conversations.length) {
+                  _keyboardIndex = conversations.isEmpty
+                      ? 0
+                      : conversations.length - 1;
+                }
                 if (conversations.isEmpty && allConversations.isNotEmpty) {
                   return Center(
                     child: SingleChildScrollView(
@@ -740,6 +852,7 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 720),
                     child: ListView.builder(
+                      controller: _listScrollController,
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       itemCount: conversations.length,
                       itemBuilder: (_, i) {
@@ -904,8 +1017,14 @@ class _ConversationListScreenState extends State<ConversationListScreen> {
                                     : Colors.transparent,
                                 contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 14, vertical: 4),
-                                onTap: () => context.go('/chat/${conv.id}',
-                                    extra: conv.toPeerProfile()),
+                                onTap: () => _openConversation(conv),
+                                hoverColor:
+                                    _P.surfaceHigh.withValues(alpha: 0.7),
+                                focusColor:
+                                    _P.surfaceHigh.withValues(alpha: 0.7),
+                                selected: widget.selectedId == conv.id,
+                                selectedTileColor:
+                                    _P.primary.withValues(alpha: 0.08),
                                 onLongPress: conv.peerId != null
                                     ? () =>
                                         context.push('/profile/${conv.peerId}')

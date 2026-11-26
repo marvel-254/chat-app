@@ -1,25 +1,19 @@
-// Followers / Following Screen (Full Page)
-// Full-screen followers/following list with search, pagination, and pull-to-refresh.
-// Replaces the previous bottom sheet implementation for better UX on mobile.
+// Followers / Following screen.
+// Full-page people lists with search, pagination, pull-to-refresh and a
+// responsive two-pane desktop layout. Uses the shared BRO design tokens.
 
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-import 'services/supabase.dart';
+import '../theme/app_colors.dart' as app_colors;
+import '../ui/errors.dart';
+import '../ui/states.dart';
+import '../widgets/responsive_app_shell.dart';
+import 'screens/chat/widgets/avatar.dart';
 import 'models/profile.dart';
-import 'ui/states.dart';
-
-/// Color palette matching the app's design tokens.
-/// Duplicated here to avoid importing private _P from main.dart.
-class _FollowColors {
-  static const Color background = Color(0xFF121318);
-  static const Color surface = Color(0xFF1A1C24);
-  static const Color primary = Color(0xFF00D4AA);
-  static const Color text = Color(0xFFFFFFFF);
-  static const Color muted = Color(0xFF8B9099);
-  static const Color border = Color(0xFF2E323D);
-}
+import 'services/supabase.dart';
 
 class FollowersFollowingScreen extends StatefulWidget {
   const FollowersFollowingScreen({
@@ -28,51 +22,61 @@ class FollowersFollowingScreen extends StatefulWidget {
     this.initialTab = 0,
     required this.onOpenProfile,
   });
+
   final String userId;
   final int initialTab;
   final void Function(String userId) onOpenProfile;
 
   @override
-  State<FollowersFollowingScreen> createState() => _FollowersFollowingScreenState();
+  State<FollowersFollowingScreen> createState() =>
+      _FollowersFollowingScreenState();
 }
 
 class _FollowersFollowingScreenState extends State<FollowersFollowingScreen>
     with SingleTickerProviderStateMixin {
-  late TabController _tabs;
-
-  // Followers state
-  List<Profile> _followers = [];
-  bool _loadingFollowers = false;
-  bool _followersHasMore = true;
   static const int _pageSize = 30;
-  String _followersSearchQuery = '';
-  Timer? _followersSearchDebounce;
 
-  // Following state
-  List<Profile> _following = [];
-  bool _loadingFollowing = false;
-  bool _followingHasMore = true;
-  int _followingOffset = 0;
-  String _followingSearchQuery = '';
-  Timer? _followingSearchDebounce;
-
-  // Shared
+  late final TabController _tabs;
+  final FocusNode _listFocusNode = FocusNode(debugLabel: 'follow-list');
   final _scrollControllers = <int, ScrollController>{};
+
+  List<Profile> _followers = <Profile>[];
+  List<Profile> _following = <Profile>[];
+  bool _loadingFollowers = false;
+  bool _loadingFollowing = false;
+  bool _followersHasMore = true;
+  bool _followingHasMore = true;
+  int _followersOffset = 0;
+  int _followingOffset = 0;
+  int _followersCount = 0;
+  int _followingCount = 0;
+  String _followersSearchQuery = '';
+  String _followingSearchQuery = '';
+  Timer? _followersSearchDebounce;
+  Timer? _followingSearchDebounce;
   String? _currentUserId;
+  int _keyboardIndex = 0;
+  int _activePane = 0;
 
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 2, vsync: this, initialIndex: widget.initialTab);
+    _tabs = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialTab,
+    );
+    _activePane = widget.initialTab;
     _currentUserId = Supa.currentUser?.id;
-    _loadInitialData();
     _tabs.addListener(_onTabChanged);
+    unawaited(_loadInitialData());
   }
 
   @override
   void dispose() {
     _tabs.removeListener(_onTabChanged);
     _tabs.dispose();
+    _listFocusNode.dispose();
     _followersSearchDebounce?.cancel();
     _followingSearchDebounce?.cancel();
     for (final controller in _scrollControllers.values) {
@@ -83,9 +87,9 @@ class _FollowersFollowingScreenState extends State<FollowersFollowingScreen>
 
   void _onTabChanged() {
     if (!_tabs.indexIsChanging) {
-      _ensureScrollController(_tabs.index);
-      // Trigger load more if near bottom
-      _maybeLoadMore(_tabs.index);
+      _activePane = _tabs.index;
+      _getScrollController(_activePane);
+      _maybeLoadMore(_activePane);
     }
   }
 
@@ -93,7 +97,9 @@ class _FollowersFollowingScreenState extends State<FollowersFollowingScreen>
     return _scrollControllers.putIfAbsent(tabIndex, () {
       final controller = ScrollController();
       controller.addListener(() {
-        if (controller.position.pixels >= controller.position.maxScrollExtent - 200) {
+        if (controller.hasClients &&
+            controller.position.pixels >=
+                controller.position.maxScrollExtent - 200) {
           _maybeLoadMore(tabIndex);
         }
       });
@@ -101,113 +107,127 @@ class _FollowersFollowingScreenState extends State<FollowersFollowingScreen>
     });
   }
 
-  void _ensureScrollController(int tabIndex) {
-    _getScrollController(tabIndex);
-  }
-
   Future<void> _loadInitialData() async {
     await Future.wait([
       _loadFollowers(reset: true),
       _loadFollowing(reset: true),
+      _loadCounts(),
     ]);
+  }
+
+  Future<void> _loadCounts() async {
+    try {
+      final counts = await Future.wait([
+        Supa.getFollowersCount(widget.userId),
+        Supa.getFollowingCount(widget.userId),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _followersCount = counts[0];
+        _followingCount = counts[1];
+      });
+    } catch (_) {
+      // Counts are cosmetic; the lists remain usable.
+    }
   }
 
   Future<void> _loadFollowers({bool reset = false}) async {
     if (_loadingFollowers) return;
-    if (reset) {
-      _followersHasMore = true;
-    }
     if (!_followersHasMore && !reset) return;
-
-    setState(() => _loadingFollowers = true);
+    if (mounted) setState(() => _loadingFollowers = true);
     try {
-      final list = await Supa.getFollowing(widget.userId);
-      if (mounted) {
-        setState(() {
-          if (reset) {
-            _followers = list;
-          } else {
-            _followers.addAll(list);
-          }
-          _followersHasMore = list.length >= _pageSize;
-        });
-      }
+      final list = await Supa.getFollowers(
+        widget.userId,
+        limit: _pageSize,
+        offset: reset ? 0 : _followersOffset,
+        search: _followersSearchQuery.isEmpty ? null : _followersSearchQuery,
+      );
+      if (!mounted) return;
+      setState(() {
+        if (reset) {
+          _followers = list;
+          _followersOffset = list.length;
+        } else {
+          _followers.addAll(list);
+          _followersOffset += list.length;
+        }
+        _followersHasMore = list.length >= _pageSize;
+        _loadingFollowers = false;
+      });
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          if (reset) _followers = [];
-          _loadingFollowers = false;
-          _followersHasMore = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        if (reset) {
+          _followers = <Profile>[];
+          _followersOffset = 0;
+        }
+        _followersHasMore = false;
+        _loadingFollowers = false;
+      });
     }
   }
 
   Future<void> _loadFollowing({bool reset = false}) async {
     if (_loadingFollowing) return;
-    if (reset) {
-      _followingOffset = 0;
-      _followingHasMore = true;
-    }
     if (!_followingHasMore && !reset) return;
-
-    setState(() => _loadingFollowing = true);
+    if (mounted) setState(() => _loadingFollowing = true);
     try {
       final list = await Supa.getFollowing(
         widget.userId,
         limit: _pageSize,
-        offset: _followingOffset,
+        offset: reset ? 0 : _followingOffset,
         search: _followingSearchQuery.isEmpty ? null : _followingSearchQuery,
       );
-      if (mounted) {
-        setState(() {
-          if (reset) {
-            _following = list;
-          } else {
-            _following.addAll(list);
-          }
+      if (!mounted) return;
+      setState(() {
+        if (reset) {
+          _following = list;
+          _followingOffset = list.length;
+        } else {
+          _following.addAll(list);
           _followingOffset += list.length;
-          _followingHasMore = list.length >= _pageSize;
-          _loadingFollowing = false;
-        });
-      }
+        }
+        _followingHasMore = list.length >= _pageSize;
+        _loadingFollowing = false;
+      });
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          if (reset) _following = [];
-          _loadingFollowing = false;
-          _followingHasMore = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        if (reset) {
+          _following = <Profile>[];
+          _followingOffset = 0;
+        }
+        _followingHasMore = false;
+        _loadingFollowing = false;
+      });
     }
   }
 
   void _maybeLoadMore(int tabIndex) {
     if (tabIndex == 0) {
-      _loadFollowers();
+      unawaited(_loadFollowers());
     } else {
-      _loadFollowing();
+      unawaited(_loadFollowing());
     }
   }
 
-  void _onFollowersSearchChanged(String query) {
-    _followersSearchDebounce?.cancel();
-    _followersSearchDebounce = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) {
-        setState(() => _followersSearchQuery = query.trim());
-        _loadFollowers(reset: true);
-      }
-    });
-  }
-
-  void _onFollowingSearchChanged(String query) {
-    _followingSearchDebounce?.cancel();
-    _followingSearchDebounce = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) {
-        setState(() => _followingSearchQuery = query.trim());
-        _loadFollowing(reset: true);
-      }
-    });
+  void _onSearchChanged(int tabIndex, String value) {
+    final query = value.trim();
+    if (tabIndex == 0) {
+      _followersSearchDebounce?.cancel();
+      _followersSearchDebounce = Timer(const Duration(milliseconds: 300), () {
+        if (!mounted) return;
+        setState(() => _followersSearchQuery = query);
+        unawaited(_loadFollowers(reset: true));
+      });
+    } else {
+      _followingSearchDebounce?.cancel();
+      _followingSearchDebounce = Timer(const Duration(milliseconds: 300), () {
+        if (!mounted) return;
+        setState(() => _followingSearchQuery = query);
+        unawaited(_loadFollowing(reset: true));
+      });
+    }
   }
 
   Future<void> _onRefresh(int tabIndex) async {
@@ -218,154 +238,255 @@ class _FollowersFollowingScreenState extends State<FollowersFollowingScreen>
     }
   }
 
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+      return KeyEventResult.handled;
+    }
+    final list = _activePane == 0 ? _followers : _following;
+    if (list.isEmpty) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown ||
+        event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      final step =
+          event.logicalKey == LogicalKeyboardKey.arrowDown ? 1 : -1;
+      setState(() {
+        _keyboardIndex = (_keyboardIndex + step).clamp(0, list.length - 1);
+      });
+      _getScrollController(_activePane).animateTo(
+        (_keyboardIndex * 72).clamp(
+          0.0,
+          _getScrollController(_activePane).position.maxScrollExtent,
+        ).toDouble(),
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+      );
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+      if (_keyboardIndex < list.length) {
+        widget.onOpenProfile(list[_keyboardIndex].id);
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _FollowColors.background,
-      appBar: AppBar(
-        title: const Text('Followers & Following'),
-        centerTitle: true,
-        elevation: 0,
-        backgroundColor: _FollowColors.background,
-        foregroundColor: _FollowColors.text,
-        surfaceTintColor: Colors.transparent,
-        bottom: TabBar(
-          controller: _tabs,
-          labelColor: _FollowColors.primary,
-          unselectedLabelColor: _FollowColors.muted,
-          indicatorColor: _FollowColors.primary,
-          indicatorWeight: 2.5,
-          labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-          unselectedLabelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-          tabs: [
-            Tab(
-              text: 'Followers${_followers.isNotEmpty ? '  ${_fmtCount(_followers.length)}' : ''}',
-            ),
-            Tab(
-              text: 'Following${_following.isNotEmpty ? '  ${_fmtCount(_following.length)}' : ''}',
-            ),
-          ],
+    return ResponsiveAppShell(
+      title: 'Followers & Following',
+      subtitle: 'People connected to this profile',
+      navIndex: 0,
+      showBottomNavigation: false,
+      leading: IconButton(
+        tooltip: 'Back',
+        icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+        onPressed: () => Navigator.of(context).pop(),
+      ),
+      body: Focus(
+        focusNode: _listFocusNode,
+        onKeyEvent: _onKeyEvent,
+        child: LayoutBuilder(builder: (context, constraints) {
+          if (constraints.maxWidth >= app_colors.desktopBreakpoint) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: _buildPane(0, showHeader: true)),
+                VerticalDivider(
+                  width: 1,
+                  color: app_colors.border.withValues(alpha: 0.4),
+                ),
+                Expanded(child: _buildPane(1, showHeader: true)),
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildTabBar(),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabs,
+                  children: [
+                    _buildPane(0, showHeader: false),
+                    _buildPane(1, showHeader: false),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildTabBar() {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: app_colors.border.withValues(alpha: 0.35),
+          ),
         ),
       ),
-      body: TabBarView(
+      child: TabBar(
         controller: _tabs,
-        children: [
-          _buildList(
-            tabIndex: 0,
-            profiles: _followers,
-            loading: _loadingFollowers,
-            hasMore: _followersHasMore,
-            searchQuery: _followersSearchQuery,
-            onSearchChanged: _onFollowersSearchChanged,
-            onRefresh: () => _onRefresh(0),
-          ),
-          _buildList(
-            tabIndex: 1,
-            profiles: _following,
-            loading: _loadingFollowing,
-            hasMore: _followingHasMore,
-            searchQuery: _followingSearchQuery,
-            onSearchChanged: _onFollowingSearchChanged,
-            onRefresh: () => _onRefresh(1),
-          ),
+        labelColor: app_colors.volt,
+        unselectedLabelColor: app_colors.muted,
+        indicatorColor: app_colors.volt,
+        indicatorWeight: 2.5,
+        labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+        unselectedLabelStyle:
+            const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+        tabs: [
+          Tab(text: 'Followers   ${_fmtCount(_followersCount)}'),
+          Tab(text: 'Following   ${_fmtCount(_followingCount)}'),
         ],
       ),
     );
   }
 
-  Widget _buildList({
-    required int tabIndex,
-    required List<Profile> profiles,
-    required bool loading,
-    required bool hasMore,
-    required String searchQuery,
-    required ValueChanged<String> onSearchChanged,
-    required Future<void> Function() onRefresh,
-  }) {
+  Widget _buildPane(int tabIndex, {required bool showHeader}) {
+    final isFollowers = tabIndex == 0;
+    final profiles = isFollowers ? _followers : _following;
+    final loading = isFollowers ? _loadingFollowers : _loadingFollowing;
+    final hasMore = isFollowers ? _followersHasMore : _followingHasMore;
+    final query =
+        isFollowers ? _followersSearchQuery : _followingSearchQuery;
+    final count = isFollowers ? _followersCount : _followingCount;
     final controller = _getScrollController(tabIndex);
     final isEmpty = profiles.isEmpty && !loading;
     final showSkeleton = profiles.isEmpty && loading;
 
-    return RefreshIndicator(
-      onRefresh: onRefresh,
-      color: _FollowColors.primary,
-      child: CustomScrollView(
-        controller: controller,
-        slivers: [
-          // Search bar sliver
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: _SearchField(
-                query: searchQuery,
-                onChanged: onSearchChanged,
-                hintText: tabIndex == 0
-                    ? 'Search followers...'
-                    : 'Search following...',
+    return Focus(
+      onFocusChange: (hasFocus) {
+        if (hasFocus) _activePane = tabIndex;
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (showHeader)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 4, 4, 10),
+              child: Row(
+                children: [
+                  Icon(
+                    isFollowers
+                        ? Icons.people_outline_rounded
+                        : Icons.how_to_reg_outlined,
+                    size: 18,
+                    color: app_colors.volt,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    isFollowers ? 'Followers' : 'Following',
+                    style: const TextStyle(
+                      color: app_colors.text,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _fmtCount(count),
+                    style: const TextStyle(
+                      color: app_colors.muted,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(0, 10, 0, 8),
+            child: _SearchField(
+              query: query,
+              hintText: isFollowers
+                  ? 'Search followers'
+                  : 'Search following',
+              onChanged: (value) => _onSearchChanged(tabIndex, value),
+            ),
+          ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () => _onRefresh(tabIndex),
+              color: app_colors.volt,
+              child: CustomScrollView(
+                controller: controller,
+                slivers: [
+                  if (showSkeleton)
+                    const SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: ListSkeleton(label: 'Loading people'),
+                    )
+                  else if (isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: _EmptyState(
+                        tabIndex: tabIndex,
+                        hasSearch: query.isNotEmpty,
+                        onClearSearch: query.isNotEmpty
+                            ? () => _onSearchChanged(tabIndex, '')
+                            : null,
+                      ),
+                    )
+                  else
+                    SliverList.separated(
+                      key: ValueKey('people-list-$tabIndex'),
+                      itemCount: profiles.length + (hasMore ? 1 : 0),
+                      separatorBuilder: (_, __) => Divider(
+                        height: 1,
+                        color: app_colors.border.withValues(alpha: 0.35),
+                        indent: 72,
+                      ),
+                      itemBuilder: (context, index) {
+                        if (index >= profiles.length) {
+                          return _LoadingMoreIndicator(loading: loading);
+                        }
+                        final profile = profiles[index];
+                        return _FollowListTile(
+                          key: ValueKey(profile.id),
+                          profile: profile,
+                          isCurrentUser: profile.id == _currentUserId,
+                          highlighted: index == _keyboardIndex &&
+                              _activePane == tabIndex,
+                          onTap: () => widget.onOpenProfile(profile.id),
+                        );
+                      },
+                    ),
+                  if (!isEmpty && !showSkeleton && hasMore)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Center(
+                          child:
+                              loading ? const BroSpinner(size: 22) : const SizedBox.shrink(),
+                        ),
+                      ),
+                    )
+                  else if (!isEmpty && !showSkeleton && profiles.isNotEmpty)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 24),
+                        child: Center(
+                          child: Text(
+                            "You've seen everyone",
+                            style: const TextStyle(
+                              color: app_colors.muted,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
-          // List content
-          if (showSkeleton)
-            const SliverFillRemaining(
-              hasScrollBody: false,
-              child: ListSkeleton(label: 'Loading people'),
-            )
-          else if (isEmpty)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: _EmptyState(
-                tabIndex: tabIndex,
-                hasSearch: searchQuery.isNotEmpty,
-                onClearSearch: searchQuery.isNotEmpty ? () => onSearchChanged('') : null,
-              ),
-            )
-          else
-            SliverList.separated(
-              key: ValueKey('list-$tabIndex'),
-              itemCount: profiles.length + (hasMore ? 1 : 0),
-              separatorBuilder: (_, __) => Divider(
-                height: 1,
-                color: _FollowColors.border.withValues(alpha: 0.5),
-                indent: 72,
-              ),
-              itemBuilder: (context, index) {
-                if (index >= profiles.length) {
-                  return _LoadingMoreIndicator(loading: loading);
-                }
-                final profile = profiles[index];
-                return _FollowListTile(
-                  key: ValueKey(profile.id),
-                  profile: profile,
-                  isCurrentUser: profile.id == _currentUserId,
-                  onTap: () => widget.onOpenProfile(profile.id),
-                );
-              },
-            ),
-          // Load more / end indicator
-          if (hasMore)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Center(
-                  child: loading
-                      ? const BroSpinner(size: 22)
-                      : const SizedBox.shrink(),
-                ),
-              ),
-            )
-          else if (!isEmpty && profiles.isNotEmpty)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Center(
-                  child: Text(
-                    'You\'ve seen everyone',
-                    style: TextStyle(color: _FollowColors.muted, fontSize: 13),
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -378,17 +499,16 @@ class _FollowersFollowingScreenState extends State<FollowersFollowingScreen>
   }
 }
 
-/// Search field widget used in the followers/following lists.
 class _SearchField extends StatelessWidget {
   const _SearchField({
     required this.query,
-    required this.onChanged,
     required this.hintText,
+    required this.onChanged,
   });
 
   final String query;
-  final ValueChanged<String> onChanged;
   final String hintText;
+  final ValueChanged<String> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -396,34 +516,42 @@ class _SearchField extends StatelessWidget {
       onChanged: onChanged,
       decoration: InputDecoration(
         hintText: hintText,
-        hintStyle: TextStyle(color: _FollowColors.muted, fontSize: 14),
-        prefixIcon: Icon(Icons.search, color: _FollowColors.muted, size: 20),
+        hintStyle: const TextStyle(color: app_colors.muted, fontSize: 14),
+        prefixIcon: const Icon(
+          Icons.search_rounded,
+          color: app_colors.muted,
+          size: 20,
+        ),
         suffixIcon: query.isNotEmpty
             ? IconButton(
-                icon: Icon(Icons.clear, color: _FollowColors.muted, size: 20),
-                onPressed: () => onChanged(''),
                 tooltip: 'Clear search',
+                icon: const Icon(
+                  Icons.clear_rounded,
+                  color: app_colors.muted,
+                  size: 20,
+                ),
+                onPressed: () => onChanged(''),
               )
             : null,
         filled: true,
-        fillColor: _FollowColors.surface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        fillColor: app_colors.surface,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: _FollowColors.primary, width: 1.5),
+          borderSide: const BorderSide(color: app_colors.volt, width: 1.5),
         ),
       ),
-      style: TextStyle(color: _FollowColors.text, fontSize: 14),
+      style: const TextStyle(color: app_colors.text, fontSize: 14),
       textInputAction: TextInputAction.search,
     );
   }
 }
 
-/// Empty state widget for followers/following lists.
 class _EmptyState extends StatelessWidget {
   const _EmptyState({
     required this.tabIndex,
@@ -438,20 +566,24 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = tabIndex == 0 ? 'followers' : 'following';
-    final icon = tabIndex == 0 ? Icons.people_outline : Icons.person_add_outlined;
-
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 64, color: _FollowColors.muted.withValues(alpha: 0.5)),
+            Icon(
+              tabIndex == 0
+                  ? Icons.people_outline_rounded
+                  : Icons.person_add_outlined,
+              size: 56,
+              color: app_colors.muted.withValues(alpha: 0.5),
+            ),
             const SizedBox(height: 16),
             Text(
               hasSearch ? 'No $label found' : 'No $label yet',
               style: const TextStyle(
-                color: _FollowColors.text,
+                color: app_colors.text,
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
               ),
@@ -460,17 +592,21 @@ class _EmptyState extends StatelessWidget {
             Text(
               hasSearch
                   ? 'Try a different search term'
-                  : 'When someone follows you, they\'ll appear here',
+                  : 'When someone connects with this profile, they appear here',
               textAlign: TextAlign.center,
-              style: TextStyle(color: _FollowColors.muted, fontSize: 14, height: 1.5),
+              style: const TextStyle(
+                color: app_colors.muted,
+                fontSize: 14,
+                height: 1.5,
+              ),
             ),
             if (hasSearch && onClearSearch != null) ...[
               const SizedBox(height: 16),
               TextButton.icon(
                 onPressed: onClearSearch,
-                icon: const Icon(Icons.clear, size: 18),
+                icon: const Icon(Icons.clear_rounded, size: 18),
                 label: const Text('Clear search'),
-                style: TextButton.styleFrom(foregroundColor: _FollowColors.primary),
+                style: TextButton.styleFrom(foregroundColor: app_colors.volt),
               ),
             ],
           ],
@@ -480,7 +616,6 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-/// Loading indicator shown at the bottom of the list when fetching more.
 class _LoadingMoreIndicator extends StatelessWidget {
   const _LoadingMoreIndicator({required this.loading});
 
@@ -489,47 +624,50 @@ class _LoadingMoreIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!loading) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Center(
-        child: const BroSpinner(size: 22),
-      ),
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 16),
+      child: Center(child: BroSpinner(size: 22)),
     );
   }
 }
 
-/// List tile for a follower/following item.
 class _FollowListTile extends StatelessWidget {
   const _FollowListTile({
     super.key,
     required this.profile,
     required this.isCurrentUser,
+    required this.highlighted,
     required this.onTap,
   });
 
   final Profile profile;
   final bool isCurrentUser;
+  final bool highlighted;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: highlighted
+            ? app_colors.volt.withValues(alpha: 0.05)
+            : Colors.transparent,
+      ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        hoverColor: app_colors.volt.withValues(alpha: 0.05),
+        focusColor: app_colors.volt.withValues(alpha: 0.08),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
             children: [
-              // Avatar
-              _FollowAvatar(
+              Avatar(
                 name: profile.peerInitial,
                 url: profile.avatarUrl,
+                digitalConfig: profile.avatarConfig,
                 size: 44,
               ),
               const SizedBox(width: 12),
-              // Name + username
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -538,7 +676,7 @@ class _FollowListTile extends StatelessWidget {
                     Text(
                       profile.label,
                       style: const TextStyle(
-                        color: _FollowColors.text,
+                        color: app_colors.text,
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
@@ -548,10 +686,9 @@ class _FollowListTile extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       '@${profile.username}',
-                      style: TextStyle(
-                        color: _FollowColors.muted,
+                      style: const TextStyle(
+                        color: app_colors.muted,
                         fontSize: 12,
-                        fontWeight: FontWeight.w400,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -559,28 +696,26 @@ class _FollowListTile extends StatelessWidget {
                   ],
                 ),
               ),
-              // Follow button (not for current user)
-              if (!isCurrentUser)
-                _FollowToggleButton(userId: profile.id)
-              else
-                Padding(
-                  padding: const EdgeInsets.only(left: 8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: _FollowColors.muted.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      'You',
-                      style: TextStyle(
-                        color: _FollowColors.muted,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
+              const SizedBox(width: 8),
+              if (isCurrentUser)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: app_colors.muted.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'You',
+                    style: TextStyle(
+                      color: app_colors.muted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                ),
+                )
+              else
+                _FollowToggleButton(userId: profile.id),
             ],
           ),
         ),
@@ -589,52 +724,9 @@ class _FollowListTile extends StatelessWidget {
   }
 }
 
-/// Avatar widget for follower/following list items.
-class _FollowAvatar extends StatelessWidget {
-  const _FollowAvatar({
-    required this.name,
-    required this.url,
-    required this.size,
-  });
-
-  final String name;
-  final String? url;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = [
-      _FollowColors.primary,
-      const Color(0xFF6366F1),
-      const Color(0xFFF59E0B),
-      const Color(0xFFEF4444),
-      const Color(0xFFEC4899),
-      const Color(0xFF14B8A6),
-    ];
-    final colorIndex = name.codeUnitAt(0) % colors.length;
-    final bgColor = colors[colorIndex];
-
-    return CircleAvatar(
-      radius: size / 2,
-      backgroundColor: bgColor,
-      backgroundImage: url != null && url!.isNotEmpty ? NetworkImage(url!) : null,
-      child: url == null || url!.isEmpty
-          ? Text(
-              name,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: size * 0.4,
-                fontWeight: FontWeight.w700,
-              ),
-            )
-          : null,
-    );
-  }
-}
-
-/// A small follow/unfollow toggle button used inside list tiles.
 class _FollowToggleButton extends StatefulWidget {
   const _FollowToggleButton({required this.userId});
+
   final String userId;
 
   @override
@@ -642,17 +734,22 @@ class _FollowToggleButton extends StatefulWidget {
 }
 
 class _FollowToggleButtonState extends State<_FollowToggleButton> {
-  bool? _following; // null = loading
+  bool? _following;
   bool _busy = false;
 
   @override
   void initState() {
     super.initState();
-    Supa.isFollowing(widget.userId).then((v) {
-      if (mounted) setState(() => _following = v);
-    }).catchError((_) {
+    unawaited(_loadState());
+  }
+
+  Future<void> _loadState() async {
+    try {
+      final value = await Supa.isFollowing(widget.userId);
+      if (mounted) setState(() => _following = value);
+    } catch (_) {
       if (mounted) setState(() => _following = false);
-    });
+    }
   }
 
   Future<void> _toggle() async {
@@ -662,7 +759,15 @@ class _FollowToggleButtonState extends State<_FollowToggleButton> {
     try {
       await Supa.setFollowing(widget.userId, !current);
       if (mounted) setState(() => _following = !current);
-    } catch (_) {
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            content: Text(friendlyErrorMessage(error)),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -681,13 +786,23 @@ class _FollowToggleButtonState extends State<_FollowToggleButton> {
               key: ValueKey(_following),
               onPressed: _toggle,
               style: OutlinedButton.styleFrom(
-                foregroundColor: _following! ? _FollowColors.muted : _FollowColors.primary,
+                foregroundColor:
+                    _following! ? app_colors.muted : app_colors.volt,
                 side: BorderSide(
-                    color: _following! ? _FollowColors.border : _FollowColors.primary, width: 1.2),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  color:
+                      _following! ? app_colors.border : app_colors.volt,
+                  width: 1.2,
+                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                 minimumSize: const Size(80, 32),
-                textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                textStyle: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
               child: Text(_following! ? 'Following' : 'Follow'),
             ),

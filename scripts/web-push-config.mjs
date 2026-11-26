@@ -7,4 +7,9 @@ const config = {
   projectId: process.env.FIREBASE_WEB_PROJECT_ID,
 };
 const enabled = Boolean(process.env.FIREBASE_WEB_VAPID_KEY && Object.values(config).every(Boolean));
-writeFileSync(process.argv[2], `self.BRO_FIREBASE_CONFIG = ${JSON.stringify(enabled ? config : null)};\n`);
+const appVersion = process.argv[3] || 'dev';
+writeFileSync(
+  process.argv[2],
+  `self.BRO_APP_VERSION = ${JSON.stringify(appVersion)};\n` +
+    `self.BRO_FIREBASE_CONFIG = ${JSON.stringify(enabled ? config : null)};\n`,
+);

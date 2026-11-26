@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../theme/app_colors.dart' as app_colors;
 import '../models/profile.dart';
 import '../services/status_feed.dart';
 import '../services/supabase.dart';
@@ -10,17 +11,18 @@ import '../ui/motion.dart';
 import '../widgets/responsive_app_shell.dart';
 import '../widgets/status_ring_avatar.dart';
 
-class _C {
-  static const surface = Color(0xFF1E1F25);
-  static const surfaceHigh = Color(0xFF292A2F);
-  static const text = Color(0xFFE3E1E9);
-  static const muted = Color(0xFFC5C9AC);
-  static const primary = Color(0xFFD4FF00);
-  static const darkOnAccent = Color(0xFF0C0D12);
-}
+String? _statusCurrentUserId() => Supa.currentUser?.id;
 
 class StatusScreen extends StatefulWidget {
-  const StatusScreen({super.key});
+  const StatusScreen({
+    super.key,
+    this.watchStatuses = Supa.watchStatuses,
+    this.currentUserId = _statusCurrentUserId,
+  });
+
+  /// Injectable for widget tests; production uses the live Supabase stream.
+  final Stream<List<StatusPost>> Function() watchStatuses;
+  final String? Function() currentUserId;
 
   @override
   State<StatusScreen> createState() => _StatusScreenState();
@@ -32,27 +34,27 @@ class _StatusScreenState extends State<StatusScreen> {
   Future<void> _compose(BuildContext context) async {
     final source = await showModalBottomSheet<String>(
       context: context,
-      backgroundColor: _C.surface,
+      backgroundColor: app_colors.P.surface,
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
               leading:
-                  const Icon(Icons.photo_camera_outlined, color: _C.primary),
-              title: const Text('Camera', style: TextStyle(color: _C.text)),
+                  const Icon(Icons.photo_camera_outlined, color: app_colors.P.primary),
+              title: const Text('Camera', style: TextStyle(color: app_colors.P.text)),
               onTap: () => Navigator.pop(ctx, 'camera'),
             ),
             ListTile(
-              leading: const Icon(Icons.photo_outlined, color: _C.primary),
+              leading: const Icon(Icons.photo_outlined, color: app_colors.P.primary),
               title:
-                  const Text('Photo library', style: TextStyle(color: _C.text)),
+                  const Text('Photo library', style: TextStyle(color: app_colors.P.text)),
               onTap: () => Navigator.pop(ctx, 'gallery'),
             ),
             ListTile(
-              leading: const Icon(Icons.text_fields, color: _C.primary),
+              leading: const Icon(Icons.text_fields, color: app_colors.P.primary),
               title:
-                  const Text('Text status', style: TextStyle(color: _C.text)),
+                  const Text('Text status', style: TextStyle(color: app_colors.P.text)),
               onTap: () => Navigator.pop(ctx, 'text'),
             ),
             const SizedBox(height: 8),
@@ -68,7 +70,7 @@ class _StatusScreenState extends State<StatusScreen> {
   Widget build(BuildContext context) {
     final content = StreamBuilder<List<StatusPost>>(
       key: ValueKey(_token),
-      stream: Supa.watchStatuses(),
+      stream: widget.watchStatuses(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
@@ -82,7 +84,7 @@ class _StatusScreenState extends State<StatusScreen> {
             onRetry: () => setState(() => _token++),
           );
         }
-        final me = Supa.currentUser?.id ?? '';
+        final me = widget.currentUserId() ?? '';
         final threads = groupStatusFeed(snapshot.data ?? [], me);
         StatusThread? mine;
         for (final thread in threads) {
@@ -93,15 +95,14 @@ class _StatusScreenState extends State<StatusScreen> {
         }
         final others = threads.where((t) => t.userId != me).toList();
         return RefreshIndicator(
-          color: _C.primary,
-          backgroundColor: _C.surface,
+          color: app_colors.P.primary,
+          backgroundColor: app_colors.P.surface,
           onRefresh: () async {
             setState(() => _token++);
             await Future<void>.delayed(const Duration(milliseconds: 400));
           },
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 96),
-            children: [
+          child: LayoutBuilder(builder: (context, constraints) {
+            final tiles = <Widget>[
               FadeSlideIn(
                 index: 0,
                 child: PressScale(
@@ -109,54 +110,77 @@ class _StatusScreenState extends State<StatusScreen> {
                   child: _MyStatusTile(thread: mine),
                 ),
               ),
-              if (others.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(28, 48, 28, 24),
-                  child: Column(
-                    children: [
-                      Icon(Icons.slow_motion_video_outlined,
-                          color: _C.muted, size: 48),
-                      SizedBox(height: 14),
-                      Text('No updates yet',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              color: _C.text,
-                              fontSize: 17,
-                              fontWeight: FontWeight.w600)),
-                      SizedBox(height: 8),
-                      Text(
-                        'When contacts share a photo or a thought, it shows up here for $statusLifetimeHours hours.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                            color: _C.muted, fontSize: 13, height: 1.4),
-                      ),
-                    ],
-                  ),
-                )
-              else ...[
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
-                  child: Text('Recent updates',
-                      style: TextStyle(
-                          color: _C.muted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.4)),
-                ),
-                for (int i = 0; i < others.length; i++)
-                  FadeSlideIn(
-                    index: (i + 1).clamp(0, 8),
-                    child: PressScale(
-                      scaleFactor: 0.98,
-                      child: _PeerStatusTile(
-                        thread: others[i],
-                        userIds: others.map((t) => t.userId).toList(),
-                      ),
+              for (int i = 0; i < others.length; i++)
+                FadeSlideIn(
+                  index: (i + 1).clamp(0, 8),
+                  child: PressScale(
+                    scaleFactor: 0.98,
+                    child: _PeerStatusTile(
+                      thread: others[i],
+                      userIds: others.map((t) => t.userId).toList(),
                     ),
                   ),
+                ),
+            ];
+            if (constraints.maxWidth >= app_colors.desktopBreakpoint) {
+              return GridView.builder(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
+                itemCount: tiles.length,
+                gridDelegate:
+                    const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 360,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 3.2,
+                ),
+                itemBuilder: (_, index) => tiles[index],
+              );
+            }
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 96),
+              children: [
+                tiles[0],
+                if (others.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(28, 48, 28, 24),
+                    child: Column(
+                      children: [
+                        Icon(Icons.slow_motion_video_outlined,
+                            color: app_colors.P.muted, size: 48),
+                        SizedBox(height: 14),
+                        Text('No updates yet',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                color: app_colors.P.text,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600)),
+                        SizedBox(height: 8),
+                        Text(
+                          'When contacts share a photo or a thought, it shows up here for $statusLifetimeHours hours.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              color: app_colors.P.muted,
+                              fontSize: 13,
+                              height: 1.4),
+                        ),
+                      ],
+                    ),
+                  )
+                else ...[
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
+                    child: Text('Recent updates',
+                        style: TextStyle(
+                            color: app_colors.P.muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.4)),
+                  ),
+                  for (int i = 1; i < tiles.length; i++) tiles[i],
+                ],
               ],
-            ],
-          ),
+            );
+          }),
         );
       },
     );
@@ -167,8 +191,8 @@ class _StatusScreenState extends State<StatusScreen> {
       navIndex: 2,
       body: content,
       floatingActionButton: FloatingActionButton(
-        backgroundColor: _C.primary,
-        foregroundColor: _C.darkOnAccent,
+        backgroundColor: app_colors.P.primary,
+        foregroundColor: app_colors.P.darkOnAccent,
         tooltip: 'New status',
         elevation: 4,
         onPressed: () => _compose(context),
@@ -200,17 +224,17 @@ class _MyStatusTile extends StatelessWidget {
         ),
       ),
       title: const Text('My status',
-          style: TextStyle(color: _C.text, fontWeight: FontWeight.w700)),
+          style: TextStyle(color: app_colors.P.text, fontWeight: FontWeight.w700)),
       subtitle: Text(
         has
             ? '${thread!.count} update${thread!.count == 1 ? '' : 's'} · ${statusTimeAgo(post!.createdAt, DateTime.now())} · ${statusTimeLeft(post.expiresAt, DateTime.now())}'
             : 'Tap to share a photo or a thought',
-        style: const TextStyle(color: _C.muted, fontSize: 13),
+        style: const TextStyle(color: app_colors.P.muted, fontSize: 13),
       ),
       trailing: IconButton(
         tooltip: 'New status',
         onPressed: () => context.push('/status/new?source=text'),
-        icon: const Icon(Icons.add_circle_outline, color: _C.primary),
+        icon: const Icon(Icons.add_circle_outline, color: app_colors.P.primary),
       ),
     );
   }
@@ -238,10 +262,10 @@ class _PeerStatusTile extends StatelessWidget {
         ),
       ),
       title: Text(post.userLabel,
-          style: const TextStyle(color: _C.text, fontWeight: FontWeight.w600)),
+          style: const TextStyle(color: app_colors.P.text, fontWeight: FontWeight.w600)),
       subtitle: Text(
         '${statusTimeAgo(post.createdAt, DateTime.now())} · ${statusPrivacyLabel(post.privacy)}',
-        style: const TextStyle(color: _C.muted, fontSize: 13),
+        style: const TextStyle(color: app_colors.P.muted, fontSize: 13),
       ),
     );
   }
@@ -260,13 +284,13 @@ class _MiniAvatar extends StatelessWidget {
       height: size,
       alignment: Alignment.center,
       decoration: const BoxDecoration(
-        color: _C.surfaceHigh,
+        color: app_colors.P.surfaceHigh,
         shape: BoxShape.circle,
       ),
       child: url == null || url!.isEmpty
           ? Text(name.toUpperCase(),
               style: TextStyle(
-                  color: _C.text,
+                  color: app_colors.P.text,
                   fontSize: size * 0.36,
                   fontWeight: FontWeight.w700))
           : ClipOval(
@@ -277,7 +301,7 @@ class _MiniAvatar extends StatelessWidget {
                   errorBuilder: (_, __, ___) => Center(
                       child: Text(name.toUpperCase(),
                           style: TextStyle(
-                              color: _C.text,
+                              color: app_colors.P.text,
                               fontSize: size * 0.36,
                               fontWeight: FontWeight.w700))))),
     );

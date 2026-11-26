@@ -1,4 +1,3 @@
-import '../../services/legacy_messaging.dart';
 import '../../services/calls.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -23,7 +22,6 @@ import '../../chat/widgets.dart';
 import '../../models/avatar_config.dart';
 import '../../services/voice_note.dart';
 import '../../services/voice_note_codec.dart';
-import '../../services/voice_note_send.dart';
 import '../../services/scheduled_messages.dart' as scheduled;
 import '../../services/secure_screen.dart';
 import '../../models/profile.dart';
@@ -35,6 +33,8 @@ import '../../widgets/game_presence.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Presence;
 import 'widgets/avatar.dart';
 import '../navigation/nav_sidebar.dart';
+import '../../widgets/desktop_workspace_shell.dart';
+import 'conversation_list_screen.dart';
 import '../lock_gate.dart';
 import '../../services/app_lock.dart';
 
@@ -131,9 +131,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _flushOutbox() async {
     final senderId = Supa.currentUser?.id;
-    if (!LegacyMessaging.allowed(senderId) ||
-        senderId == null ||
-        !ConnectionMonitor.isOnline.value) {
+    if (senderId == null || !ConnectionMonitor.isOnline.value) {
       return;
     }
     bool isSenderActive() => Supa.currentUser?.id == senderId;
@@ -433,55 +431,36 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _openVoiceNote() async {
     if (kIsWeb) return;
-    if (!await _allowLegacyMessaging() || !mounted) return;
-    final outcome = await showDialog<VoiceNoteOutcome>(
-      context: context,
-      builder: (dialogContext) =>
-          _VoiceNoteDialog(conversationId: widget.conversationId),
+    _unsupported(
+      'Voice notes are temporarily unavailable while encrypted media transfer is being added.',
     );
-    if (outcome == null || !outcome.isSuccess || !mounted) return;
-    final senderId = Supa.currentUser?.id;
-    if (senderId == null || Supa.currentUser?.id != senderId) return;
-    final now = DateTime.now();
-    final pending = voiceNotePendingMessage(
-      outcome: outcome,
-      conversationId: widget.conversationId,
-      senderId: senderId,
-      localId: const Uuid().v4(),
-      now: now,
-      expiry: _messageExpiry,
-    );
-    await _addPending(pending);
-    if (!mounted) return;
-    setState(() {});
-    unawaited(_flushOutbox());
   }
 
-  Future<bool> _allowLegacyMessaging() async {
+  Future<bool> _ensureSecureMessaging() async {
     final owner = Supa.currentUser?.id;
     if (owner == null) return false;
-    if (LegacyMessaging.allowed(owner)) return true;
-    final accept = await showDialog<bool>(
-        context: context,
-        builder: (dialog) => AlertDialog(
-              title: const Text('Use legacy messaging?'),
-              content: const Text(
-                  'BRO’s server can read messages, drafts, reactions and files sent using this mode. Enable it for this session only. Do not share sensitive information here.'),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(dialog, false),
-                    child: const Text('Keep read-only')),
-                FilledButton(
-                    onPressed: () => Navigator.pop(dialog, true),
-                    child: const Text('Enable legacy messaging'))
-              ],
-            ));
-    if (!mounted || Supa.currentUser?.id != owner || accept != true) {
+    try {
+      await Supa.initializeEncryptionKeys();
+      return mounted && Supa.currentUser?.id == owner;
+    } on E2eeException catch (error) {
+      if (mounted && Supa.currentUser?.id == owner) {
+        final message = switch (error.reason) {
+          E2eeFailure.peerBundleUnavailable =>
+            'Everyone in this chat needs the latest BRO app and must open it once before secure messaging is available.',
+          E2eeFailure.identityChanged =>
+            'A contact’s security key changed. Verify their safety number before continuing.',
+          _ => 'Secure messaging could not start. Your message was not sent.',
+        };
+        _unsupported(message);
+      }
+      return false;
+    } catch (_) {
+      if (mounted && Supa.currentUser?.id == owner) {
+        _unsupported(
+            'Secure messaging could not start. Your message was not sent.');
+      }
       return false;
     }
-    setState(() => LegacyMessaging.allow(owner));
-    unawaited(_restorePendingMessages());
-    return true;
   }
 
   Future<void> _send() async {
@@ -491,7 +470,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (senderId == null ||
         content.isEmpty ||
         _sendingMessage ||
-        !await _allowLegacyMessaging() ||
+        !await _ensureSecureMessaging() ||
         !mounted ||
         Supa.currentUser?.id != senderId ||
         _sendingMessage) {
@@ -536,9 +515,11 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (e) {
       _markPendingFailed(pending);
       if (mounted && Supa.currentUser?.id == senderId) {
-        _unsupported(friendlyErrorMessage(e,
-            fallback:
-                "That message didn't go through. It's still in the box if you want to retry."));
+        final fallback = e is E2eeException &&
+                e.reason == E2eeFailure.peerBundleUnavailable
+            ? 'Secure messaging is not ready for everyone in this chat. Ask participants to open the latest BRO app, then retry.'
+            : "That message didn't go through. It's still in the box if you want to retry.";
+        _unsupported(friendlyErrorMessage(e, fallback: fallback));
       }
     } finally {
       if (mounted) setState(() => _sendingMessage = false);
@@ -1115,7 +1096,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
     ).then((emoji) async {
-      if (mounted && emoji is String && await _allowLegacyMessaging()) {
+      if (mounted && emoji is String && await _ensureSecureMessaging()) {
         try {
           await Supa.addReaction(message.id, emoji);
         } catch (_) {
@@ -1135,7 +1116,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (hasReacted) {
       await Supa.removeReaction(messageId, emoji);
     } else {
-      if (mounted && await _allowLegacyMessaging()) {
+      if (mounted && await _ensureSecureMessaging()) {
         await Supa.addReaction(messageId, emoji);
       }
     }
@@ -1285,11 +1266,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _showMessageActions(Message message) async {
     final isMine = message.senderId == Supa.currentUser!.id;
-    final now = DateTime.now();
-    final messageAge = now.difference(message.createdAt);
-    final canEdit = isMine &&
-        messageAge <= const Duration(minutes: 15) &&
-        !message.content.startsWith('attachment:');
+    // Edits need an encrypted history format; keep this disabled until it is
+    // implemented so plaintext never enters message_edit_history.
+    final messageAge = DateTime.now().difference(message.createdAt);
     final canDeleteForEveryone =
         isMine && messageAge <= const Duration(hours: 1);
     final action = await showModalBottomSheet<String>(
@@ -1312,11 +1291,6 @@ class _ChatScreenState extends State<ChatScreen> {
               Navigator.pop(sheetContext);
               unawaited(_showSafetyNumber());
             }),
-        if (canEdit)
-          ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('Edit message'),
-              onTap: () => Navigator.pop(sheetContext, 'edit')),
         if (canDeleteForEveryone)
           ListTile(
               leading: const Icon(Icons.delete_forever_outlined,
@@ -1358,33 +1332,6 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       if (action == 'edit_history' && mounted) {
         await _showEditHistory(message);
-      }
-      if (action == 'edit' && mounted) {
-        final controller = TextEditingController(text: message.content);
-        final updated = await showDialog<String>(
-            context: context,
-            builder: (dialogContext) => AlertDialog(
-                  title: const Text('Edit message'),
-                  content: TextField(
-                      controller: controller, autofocus: true, maxLines: 4),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(dialogContext),
-                        child: const Text('Cancel')),
-                    FilledButton(
-                        onPressed: () => Navigator.pop(
-                            dialogContext, controller.text.trim()),
-                        child: const Text('Save'))
-                  ],
-                ));
-        controller.dispose();
-        if (updated != null &&
-            updated.isNotEmpty &&
-            updated != message.content) {
-          if (await _allowLegacyMessaging()) {
-            await Supa.updateMessage(message.id, updated);
-          }
-        }
       }
       if (action == 'delete_for_everyone' && mounted) {
         final confirm = await showDialog<bool>(
@@ -1544,175 +1491,23 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// Show a schedule picker dialog to schedule the current message text.
+  /// Scheduling stays disabled until its server-side queue stores ciphertext.
   Future<void> _showSchedulePicker() async {
-    final text = _ctrl.text.trim();
-    if (text.isEmpty) {
-      _unsupported('Type a message first, then tap the schedule icon.');
-      return;
-    }
-
-    final now = DateTime.now();
-    DateTime selectedDate = now.add(const Duration(hours: 1)).copyWith(
-          second: 0,
-          millisecond: 0,
-          microsecond: 0,
-        );
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          backgroundColor: _P.surface,
-          title:
-              const Text('Schedule message', style: TextStyle(color: _P.text)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'This message will be sent at:\n'
-                '${DateFormat('EEEE, MMMM d · h:mm a').format(selectedDate)}',
-                style: const TextStyle(color: _P.text, fontSize: 14),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.calendar_today,
-                          size: 18, color: _P.primary),
-                      label: Text(
-                        DateFormat('MMM d').format(selectedDate),
-                        style: const TextStyle(color: _P.text, fontSize: 13),
-                      ),
-                      onPressed: () async {
-                        final picked = await showDatePicker(
-                          context: ctx,
-                          initialDate: selectedDate,
-                          firstDate: now,
-                          lastDate: now.add(const Duration(days: 30)),
-                        );
-                        if (picked != null) {
-                          setLocal(() {
-                            selectedDate = selectedDate.copyWith(
-                              year: picked.year,
-                              month: picked.month,
-                              day: picked.day,
-                            );
-                          });
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.access_time,
-                          size: 18, color: _P.primary),
-                      label: Text(
-                        DateFormat('h:mm a').format(selectedDate),
-                        style: const TextStyle(color: _P.text, fontSize: 13),
-                      ),
-                      onPressed: () async {
-                        final picked = await showTimePicker(
-                          context: ctx,
-                          initialTime: TimeOfDay.fromDateTime(selectedDate),
-                        );
-                        if (picked != null) {
-                          setLocal(() {
-                            selectedDate = selectedDate.copyWith(
-                              hour: picked.hour,
-                              minute: picked.minute,
-                            );
-                          });
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                children: [
-                  _SchedulePresetBtn('1 hr', const Duration(hours: 1), setLocal,
-                      now, (d) => selectedDate = d),
-                  _SchedulePresetBtn('Tomorrow', const Duration(days: 1),
-                      setLocal, now, (d) => selectedDate = d),
-                  _SchedulePresetBtn('Next week', const Duration(days: 7),
-                      setLocal, now, (d) => selectedDate = d),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel')),
-            FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Schedule')),
-          ],
-        ),
-      ),
+    _unsupported(
+      'Scheduled messages are temporarily unavailable because they must be encrypted on this device.',
     );
-
-    if (confirmed != true) return;
-    try {
-      if (!await _allowLegacyMessaging()) return;
-      await scheduled.ScheduledMessages.schedule(
-        conversationId: widget.conversationId,
-        content: text,
-        scheduledAt: selectedDate.toUtc(),
-        replyToId: _replyTo?.id,
-      );
-      if (mounted) {
-        _ctrl.clear();
-        setState(() => _replyTo = null);
-        _unsupported('Message scheduled! ⏰');
-      }
-    } catch (e) {
-      if (mounted) {
-        _unsupported(friendlyErrorMessage(e,
-            fallback: "Couldn't schedule the message. Try again."));
-      }
-    }
   }
 
-  /// Show a GIF picker using the Giphy API.
+  /// GIF payloads require encrypted media upload before they can be sent.
   Future<void> _showGifPicker() async {
-    if (!await _allowLegacyMessaging() || !mounted) return;
-    await showModalBottomSheet(
-      context: context,
-      backgroundColor: _P.surface,
-      isScrollControlled: true,
-      builder: (_) => SafeArea(
-        child: SizedBox(
-          height: 450,
-          child: _GifPicker(onGifSelected: (gifUrl) async {
-            Navigator.pop(context);
-            try {
-              final attachment = await Supa.uploadAttachmentFromUrl(
-                  widget.conversationId, gifUrl, 'gif');
-              await Supa.sendMessage(widget.conversationId,
-                  'attachment:${jsonEncode(attachment)}');
-              if (mounted) _rollToBottom();
-            } catch (e) {
-              if (mounted) {
-                _unsupported(friendlyErrorMessage(e,
-                    fallback: "Couldn't send that GIF. Please try again."));
-              }
-            }
-          }),
-        ),
-      ),
+    _unsupported(
+      'GIF sharing is temporarily unavailable while encrypted media transfer is being added.',
     );
   }
 
   /// Show a sticker picker and send the chosen sticker.
   Future<void> _showStickerPicker() async {
-    if (!await _allowLegacyMessaging() || !mounted) return;
+    if (!await _ensureSecureMessaging() || !mounted) return;
     await showModalBottomSheet(
       context: context,
       backgroundColor: _P.surface,
@@ -1739,55 +1534,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _sendAttachment(
       Uint8List bytes, String name, String mimeType) async {
-    final senderId = Supa.currentUser?.id;
-    if (senderId == null ||
-        _sendingMessage ||
-        !await _allowLegacyMessaging() ||
-        !mounted ||
-        Supa.currentUser?.id != senderId ||
-        _sendingMessage) {
-      return;
-    }
-    if (bytes.length > 20 * 1024 * 1024) {
-      _unsupported('Files must be 20 MB or smaller.');
-      return;
-    }
-    setState(() => _sendingMessage = true);
-    final localId = const Uuid().v4();
-    final expiresAt =
-        _messageExpiry == null ? null : DateTime.now().add(_messageExpiry!);
-    try {
-      final attachment = await Supa.uploadAttachment(
-          widget.conversationId, bytes, name, mimeType);
-      if (!mounted || Supa.currentUser?.id != senderId) return;
-      final pending = PendingMessage(
-        localId: localId,
-        conversationId: widget.conversationId,
-        senderId: senderId,
-        content: 'attachment:${jsonEncode(attachment)}',
-        createdAt: DateTime.now(),
-        expiresAt: expiresAt,
-      );
-      try {
-        await _addPending(pending);
-        await Supa.sendMessage(
-          widget.conversationId,
-          pending.content,
-          expectedSenderId: senderId,
-        );
-        _removePending(localId);
-        if (Supa.currentUser?.id == senderId) _rollToBottom();
-      } catch (e) {
-        _markPendingFailed(pending);
-        if (Supa.currentUser?.id == senderId) {
-          _unsupported(friendlyErrorMessage(e,
-              fallback:
-                  "We couldn't upload that file. Check your connection and try again."));
-        }
-      }
-    } finally {
-      if (mounted) setState(() => _sendingMessage = false);
-    }
+    _unsupported(
+      'File sharing is temporarily unavailable while encrypted media transfer is being added.',
+    );
   }
 
   String _mimeType(String filename) {
@@ -1848,104 +1597,151 @@ class _ChatScreenState extends State<ChatScreen> {
         onUnlocked: () => setState(() => _conversationUnlocked = true),
       );
     }
-    return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          tooltip: 'Back to chats',
-          onPressed: () {
-            if (context.canPop()) {
-              context.pop();
-            } else {
-              context.go('/conversations');
-            }
-          },
-        ),
-        title: InkWell(
-          onTap: () {
-            final peer = _peer;
-            if (peer != null) context.push('/profile/${peer.id}');
-          },
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-            child: Row(
-              children: [
-                ValueListenableBuilder<int>(
-                  valueListenable: Presence.epoch,
-                  builder: (_, __, ___) => Avatar(
-                    name: _peer?.peerInitial ?? '?',
-                    url: _peer?.avatarUrl,
-                    digitalConfig: _peer?.avatarConfig,
-                    size: 38,
-                    showOnlineDot:
-                        _peerTyping == null && Presence.isOnline(_peer?.id),
-                  ),
+    return Focus(
+      autofocus: true,
+      onKeyEvent: _onRootKeyEvent,
+      child: LayoutBuilder(builder: (context, outer) {
+        if (outer.maxWidth >= app_colors.desktopWideBreakpoint) {
+          return Scaffold(
+            body: DesktopWorkspaceShell(
+              navIndex: 0,
+              showDetailHeader: false,
+              listPane: ConversationListPane(
+                embedded: true,
+                selectedId: widget.conversationId,
+                onConversationSelected: (conv) => context.go(
+                  '/chat/${conv.id}',
+                  extra: conv.toPeerProfile(),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _peer?.label ?? 'Chat',
-                        style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: _P.text),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      _PeerStatusLine(
-                        typing: _peerTyping != null,
-                        peerId: _peer?.id,
-                        fallback: _peer != null
-                            ? '@${_peer!.username}'
-                            : 'Direct message',
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+              ),
+              detailPane: Scaffold(
+                appBar: _buildChatAppBar(showBackButton: false),
+                body: _buildChatBody(embedded: true),
+              ),
             ),
+          );
+        }
+        return Scaffold(
+          appBar: _buildChatAppBar(),
+          body: _buildChatBody(embedded: false),
+        );
+      }),
+    );
+  }
+
+  KeyEventResult _onRootKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.escape) {
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/conversations');
+      }
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  PreferredSizeWidget _buildChatAppBar({bool showBackButton = true}) {
+    return AppBar(
+      titleSpacing: 0,
+      automaticallyImplyLeading: showBackButton,
+      leading: showBackButton
+          ? IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+              tooltip: 'Back to chats',
+              onPressed: () {
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go('/conversations');
+                }
+              },
+            )
+          : null,
+      title: InkWell(
+        onTap: () {
+          final peer = _peer;
+          if (peer != null) context.push('/profile/${peer.id}');
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+          child: Row(
+            children: [
+              ValueListenableBuilder<int>(
+                valueListenable: Presence.epoch,
+                builder: (_, __, ___) => Avatar(
+                  name: _peer?.peerInitial ?? '?',
+                  url: _peer?.avatarUrl,
+                  digitalConfig: _peer?.avatarConfig,
+                  size: 38,
+                  showOnlineDot:
+                      _peerTyping == null && Presence.isOnline(_peer?.id),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _peer?.label ?? 'Chat',
+                      style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: _P.text),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    _PeerStatusLine(
+                      typing: _peerTyping != null,
+                      peerId: _peer?.id,
+                      fallback: _peer != null
+                          ? '@${_peer!.username}'
+                          : 'Direct message',
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-        actions: [
-          _ActionBtn(Icons.videocam_rounded,
-              onTap: () => _startCall(video: true)),
-          _ActionBtn(Icons.phone_rounded,
-              onTap: () => _startCall(video: false)),
-          _ActionBtn(Icons.more_vert, onTap: () => _showChatMenu(context)),
-          const SizedBox(width: 6),
-        ],
       ),
-      body: Column(children: [
-        ListTile(
-          leading: const Icon(Icons.lock_open_outlined),
-          title: const Text('Not end-to-end encrypted'),
-          subtitle: Text(LegacyMessaging.allowed(Supa.currentUser?.id)
-              ? 'Legacy messaging enabled for this session.'
-              : 'You can read history. Sending requires opting in.'),
-          trailing: LegacyMessaging.allowed(Supa.currentUser?.id)
-              ? null
-              : TextButton(
-                  onPressed: _allowLegacyMessaging,
-                  child: const Text('Review')),
-        ),
-        Expanded(
-            child: LayoutBuilder(
-                builder: (context, constraints) =>
-                    constraints.maxWidth > _adaptiveBreakpoint
-                        ? _buildLargeScreenChat(
-                            context,
-                            compactRail: constraints.maxWidth <
-                                app_colors.desktopBreakpoint,
-                          )
-                        : _buildSmallScreenChat(context))),
-      ]),
+      actions: [
+        _ActionBtn(Icons.videocam_rounded,
+            tooltip: 'Video call', onTap: () => _startCall(video: true)),
+        _ActionBtn(Icons.phone_rounded,
+            tooltip: 'Voice call', onTap: () => _startCall(video: false)),
+        _ActionBtn(Icons.more_vert,
+            tooltip: 'More options', onTap: () => _showChatMenu(context)),
+        const SizedBox(width: 6),
+      ],
     );
+  }
+
+  Widget _buildChatBody({required bool embedded}) {
+    return Column(children: [
+      ListTile(
+        leading: const Icon(Icons.lock_outline_rounded, color: Colors.green),
+        title: const Text('New text messages are end-to-end encrypted'),
+        subtitle: const Text(
+          'Older messages remain unchanged. Files, voice notes, GIFs and scheduled messages are disabled until encrypted transfer is ready.',
+        ),
+      ),
+      Expanded(
+          child: LayoutBuilder(
+              builder: (context, constraints) =>
+                  constraints.maxWidth > _adaptiveBreakpoint
+                      ? _buildLargeScreenChat(
+                          context,
+                          compactRail: constraints.maxWidth <
+                              app_colors.desktopBreakpoint,
+                          embedded: embedded,
+                        )
+                      : _buildSmallScreenChat(context))),
+    ]);
   }
 
   Widget _buildSmallScreenChat(BuildContext context) {
@@ -2150,218 +1946,212 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildLargeScreenChat(BuildContext context,
-      {bool compactRail = false}) {
-    return Row(
-      children: [
-        NavSidebar(compact: compactRail),
-        Expanded(
-          child: StreamBuilder<List<Message>>(
-            stream: Supa.watchMessages(widget.conversationId),
-            builder: (context, snapshot) {
-              final messages = snapshot.data ?? [];
-              _resolveUnreadDivider(messages);
-              final display = _displayMessages(messages);
-              final pinnedMessages = messages
-                  .where((m) => m.pinnedAt != null)
-                  .toList()
-                ..sort((a, b) => (b.pinnedAt!).compareTo(a.pinnedAt!));
-              final showBanner =
-                  pinnedMessages.isNotEmpty && !_pinnedBannerDismissed;
+      {bool compactRail = false, bool embedded = false}) {
+    final content = StreamBuilder<List<Message>>(
+      stream: Supa.watchMessages(widget.conversationId),
+      builder: (context, snapshot) {
+        final messages = snapshot.data ?? [];
+        _resolveUnreadDivider(messages);
+        final display = _displayMessages(messages);
+        final pinnedMessages = messages
+            .where((m) => m.pinnedAt != null)
+            .toList()
+          ..sort((a, b) => (b.pinnedAt!).compareTo(a.pinnedAt!));
+        final showBanner = pinnedMessages.isNotEmpty && !_pinnedBannerDismissed;
 
-              return Column(
-                children: [
-                  // Pinned message banner
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 220),
-                    transitionBuilder: (child, anim) => SizeTransition(
-                      sizeFactor: anim,
-                      alignment: Alignment.topCenter,
-                      child: FadeTransition(opacity: anim, child: child),
-                    ),
-                    child: showBanner
-                        ? _PinnedMessagesBanner(
-                            key: const ValueKey('banner'),
-                            pinnedMessages: pinnedMessages,
-                            currentIndex: _pinnedBannerIndex.clamp(
-                                0, pinnedMessages.length - 1),
-                            onTap: () {
-                              final idx = _pinnedBannerIndex.clamp(
-                                  0, pinnedMessages.length - 1);
-                              final msg = pinnedMessages[idx];
-                              final msgIdx = messages.indexOf(msg);
-                              if (msgIdx >= 0) {
-                                _scrollToMessage(msgIdx, messages.length);
+        return Column(
+          children: [
+            // Pinned message banner
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              transitionBuilder: (child, anim) => SizeTransition(
+                sizeFactor: anim,
+                alignment: Alignment.topCenter,
+                child: FadeTransition(opacity: anim, child: child),
+              ),
+              child: showBanner
+                  ? _PinnedMessagesBanner(
+                      key: const ValueKey('banner'),
+                      pinnedMessages: pinnedMessages,
+                      currentIndex: _pinnedBannerIndex.clamp(
+                          0, pinnedMessages.length - 1),
+                      onTap: () {
+                        final idx = _pinnedBannerIndex.clamp(
+                            0, pinnedMessages.length - 1);
+                        final msg = pinnedMessages[idx];
+                        final msgIdx = messages.indexOf(msg);
+                        if (msgIdx >= 0) {
+                          _scrollToMessage(msgIdx, messages.length);
+                        }
+                        setState(() {
+                          _pinnedBannerIndex =
+                              (_pinnedBannerIndex + 1) % pinnedMessages.length;
+                        });
+                      },
+                      onLongPress: () => _showPinnedMessagesSheet(
+                        context,
+                        pinnedMessages,
+                        (i, total) {
+                          final msg = pinnedMessages[
+                              i.clamp(0, pinnedMessages.length - 1)];
+                          final msgIdx = messages.indexOf(msg);
+                          if (msgIdx >= 0) {
+                            _scrollToMessage(msgIdx, messages.length);
+                          }
+                        },
+                        (msg) async {
+                          await Supa.setMessagePinned(msg.id, false);
+                        },
+                      ),
+                      onDismiss: () =>
+                          setState(() => _pinnedBannerDismissed = true),
+                    )
+                  : const SizedBox.shrink(key: ValueKey('no-banner')),
+            ),
+            Expanded(
+              child: Container(
+                decoration: _chatCanvas(_chatBackground,
+                    imageUrl: _chatBackgroundImageUrl),
+                child: Builder(builder: (context) {
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      messages.isEmpty) {
+                    return const BubbleSkeleton();
+                  }
+                  if (snapshot.hasError) {
+                    return _ErrorState(
+                        message: "Couldn't load this chat",
+                        detail: kLoadFailedDetail,
+                        onRetry: _onRetry);
+                  }
+                  if (messages.isEmpty) {
+                    return _EmptyState(
+                      peerName: _peer?.label,
+                      onSayHello: () {
+                        _ctrl.text = 'Hey! 👋';
+                        _send();
+                      },
+                    );
+                  }
+                  _markUnreadAsReadIfNeeded(messages);
+                  return Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: compactRail ? 680 : 760,
+                      ),
+                      child: Stack(
+                        children: [
+                          ListView.builder(
+                            controller: _scroll,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 12),
+                            itemCount: display.length +
+                                (_unreadDividerId == null ? 0 : 1),
+                            itemBuilder: (_, index) {
+                              final dividerIndex = _unreadDividerId == null
+                                  ? -1
+                                  : display.indexWhere(
+                                      (m) => m.id == _unreadDividerId);
+                              if (dividerIndex >= 0 && index == dividerIndex) {
+                                return const UnreadDivider();
                               }
-                              setState(() {
-                                _pinnedBannerIndex = (_pinnedBannerIndex + 1) %
-                                    pinnedMessages.length;
-                              });
+                              final i =
+                                  dividerIndex >= 0 && index > dividerIndex
+                                      ? index - 1
+                                      : index;
+                              return _MessageRow(
+                                msg: display[i],
+                                prev: i > 0 ? display[i - 1] : null,
+                                next: i + 1 < display.length
+                                    ? display[i + 1]
+                                    : null,
+                                peerId: _peer?.id,
+                                peerAvatarUrl: _peer?.avatarUrl,
+                                peerName: _peer?.peerInitial ?? '?',
+                                peerDigitalConfig: _peer?.avatarConfig,
+                                me: Supa.currentUser!.id,
+                                onLongPress: _showMessageActions,
+                                onReactionTap: _toggleReaction,
+                                messages: display,
+                                pendingStatus:
+                                    _pendingMessages[display[i].id]?.status,
+                              );
                             },
-                            onLongPress: () => _showPinnedMessagesSheet(
-                              context,
-                              pinnedMessages,
-                              (i, total) {
-                                final msg = pinnedMessages[
-                                    i.clamp(0, pinnedMessages.length - 1)];
-                                final msgIdx = messages.indexOf(msg);
-                                if (msgIdx >= 0) {
-                                  _scrollToMessage(msgIdx, messages.length);
-                                }
-                              },
-                              (msg) async {
-                                await Supa.setMessagePinned(msg.id, false);
-                              },
-                            ),
-                            onDismiss: () =>
-                                setState(() => _pinnedBannerDismissed = true),
-                          )
-                        : const SizedBox.shrink(key: ValueKey('no-banner')),
-                  ),
-                  Expanded(
-                    child: Container(
-                      decoration: _chatCanvas(_chatBackground,
-                          imageUrl: _chatBackgroundImageUrl),
-                      child: Builder(builder: (context) {
-                        if (snapshot.connectionState ==
-                                ConnectionState.waiting &&
-                            messages.isEmpty) {
-                          return const BubbleSkeleton();
-                        }
-                        if (snapshot.hasError) {
-                          return _ErrorState(
-                              message: "Couldn't load this chat",
-                              detail: kLoadFailedDetail,
-                              onRetry: _onRetry);
-                        }
-                        if (messages.isEmpty) {
-                          return _EmptyState(
-                            peerName: _peer?.label,
-                            onSayHello: () {
-                              _ctrl.text = 'Hey! 👋';
-                              _send();
-                            },
-                          );
-                        }
-                        _markUnreadAsReadIfNeeded(messages);
-                        return Center(
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxWidth: compactRail ? 680 : 760,
-                            ),
-                            child: Stack(
-                              children: [
-                                ListView.builder(
-                                  controller: _scroll,
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 12),
-                                  itemCount: display.length +
-                                      (_unreadDividerId == null ? 0 : 1),
-                                  itemBuilder: (_, index) {
-                                    final dividerIndex = _unreadDividerId ==
-                                            null
-                                        ? -1
-                                        : display.indexWhere(
-                                            (m) => m.id == _unreadDividerId);
-                                    if (dividerIndex >= 0 &&
-                                        index == dividerIndex) {
-                                      return const UnreadDivider();
-                                    }
-                                    final i = dividerIndex >= 0 &&
-                                            index > dividerIndex
-                                        ? index - 1
-                                        : index;
-                                    return _MessageRow(
-                                      msg: display[i],
-                                      prev: i > 0 ? display[i - 1] : null,
-                                      next: i + 1 < display.length
-                                          ? display[i + 1]
-                                          : null,
-                                      peerId: _peer?.id,
-                                      peerAvatarUrl: _peer?.avatarUrl,
-                                      peerName: _peer?.peerInitial ?? '?',
-                                      peerDigitalConfig: _peer?.avatarConfig,
-                                      me: Supa.currentUser!.id,
-                                      onLongPress: _showMessageActions,
-                                      onReactionTap: _toggleReaction,
-                                      messages: display,
-                                      pendingStatus:
-                                          _pendingMessages[display[i].id]
-                                              ?.status,
-                                    );
-                                  },
-                                ),
-                                Positioned(
-                                  bottom: 12,
-                                  right: 16,
-                                  child: AnimatedScale(
-                                    scale: _showJumpToBottom ? 1.0 : 0.0,
-                                    duration: const Duration(milliseconds: 220),
-                                    curve: Curves.easeOutBack,
-                                    child: AnimatedOpacity(
-                                      opacity: _showJumpToBottom ? 1.0 : 0.0,
-                                      duration:
-                                          const Duration(milliseconds: 160),
-                                      child: PressScale(
-                                        onTap: _jumpToBottom,
-                                        child: Container(
-                                          width: 40,
-                                          height: 40,
-                                          decoration: BoxDecoration(
-                                            color: _P.surfaceHigh,
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                              color: _P.primary
-                                                  .withValues(alpha: 0.4),
-                                              width: 1.2,
-                                            ),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Colors.black
-                                                    .withValues(alpha: 0.4),
-                                                blurRadius: 10,
-                                                offset: const Offset(0, 3),
-                                              ),
-                                            ],
-                                          ),
-                                          child: const Center(
-                                            child: Icon(
-                                              Icons.keyboard_arrow_down_rounded,
-                                              color: _P.primary,
-                                              size: 26,
-                                            ),
-                                          ),
+                          ),
+                          Positioned(
+                            bottom: 12,
+                            right: 16,
+                            child: AnimatedScale(
+                              scale: _showJumpToBottom ? 1.0 : 0.0,
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeOutBack,
+                              child: AnimatedOpacity(
+                                opacity: _showJumpToBottom ? 1.0 : 0.0,
+                                duration: const Duration(milliseconds: 160),
+                                child: PressScale(
+                                  onTap: _jumpToBottom,
+                                  child: Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: _P.surfaceHigh,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color:
+                                            _P.primary.withValues(alpha: 0.4),
+                                        width: 1.2,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black
+                                              .withValues(alpha: 0.4),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 3),
                                         ),
+                                      ],
+                                    ),
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.keyboard_arrow_down_rounded,
+                                        color: _P.primary,
+                                        size: 26,
                                       ),
                                     ),
                                   ),
                                 ),
-                              ],
+                              ),
                             ),
                           ),
-                        );
-                      }),
+                        ],
+                      ),
                     ),
-                  ),
-                  if (_peerTyping != null) const _TypingIndicator(),
-                  if (_replyTo != null)
-                    _ReplyPreviewBar(
-                      message: _replyTo!,
-                      onCancel: () => setState(() => _replyTo = null),
-                    ),
-                  _Composer(
-                    controller: _ctrl,
-                    onSend: _send,
-                    onTypingChanged: _onTypingChanged,
-                    onAttach: () => _showAttachSheet(context),
-                    onVoice: () => _openVoiceNote(),
-                    onEmoji: _showEmojiPicker,
-                    onSchedule: _showSchedulePicker,
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
+                  );
+                }),
+              ),
+            ),
+            if (_peerTyping != null) const _TypingIndicator(),
+            if (_replyTo != null)
+              _ReplyPreviewBar(
+                message: _replyTo!,
+                onCancel: () => setState(() => _replyTo = null),
+              ),
+            _Composer(
+              controller: _ctrl,
+              onSend: _send,
+              onTypingChanged: _onTypingChanged,
+              onAttach: () => _showAttachSheet(context),
+              onVoice: () => _openVoiceNote(),
+              onEmoji: _showEmojiPicker,
+              onSchedule: _showSchedulePicker,
+            ),
+          ],
+        );
+      },
+    );
+    if (embedded) return content;
+    return Row(
+      children: [
+        NavSidebar(compact: compactRail),
+        Expanded(child: content),
       ],
     );
   }
@@ -3543,161 +3333,190 @@ class _ComposerState extends State<_Composer> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
-      child: Container(
-        decoration: BoxDecoration(
-          color: _P.surface,
-          borderRadius: BorderRadius.circular(26),
-          border: Border.all(color: _P.border.withValues(alpha: 0.35)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.22),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            const SizedBox(width: 4),
-            PressScale(
-              scaleFactor: 0.88,
-              onTap: widget.onAttach,
-              child: const Padding(
-                padding: EdgeInsets.all(8),
-                child: Icon(Icons.add_circle_outline_rounded,
-                    color: _P.primary, size: 24),
-              ),
-            ),
-            PressScale(
-              scaleFactor: 0.88,
-              onTap: widget.onEmoji,
-              child: const Padding(
-                padding: EdgeInsets.all(8),
-                child: Icon(Icons.emoji_emotions_outlined,
-                    color: _P.muted, size: 22),
-              ),
-            ),
-            PressScale(
-              scaleFactor: 0.88,
-              onTap: widget.onSchedule,
-              child: const Padding(
-                padding: EdgeInsets.all(8),
-                child: Icon(Icons.schedule_outlined, color: _P.muted, size: 22),
-              ),
-            ),
-            const SizedBox(width: 4),
-            Expanded(
-              child: TextField(
-                controller: widget.controller,
-                focusNode: _focusNode,
-                minLines: 1,
-                maxLines: 5,
-                textInputAction:
-                    kIsWeb ? TextInputAction.send : TextInputAction.newline,
-                style: const TextStyle(color: _P.text, fontSize: 15),
-                decoration: InputDecoration(
-                  hintText: 'Message',
-                  hintStyle: TextStyle(
-                      color: _P.muted.withValues(alpha: 0.7), fontSize: 15),
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: _P.surface,
+              borderRadius: BorderRadius.circular(26),
+              border: Border.all(color: _P.border.withValues(alpha: 0.35)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.22),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
                 ),
-                onSubmitted: (_) {
-                  if (widget.controller.text.trim().isNotEmpty) {
-                    widget.onSend();
-                  }
-                },
-                onChanged: widget.onTypingChanged,
-              ),
+              ],
             ),
-            ValueListenableBuilder<TextEditingValue>(
-              valueListenable: widget.controller,
-              builder: (_, v, __) {
-                final hasText = v.text.trim().isNotEmpty;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 6, left: 4),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    transitionBuilder: (child, anim) => ScaleTransition(
-                      scale: anim,
-                      child: FadeTransition(
-                        opacity: anim,
-                        child: child,
-                      ),
+            child: Row(
+              children: [
+                const SizedBox(width: 4),
+                Tooltip(
+                  message: 'Attach a file',
+                  child: PressScale(
+                    scaleFactor: 0.88,
+                    onTap: widget.onAttach,
+                    child: const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Icon(Icons.add_circle_outline_rounded,
+                          color: _P.primary, size: 24),
                     ),
-                    child: hasText
-                        ? PressScale(
-                            key: const ValueKey('send-btn'),
-                            scaleFactor: 0.88,
-                            onTap: widget.onSend,
-                            child: Container(
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                color: _P.primary,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: _P.primary.withValues(alpha: 0.4),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: const Center(
-                                child: Icon(
-                                  Icons.arrow_upward_rounded,
-                                  color: _P.darkOnAccent,
-                                  size: 21,
-                                ),
-                              ),
-                            ),
-                          )
-                        : kIsWeb
-                            ? const SizedBox(width: 36)
-                            : PressScale(
-                                key: const ValueKey('mic-btn'),
+                  ),
+                ),
+                Tooltip(
+                  message: 'Emoji and GIFs',
+                  child: PressScale(
+                    scaleFactor: 0.88,
+                    onTap: widget.onEmoji,
+                    child: const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Icon(Icons.emoji_emotions_outlined,
+                          color: _P.muted, size: 22),
+                    ),
+                  ),
+                ),
+                Tooltip(
+                  message: 'Schedule message',
+                  child: PressScale(
+                    scaleFactor: 0.88,
+                    onTap: widget.onSchedule,
+                    child: const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Icon(Icons.schedule_outlined,
+                          color: _P.muted, size: 22),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: TextField(
+                    controller: widget.controller,
+                    focusNode: _focusNode,
+                    minLines: 1,
+                    maxLines: 5,
+                    textInputAction:
+                        kIsWeb ? TextInputAction.send : TextInputAction.newline,
+                    onChanged: widget.onTypingChanged,
+                  ),
+                ),
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: widget.controller,
+                  builder: (_, v, __) {
+                    final hasText = v.text.trim().isNotEmpty;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6, left: 4),
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        transitionBuilder: (child, anim) => ScaleTransition(
+                          scale: anim,
+                          child: FadeTransition(
+                            opacity: anim,
+                            child: child,
+                          ),
+                        ),
+                        child: hasText
+                            ? PressScale(
+                                key: const ValueKey('send-btn'),
                                 scaleFactor: 0.88,
-                                onTap: widget.onVoice,
+                                onTap: widget.onSend,
                                 child: Container(
                                   width: 36,
                                   height: 36,
                                   decoration: BoxDecoration(
-                                    color: _P.surfaceHigh,
+                                    color: _P.primary,
                                     shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: _P.border.withValues(alpha: 0.35),
-                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color:
+                                            _P.primary.withValues(alpha: 0.4),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
                                   ),
                                   child: const Center(
                                     child: Icon(
-                                      Icons.mic_none_rounded,
-                                      color: _P.primary,
-                                      size: 20,
+                                      Icons.arrow_upward_rounded,
+                                      color: _P.darkOnAccent,
+                                      size: 21,
                                     ),
                                   ),
                                 ),
-                              ),
-                  ),
-                );
-              },
+                              )
+                            : kIsWeb
+                                ? const SizedBox(width: 36)
+                                : PressScale(
+                                    key: const ValueKey('mic-btn'),
+                                    scaleFactor: 0.88,
+                                    onTap: widget.onVoice,
+                                    child: Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        color: _P.surfaceHigh,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color:
+                                              _P.border.withValues(alpha: 0.35),
+                                        ),
+                                      ),
+                                      child: const Center(
+                                        child: Icon(
+                                          Icons.mic_none_rounded,
+                                          color: _P.primary,
+                                          size: 20,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          if (kIsWeb)
+            Padding(
+              padding: const EdgeInsets.only(top: 6, right: 6),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Icon(Icons.keyboard_return_rounded,
+                      size: 13, color: _P.muted.withValues(alpha: 0.7)),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Enter to send  -  Shift+Enter for new line',
+                    style: TextStyle(
+                      color: _P.muted.withValues(alpha: 0.75),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
 }
 
 class _ActionBtn extends StatelessWidget {
-  const _ActionBtn(this.icon, {this.onTap});
+  const _ActionBtn(this.icon, {this.onTap, this.tooltip});
   final IconData icon;
   final VoidCallback? onTap;
+  final String? tooltip;
   @override
   Widget build(BuildContext context) {
     return IconButton(
-        icon: Icon(icon, color: _P.muted, size: 22), onPressed: onTap ?? () {});
+      tooltip: tooltip,
+      hoverColor: _P.surfaceHigh,
+      focusColor: _P.surfaceHigh,
+      icon: Icon(icon, color: _P.muted, size: 22),
+      onPressed: onTap ?? () {},
+    );
   }
 }
 
@@ -5327,33 +5146,6 @@ class _StickerPicker extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// Quick-preset button for the schedule picker dialog.
-
-class _SchedulePresetBtn extends StatelessWidget {
-  final String label;
-  final Duration duration;
-  final void Function(VoidCallback) setState;
-  final DateTime now;
-  final void Function(DateTime) onSelected;
-  const _SchedulePresetBtn(
-      this.label, this.duration, this.setState, this.now, this.onSelected);
-
-  @override
-  Widget build(BuildContext context) {
-    return TextButton(
-      onPressed: () {
-        final d = now
-            .add(duration)
-            .copyWith(second: 0, millisecond: 0, microsecond: 0);
-        onSelected(d);
-        setState(() {});
-      },
-      child:
-          Text(label, style: const TextStyle(color: _P.primary, fontSize: 13)),
     );
   }
 }

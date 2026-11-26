@@ -68,7 +68,11 @@ export function payload(job: Delivery, now = Date.now()) {
         android: {
           priority: call ? "HIGH" : "NORMAL",
           ttl: `${ttl}s`,
-          notification: { tag: eventTag, visibility: "PRIVATE" },
+          notification: {
+            tag: eventTag,
+            visibility: "PRIVATE",
+            ...(call ? { channel_id: "bro_calls", sound: "default" } : {}),
+          },
         },
         apns: {
           headers: {

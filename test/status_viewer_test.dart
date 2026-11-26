@@ -1,6 +1,7 @@
 import 'package:bro_chat/models/profile.dart';
 import 'package:bro_chat/screens/status_viewer.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Future<void> _openViewer(WidgetTester tester, List<String> viewed) async {
@@ -68,5 +69,20 @@ void main() {
     await tester.pump();
     expect(find.text('Second status'), findsOneWidget);
     expect(viewed, ['first', 'second']);
+  });
+
+  testWidgets('arrow keys move between statuses and space pauses',
+      (tester) async {
+    final viewed = <String>[];
+    await _openViewer(tester, viewed);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(find.text('Second status'), findsOneWidget);
+    expect(viewed, ['first', 'second']);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pump(const Duration(minutes: 3));
+    expect(find.text('Second status'), findsOneWidget);
   });
 }

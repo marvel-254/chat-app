@@ -82,6 +82,9 @@ class MessageSafety {
   static Future<Message> send({
     required String conversationId,
     required String content,
+    String? messageId,
+    String? validationContent,
+    String contentFormat = LegacyMessageCodec.plaintext,
     String? replyToId,
     Duration? expiry,
     String? expectedSenderId,
@@ -90,19 +93,22 @@ class MessageSafety {
     if (me == null || (expectedSenderId != null && me.id != expectedSenderId)) {
       throw StateError('The sender is no longer signed in.');
     }
-    final validationError = validateContent(content);
+    final validationError = validateContent(validationContent ?? content);
     if (validationError != null) {
       throw StateError(validationError);
     }
     final now = DateTime.now().toUtc();
 
-    LegacyMessaging.requireAllowed(me.id);
+    if (contentFormat != LegacyMessageCodec.signal) {
+      LegacyMessaging.requireAllowed(me.id);
+    }
 
     final insert = {
+      if (messageId != null) 'id': messageId,
       'conversation_id': conversationId,
       'sender_id': me.id,
       'content': content,
-      'content_format': LegacyMessageCodec.plaintext,
+      'content_format': contentFormat,
       'created_at': now.toIso8601String(),
       if (replyToId != null) 'reply_to_id': replyToId,
       if (expiry != null && expiry > Duration.zero)
@@ -125,7 +131,8 @@ class MessageSafety {
   static Future<Message?> getReplyPreview(String messageId) async {
     final res = await _client
         .from('messages')
-        .select('id,content,sender_id,conversation_id,created_at')
+        .select(
+            'id,content,content_format,sender_id,conversation_id,created_at')
         .eq('id', messageId)
         .maybeSingle();
     if (res == null) return null;

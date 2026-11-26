@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -16,6 +17,8 @@ import 'package:url_launcher/url_launcher.dart';
 class AppUpdate {
   static const _repo = 'marvel-254/chat-app';
   static const _seenKey = 'app_update_seen_tag';
+  static const _snoozedTagKey = 'app_update_snoozed_tag';
+  static const _snoozedUntilKey = 'app_update_snoozed_until';
   static const _lastCheckKey = 'app_update_last_check_ts';
   static const checkInterval = Duration(hours: 6);
 
@@ -202,12 +205,20 @@ class AppUpdate {
   static Future<void> promptIfNeeded({
     required BuildContext context,
     required String currentVersion,
+    AppUpdateInfo? latest,
+    bool forcePrompt = false,
   }) async {
-    final info = await latestNewerThan(currentVersion);
+    final info = latest ?? await latestNewerThan(currentVersion);
     if (info == null || !context.mounted) return;
 
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.getString(_seenKey) == info.tag) return;
+    if (!forcePrompt && prefs.getString(_seenKey) == info.tag) return;
+    final snoozedUntil = prefs.getInt(_snoozedUntilKey) ?? 0;
+    if (!forcePrompt &&
+        prefs.getString(_snoozedTagKey) == info.tag &&
+        DateTime.now().millisecondsSinceEpoch < snoozedUntil) {
+      return;
+    }
     if (!context.mounted) return;
 
     final notesPreview = info.notes.length > 200
@@ -226,7 +237,9 @@ class AppUpdate {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'A new version of BRO is available. Update now for the latest features and fixes.',
+                kIsWeb
+                    ? 'A newer version of the BRO web app is available. Refresh to load the latest features and fixes.'
+                    : 'A new version of BRO is available. Update now for the latest features and fixes.',
               ),
               if (notesPreview.isNotEmpty) ...[
                 const SizedBox(height: 12),
@@ -246,7 +259,7 @@ class AppUpdate {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Update now'),
+            child: Text(kIsWeb ? 'Refresh web app' : 'Update now'),
           ),
         ],
       ),
@@ -254,11 +267,24 @@ class AppUpdate {
 
     await _markChecked();
     if (confirmed != true) {
-      // The user explicitly dismissed this release for now.
-      await prefs.setString(_seenKey, info.tag);
+      // Remind again tomorrow if this release is still current.
+      await prefs.setString(_snoozedTagKey, info.tag);
+      await prefs.setInt(
+        _snoozedUntilKey,
+        DateTime.now().add(const Duration(hours: 24)).millisecondsSinceEpoch,
+      );
       return;
     }
     if (!context.mounted) return;
+
+    if (kIsWeb) {
+      final reloaded = await launchUrl(
+        Uri.base,
+        webOnlyWindowName: '_self',
+      );
+      if (reloaded) await prefs.setString(_seenKey, info.tag);
+      return;
+    }
 
     if (info.apkUrl == null) {
       // Never try to "install" the HTML release page.
@@ -278,7 +304,36 @@ class AppUpdate {
     if (installed != null) await prefs.setString(_seenKey, info.tag);
   }
 
-  /// Background check: silently check for updates periodically.
+  /// Check for a release from Settings and show a notice or update prompt.
+  static Future<void> checkNow({
+    required BuildContext context,
+    required String currentVersion,
+  }) async {
+    if (parseVersion(currentVersion) == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Update checks are available in release builds.'),
+        ),
+      );
+      return;
+    }
+    final info = await latestNewerThan(currentVersion);
+    if (!context.mounted) return;
+    if (info == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('BRO is up to date.')),
+      );
+      return;
+    }
+    await promptIfNeeded(
+      context: context,
+      currentVersion: currentVersion,
+      latest: info,
+      forcePrompt: true,
+    );
+  }
+
+  /// Check periodically; the caller decides when to present any update.
   static Future<AppUpdateInfo?> backgroundCheck(String currentVersion) async {
     if (!await _shouldCheck()) return null;
     final info = await latestNewerThan(currentVersion);

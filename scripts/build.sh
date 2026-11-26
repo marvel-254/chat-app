@@ -51,10 +51,17 @@ DEFINES+=(--dart-define="APP_RELEASE=${APP_RELEASE}")
 
 # Semantic version from pubspec.yaml, used by the auto-updater to compare
 # GitHub release tags. Keep this in sync with the version published on Releases.
-APP_VERSION_VALUE="$(awk '/^version:/{print $2; exit}' pubspec.yaml)"
-APP_VERSION_VALUE="${APP_VERSION_VALUE%%+*}"
+APP_VERSION_FULL="$(awk '/^version:/{print $2; exit}' pubspec.yaml)"
+APP_VERSION_VALUE="${APP_VERSION_FULL%%+*}"
+APP_BUILD_NUMBER_VALUE="${APP_VERSION_FULL#*+}"
+if [[ "$APP_BUILD_NUMBER_VALUE" == "$APP_VERSION_FULL" ]]; then
+  APP_BUILD_NUMBER_VALUE=""
+fi
 if [[ -n "${APP_VERSION_VALUE}" ]]; then
   DEFINES+=(--dart-define="APP_VERSION=${APP_VERSION_VALUE}")
+fi
+if [[ -n "${APP_BUILD_NUMBER_VALUE}" ]]; then
+  DEFINES+=(--dart-define="BUILD_NUMBER=${APP_BUILD_NUMBER_VALUE}")
 fi
 
 TARGET="${1:-apk}"
@@ -88,7 +95,7 @@ case "$TARGET" in
     cp web/manifest.json web/robots.txt web/sitemap.xml web/llms.txt web/favicon.png build/web/ 2>/dev/null || true
     cp web/manifest.json web/favicon.png build/web/app/ 2>/dev/null || true
     cp web/service-worker.js build/web/app/service-worker.js
-    node scripts/web-push-config.mjs build/web/app/push-config.js
+    node scripts/web-push-config.mjs build/web/app/push-config.js "$APP_VERSION_FULL"
     cp -r web/css/. build/web/css/
     cp -r web/icons/. build/web/icons/
     mkdir -p build/web/app/icons

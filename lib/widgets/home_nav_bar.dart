@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-/// Chats / Circles / Status bottom bar shared by the app surfaces.
+/// Chats / Circles / Status / Calls / Settings bottom bar shared by the app.
 class HomeNavBar extends StatelessWidget {
   const HomeNavBar({super.key, required this.index});
 
-  /// 0 = Chats, 1 = Circles, 2 = Status, 3 = Calls.
+  /// 0 = Chats, 1 = Circles, 2 = Status, 3 = Calls, 4 = Settings.
   final int index;
 
   static const _surface = Color(0xFF1E1F25);
@@ -45,7 +45,7 @@ class HomeNavBar extends StatelessWidget {
           }),
         ),
         child: NavigationBar(
-          selectedIndex: index.clamp(0, 3),
+          selectedIndex: index.clamp(0, 4),
           animationDuration: const Duration(milliseconds: 300),
           onDestinationSelected: (i) {
             if (i == index) return;
@@ -53,6 +53,7 @@ class HomeNavBar extends StatelessWidget {
             if (i == 1) context.go('/circles');
             if (i == 2) context.go('/status');
             if (i == 3) context.go('/recent-calls');
+            if (i == 4) context.go('/settings');
           },
           destinations: const [
             NavigationDestination(
@@ -74,6 +75,11 @@ class HomeNavBar extends StatelessWidget {
               icon: Icon(Icons.call_outlined),
               selectedIcon: Icon(Icons.call),
               label: 'Calls',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.settings_outlined),
+              selectedIcon: Icon(Icons.settings),
+              label: 'Settings',
             ),
           ],
         ),

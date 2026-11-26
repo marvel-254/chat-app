@@ -1,4 +1,3 @@
-import 'legacy_messaging.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Message reaction operations (add, remove, query, watch).
@@ -13,7 +12,6 @@ class Reactions {
   static Future<void> add(String messageId, String emoji) async {
     final me = _currentUser;
     if (me == null) return;
-    LegacyMessaging.requireAllowed(me.id);
     await _client.from('message_reactions').upsert({
       'message_id': messageId,
       'user_id': me.id,

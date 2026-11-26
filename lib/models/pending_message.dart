@@ -42,6 +42,7 @@ class PendingMessage {
       conversationId: conversationId,
       senderId: senderId,
       content: content,
+      contentFormat: 'signal_v1',
       createdAt: createdAt,
       readAt: null,
       expiresAt: expiresAt,
