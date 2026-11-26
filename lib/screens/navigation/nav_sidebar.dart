@@ -20,9 +20,12 @@ class NavSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final location = GoRouter.maybeOf(context) != null
-        ? GoRouterState.of(context).matchedLocation
-        : '';
+    final location = GoRouter.maybeOf(context)
+            ?.routerDelegate
+            .currentConfiguration
+            .uri
+            .path ??
+        '';
     final email = _currentEmail();
     final initial = email.isNotEmpty ? email[0].toUpperCase() : '?';
 

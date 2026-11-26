@@ -12,6 +12,7 @@ import '../services/connection_monitor.dart';
 import '../ui/errors.dart';
 import '../services/supabase.dart';
 import '../widgets/responsive_app_shell.dart';
+import 'chat/widgets/avatar.dart';
 
 class RecentCallsScreen extends StatefulWidget {
   const RecentCallsScreen({super.key, this.highlight});
@@ -100,7 +101,7 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
         try {
           final profiles = await Supa.client
               .from('visible_profiles')
-              .select('id,name,avatar_url')
+              .select()
               .inFilter('id', ids.toList())
               .timeout(Calls.timeout);
           profilesFresh = true;
@@ -201,9 +202,43 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(label,
-                              style: Theme.of(sheet).textTheme.headlineSmall),
-                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Avatar(
+                                name: peer?.peerInitial ?? label,
+                                url: peer?.avatarUrl,
+                                size: 48,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      label,
+                                      style: Theme.of(sheet)
+                                          .textTheme
+                                          .headlineSmall,
+                                    ),
+                                    if (peer != null &&
+                                        peer.username.isNotEmpty)
+                                      Text(
+                                        '@${peer.username}',
+                                        style: Theme.of(sheet)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              color: Theme.of(sheet)
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                            ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
                           Text(
                               '$direction ${record.video ? 'video' : 'voice'} · ${record.outcome(_owner)}'),
                           Text('Started: ${_when(record.startedAt)}'),
@@ -332,23 +367,49 @@ class _RecentCallsScreenState extends State<RecentCallsScreen> {
                             final r = visible[index];
                             final peer = _peers[r.peerId(_owner)];
                             final avatarUrl = peer?.avatarUrl;
+                            final displayLabel =
+                                peer?.label ?? r.cachedContact ?? 'Contact';
+                            final username = peer?.username ?? '';
                             final missed = r.matches(CallFilter.missed, _owner);
                             final issue =
                                 missed || r.status == CallStatus.failed;
                             final duration = r.duration;
                             return ListTile(
                               key: ValueKey(r.id),
-                              leading: CircleAvatar(
-                                  foregroundImage: avatarUrl == null
-                                      ? null
-                                      : NetworkImage(avatarUrl),
-                                  child: Text(peer?.peerInitial ??
-                                      r.cachedContact
-                                          ?.substring(0, 1)
-                                          .toUpperCase() ??
-                                      '?')),
-                              title: Text(
-                                  peer?.label ?? r.cachedContact ?? 'Contact'),
+                              leading: Avatar(
+                                name: peer?.peerInitial ??
+                                    r.cachedContact ??
+                                    '?',
+                                url: avatarUrl,
+                                size: 44,
+                              ),
+                              title: Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      displayLabel,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  if (username.isNotEmpty) ...[
+                                    const SizedBox(width: 6),
+                                    Flexible(
+                                      child: Text(
+                                        '@$username',
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
                               subtitle: Text(
                                   '${r.outgoing(_owner) ? 'Outgoing' : 'Incoming'} ${r.video ? 'video' : 'voice'} · ${r.outcome(_owner)}\n'
                                   '${_when(r.startedAt)}${duration == null ? '' : ' · ${CallRecord.formatDuration(duration)}'}'),

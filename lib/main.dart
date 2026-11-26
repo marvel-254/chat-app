@@ -239,8 +239,9 @@ final _router = GoRouter(
     ),
     GoRoute(
       path: '/confirm',
-      builder: (_, state) =>
-          ConfirmationScreen(email: state.extra as String? ?? ''),
+      builder: (_, state) => ConfirmationScreen(
+        email: state.extra is String ? state.extra as String : '',
+      ),
     ),
     GoRoute(
       path: '/conversations',

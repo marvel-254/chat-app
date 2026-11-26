@@ -2,6 +2,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CallIce {
   static const _relayOnly = bool.fromEnvironment('CALL_RELAY_ONLY');
+
+  /// The Edge Function may spend up to 6s calling the TURN provider. A shorter
+  /// client timeout silently drops relay credentials and leaves calls on STUN.
+  static const turnTimeout = Duration(seconds: 10);
   static const _stun = <String, dynamic>{
     'urls': 'stun:stun.l.google.com:19302',
   };
@@ -12,7 +16,7 @@ class CallIce {
     final servers = <Map<String, dynamic>>[_stun];
     try {
       final response = await client.functions.invoke('call-turn',
-          body: const {}).timeout(const Duration(seconds: 4));
+          body: const {}).timeout(turnTimeout);
       final data = response.data;
       if (data is Map &&
           data['urls'] is List &&

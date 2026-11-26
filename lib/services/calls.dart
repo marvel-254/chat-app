@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/call_record.dart';
@@ -45,6 +47,40 @@ class Calls {
     }
   }
 
+  static DateTime? _lastRefreshAttempt;
+
+  /// Returns `true` when [error] is an expired-JWT PostgREST error (`PGRST303`).
+  @visibleForTesting
+  static bool isJwtExpiredError(Object error) {
+    return error is PostgrestException &&
+        (error.code == 'PGRST303' ||
+            error.message.toLowerCase().contains('jwt expired'));
+  }
+
+  /// Returns `true` for transient background-poll failures (timeouts / stale
+  /// JWTs) that should be logged and recovered rather than reported to Sentry.
+  @visibleForTesting
+  static bool isTransientNetworkError(Object error) {
+    return error is TimeoutException || isJwtExpiredError(error);
+  }
+
+  static Future<void> _handleCallError(String op, Object error) async {
+    debugPrint('$op failed: $error');
+    if (isJwtExpiredError(error)) {
+      final now = DateTime.now();
+      if (_lastRefreshAttempt == null ||
+          now.difference(_lastRefreshAttempt!) > const Duration(seconds: 10)) {
+        _lastRefreshAttempt = now;
+        try {
+          await Supa.client.auth.refreshSession();
+        } catch (_) {}
+      }
+      return;
+    }
+    if (error is TimeoutException) return;
+    await Sentry.captureException(error);
+  }
+
   static Future<CallRecord> advance(String id, String action) async {
     try {
       return _record(
@@ -52,8 +88,7 @@ class Calls {
             params: {'p_id': id, 'p_action': action}).timeout(timeout),
       );
     } catch (e) {
-      debugPrint('Calls.advance failed: $e');
-      await Sentry.captureException(e);
+      await _handleCallError('Calls.advance', e);
       rethrow;
     }
   }
@@ -71,8 +106,7 @@ class Calls {
           .timeout(timeout);
       return rows.isEmpty ? null : _record(rows.first);
     } catch (e) {
-      debugPrint('Calls.incoming failed: $e');
-      await Sentry.captureException(e);
+      await _handleCallError('Calls.incoming', e);
       rethrow;
     }
   }
@@ -87,8 +121,7 @@ class Calls {
           .timeout(timeout);
       return row == null ? null : _record(row);
     } catch (e) {
-      debugPrint('Calls.get failed: $e');
-      await Sentry.captureException(e);
+      await _handleCallError('Calls.get', e);
       rethrow;
     }
   }

@@ -29,9 +29,9 @@ For a self-hosted coturn deployment instead, set `TURN_SHARED_SECRET` and comma-
 
 ### Production verification (2026-11-25)
 
-- `call-turn` is deployed and `ACTIVE` (version 1) on project `dbfgyehzgrmsajpwydps`.
-- No TURN provider secrets are currently provisioned: neither the Cloudflare pair (`CLOUDFLARE_TURN_KEY_ID`, `CLOUDFLARE_TURN_API_TOKEN`) nor the coturn pair (`TURN_SHARED_SECRET`, `TURN_URLS`) is present. The function therefore returns 503 and clients fall back to Google STUN, which is expected to work only on permissive networks.
-- To complete relay enablement, configure one provider pair via `supabase secrets set`, then invoke the function with a real authenticated user token and confirm the 200 response contains `turn:`/`turns:` URLs plus username and credential. Never place those tokens in client builds or tracked files.
+- `call-turn` is deployed and `ACTIVE` (version 4). The Cloudflare pair (`CLOUDFLARE_TURN_KEY_ID`, `CLOUDFLARE_TURN_API_TOKEN`) is provisioned; `claim_bro_turn()` exists, is granted to `authenticated`, and returns true for the caller.
+- The client waits up to 10s for relay credentials (`CallIce.turnTimeout`) because the Edge Function may spend up to 6s calling Cloudflare. A shorter timeout silently drops TURN and leaves calls on STUN.
+- To verify relay from a real device, invoke the function with an authenticated user token and confirm the 200 response contains `turn:`/`turns:` URLs plus username and credential. Never place those tokens in client builds or tracked files.
 
 ## Manual testing matrix
 
